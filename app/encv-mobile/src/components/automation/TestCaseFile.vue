@@ -18,13 +18,19 @@
             <span class="casefile__meta-l">VER</span>
             <span class="casefile__meta-v">v{{ result.spec.version }}</span>
           </span>
-          <span v-if="result.spec.cipherMode !== undefined" class="casefile__meta-cell">
+          <!-- 加密选型：cipher mode -->
+          <span v-if="result.spec.cipherMode !== undefined && result.spec.cipherMode !== null" class="casefile__meta-cell casefile__meta-cell--accent">
             <span class="casefile__meta-l">CIPHER</span>
-            <span class="casefile__meta-v">c{{ result.spec.cipherMode }}</span>
+            <span class="casefile__meta-v">
+              {{ result.spec.cipherMode === 0 ? 'AES-128-GCM' : 'AES-256-GCM' }}
+            </span>
           </span>
-          <span v-if="result.spec.compressionMode" class="casefile__meta-cell">
+          <!-- 加密选型：compression mode -->
+          <span v-if="result.spec.compressionMode" class="casefile__meta-cell casefile__meta-cell--accent">
             <span class="casefile__meta-l">COMPRESS</span>
-            <span class="casefile__meta-v">{{ result.spec.compressionMode }}</span>
+            <span class="casefile__meta-v casefile__meta-v--compress">
+              {{ result.spec.compressionMode.toUpperCase() }}
+            </span>
           </span>
           <span v-if="result.durationMs" class="casefile__meta-cell">
             <span class="casefile__meta-l">DUR</span>
@@ -262,6 +268,19 @@ function toggle() {
   font-size: 11px;
   color: #1A1A1A;
   font-weight: 500;
+}
+/* 加密选型参数高亮 */
+.casefile__meta-cell--accent {
+  background: rgba(43, 58, 103, 0.06);
+  border-radius: 3px;
+  padding: 2px 6px !important;
+  border: 1px solid rgba(43, 58, 103, 0.15);
+}
+.casefile__meta-cell--accent .casefile__meta-l { color: #2B3A67; }
+.casefile__meta-cell--accent .casefile__meta-v { color: #2B3A67; font-weight: 700; }
+.casefile__meta-v--compress {
+  font-size: 9px;
+  letter-spacing: 0.08em;
 }
 
 .casefile__head-r {

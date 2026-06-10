@@ -216,6 +216,10 @@ export function useAutomationTests() {
         // 真机安全：强制改写到 encv-automation 命名空间
         const safeSource = withSafetyBoundary(spec.sourcePath, { forceAutomation: true })
         result.submittedSourcePath = safeSource
+
+        // 前置检查：source 路径是否看起来在 encv-automation 命名空间内
+        // 如果不在，说明 withSafetyBoundary 可能被 dev 模式跳过了（forceAutomation 应该覆盖）
+        // 这里不做阻塞式检查（因为前端无法 stat 文件），仅记录路径供报告展示
         const task: EncvTask = await createTask(
           spec.taskType,
           safeSource,

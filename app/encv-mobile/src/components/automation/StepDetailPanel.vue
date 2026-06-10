@@ -46,11 +46,33 @@
         <dt>TASK ID</dt><dd>{{ stepRun.taskId ?? '—' }}</dd>
         <dt>STATUS</dt><dd>{{ stepRun.status.toUpperCase() }}</dd>
         <dt>DURATION</dt><dd>{{ formatDur(stepRun.durationMs) }}</dd>
-        <dt>MATRIX VARS</dt>
-        <dd v-if="stepRun.matrixVars">
-          <code>{{ JSON.stringify(stepRun.matrixVars) }}</code>
-        </dd>
-        <dd v-else>—</dd>
+      </dl>
+
+      <!-- 加密选型参数（从 matrixVars 或推断） -->
+      <div v-if="hasEncryptionParams" class="panel__enc-params">
+        <h5 class="panel__enc-title">ENCRYPTION PARAMETERS</h5>
+        <div class="panel__enc-grid">
+          <div v-if="encryptionParams.cipher" class="panel__enc-cell panel__enc-cell--accent">
+            <span class="panel__enc-l">CIPHER</span>
+            <span class="panel__enc-v">{{ encryptionParams.cipher }}</span>
+          </div>
+          <div v-if="encryptionParams.compress" class="panel__enc-cell panel__enc-cell--accent">
+            <span class="panel__enc-l">COMPRESSION</span>
+            <span class="panel__enc-v">{{ encryptionParams.compress }}</span>
+          </div>
+          <div v-if="encryptionParams.version" class="panel__enc-cell">
+            <span class="panel__enc-l">VERSION</span>
+            <span class="panel__enc-v">v{{ encryptionParams.version }}</span>
+          </div>
+          <div v-if="encryptionParams.plugin" class="panel__enc-cell">
+            <span class="panel__enc-l">PLUGIN</span>
+            <span class="panel__enc-v">{{ encryptionParams.plugin }}</span>
+          </div>
+        </div>
+      </div>
+
+      <dl class="panel__meta" v-if="stepRun.matrixVars && Object.keys(stepRun.matrixVars).length > 0">
+        <dt>MATRIX VARS</dt><dd><code>{{ JSON.stringify(stepRun.matrixVars) }}</code></dd>
       </dl>
     </section>
 
@@ -84,6 +106,48 @@ const props = defineProps<{
 }>()
 
 const stepName = computed(() => props.stepRun.stepDefId)
+
+/** 从 matrixVars 或 stepDefId 推断加密选型参数 */
+const encryptionParams = computed(() => {
+  const vars = props.stepRun.matrixVars
+  const id = props.stepRun.stepDefId
+
+  // 优先从 matrixVars 获取
+  if (vars) {
+    return {
+      cipher: vars.cipher ? (vars.cipher === '0' ? 'AES-128-GCM' : vars.cipher === '1' ? 'AES-256-GCM' : `c${vars.cipher}`) : undefined,
+      compress: vars.compress ? String(vars.compress).toUpperCase() : undefined,
+      version: undefined, // version 通常不在 matrix 中
+      plugin: vars.plugin ?? undefined,
+    }
+  }
+
+  // 从 stepDefId 解析：格式 "plugin-taskType-vN-cN-compress"
+  const parts = id.split('-')
+  const result: Record<string, string | number | undefined> = {}
+  for (let i = 0; i < parts.length; i++) {
+    if (parts[i].startsWith('v') && /^\d+$/.test(parts[i].slice(1))) {
+      result.version = Number(parts[i].slice(1))
+    } else if (parts[i] === '0' || parts[i] === '1') {
+      // cipher mode
+      result.cipher = parts[i] === '0' ? 'AES-128-GCM' : 'AES-256-GCM'
+    } else if (['none', 'zstd'].includes(parts[i])) {
+      result.compress = parts[i].toUpperCase()
+    }
+  }
+
+  // plugin name 是第一段
+  if (parts.length > 0 && !/^(encrypt|decrypt|v\d|c\d|none|zstd)$/.test(parts[0])) {
+    result.plugin = parts[0]
+  }
+
+  return result
+})
+
+const hasEncryptionParams = computed(() => {
+  const p = encryptionParams.value
+  return !!(p.cipher || p.compress || p.version || p.plugin)
+})
 
 const completedInJob = computed(() =>
   props.jobRun.steps.filter((s) =>
@@ -231,32 +295,56 @@ function formatDur(ms?: number): string {
 }
 
 /* §4 Metadata */
-.panel__meta {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 4px 12px;
-  margin: 0;
-  font-size: 11px;
+.panel__meta { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; font-size: 11px; }
+.panel__meta dt { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 8px; letter-spacing: 0.18em; color: #6B5D4C; }
+.panel__meta dd { margin: 0; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; color: #1A1A1A; word-break: break-all; }
+.panel__meta code { background: rgba(26, 26, 26, 0.04); padding: 1px 4px; border-radius: 2px; font-size: 10px; }
+
+/* 加密选型参数区块 */
+.panel__enc-params {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #C9BBA1;
 }
-.panel__meta dt {
+.panel__enc-title {
+  margin: 0 0 6px;
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  color: #2B3A67;
+  text-transform: uppercase;
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  font-size: 8px;
+}
+.panel__enc-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.panel__enc-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 8px;
+  background: #FAF6EE;
+  border-radius: 3px;
+  border: 1px solid #EDE5D2;
+}
+.panel__enc-cell--accent {
+  background: rgba(43, 58, 103, 0.05);
+  border-color: rgba(43, 58, 103, 0.2);
+}
+.panel__enc-l {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 7px;
   letter-spacing: 0.18em;
   color: #6B5D4C;
 }
-.panel__meta dd {
-  margin: 0;
+.panel__enc-v {
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   font-size: 11px;
+  font-weight: 700;
   color: #1A1A1A;
-  word-break: break-all;
 }
-.panel__meta code {
-  background: rgba(26, 26, 26, 0.04);
-  padding: 1px 4px;
-  border-radius: 2px;
-  font-size: 10px;
-}
+.panel__enc-cell--accent .panel__enc-v { color: #2B3A67; }
 
 /* §5 Raw */
 .panel__raw {
