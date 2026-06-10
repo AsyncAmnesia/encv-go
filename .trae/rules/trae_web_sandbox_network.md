@@ -633,16 +633,18 @@ throw new Error(`all-candidates-failed | trace: ${trace}`)
 
 | 环境 | 前端访问地址 | API 地址 | WS 地址 |
 |------|--------------|----------|---------|
-| **沙箱浏览器（OpenPreview）** | `https://run-agent-...trae.cn/` | ⚠️ 同源 `/api/*` 不可达（见 9.1） | ⚠️ `/ws` 不可达 |
+| **沙箱浏览器（OpenPreview）** | `https://run-agent-...trae.cn/` | ✅ `http://localhost:16666/api/*`（2026-06-10 修复：preview-gateway proxyReq 改写 Origin=`:16666`） | ⚠️ `/ws` 不可达（沙箱浏览器不支持 WS 代理） |
 | **沙箱本地（PM2 启 :16666）** | `http://localhost:16666/` | `http://localhost:16666/api/*` ✅ | `ws://localhost:16666/ws` ✅ |
 | **沙箱 dev 直连 vite** | `http://localhost:8100/` | ❌ vite 不代理 /api（设计决策 D9） | ❌ vite HMR 关 |
 | **APK 真机 + adb reverse** | `capacitor://localhost` | `http://127.0.0.1:2025` ✅ | `ws://127.0.0.1:2025/ws` ✅ |
 
-→ **沙箱 dev 模式下唯一完整的端到端调试链路是「沙箱本地访问 :16666」**——agent 在沙箱内跑 `curl http://localhost:16666/__gateway/health` 等价于"完整功能可用"。**OpenPreview 仅用于给用户看 UI 截图 / 视觉验收，不能用于功能调试**。
+→ **沙箱 dev 模式下完整端到端调试链路有两档**：
+> 1. **沙箱本地访问 `:16666`**（API + WS 都可达，**完整**功能）
+> 2. **沙箱浏览器（OpenPreview）**（API 2026-06-10 修复后可达 ✅，WS 仍不可达 ⚠️）——**适合**前端 fetch /api/* 的所有功能（Files/Tasks/Settings 等），**不适合**任何依赖 WebSocket 的实时功能（DevLogs 实时流、agent 流式 chat 等）。
 
 ### 9.6 绝对禁止
 
-- ❌ 假设 OpenPreview 模式下能完整功能调试——见 9.5
+- ❌ 假设 OpenPreview 模式下能**完整**功能调试——见 9.5（API 2026-06-10 已修复，WS 仍受沙箱浏览器限制）
 - ❌ 让前端 throw 阻塞 `mounted` hook 不带 console.info 兜底——见 9.4
 - ❌ 试图注册多个 OpenPreview——§八.4 已禁止，agent-tool-host 用最后一次的端口
 - ❌ 让 vite 加回 `/api` proxy——决策 D9 已固化

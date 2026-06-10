@@ -131,6 +131,14 @@ function createProxyFor(up: Upstream): httpProxy {
   // set it, we fall back to 'https' for Trae-sandbox domains (match *.trae.cn or
   // has the well-known preview-gw prefix), otherwise 'http'.
   proxy.on('proxyReq', (proxyReq, req) => {
+    // ⚠️ 沙箱 dev critical: 重写 Origin 头。
+    // Trae 代理 → 沙箱 :16666 → :2025 backend，浏览器 Origin 是 trae.cn 域名，
+    // :2025 的 CORS 白名单不含 trae.cn → 403 Forbidden → 前端 fetch /api/* 失败。
+    // 解法：把 Origin 改成 :16666 (白名单内) 让 :2025 放行。
+    // 副作用风险：0 — backend 只看 Origin 判断跨域，不依赖 Origin 做其他逻辑
+    // (token 鉴权走 Authorization header / cookie，不走 Origin)。
+    proxyReq.setHeader('Origin', 'http://localhost:16666')
+
     const host = String(req.headers.host || '')
     const xfpRaw = req.headers['x-forwarded-proto']
     let xfpFirstStr: string = ''
