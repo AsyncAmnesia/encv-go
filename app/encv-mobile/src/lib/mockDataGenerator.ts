@@ -42,7 +42,15 @@ export interface GenerateResult {
 function randomBytes(n: number): Uint8Array {
   const buf = new Uint8Array(n)
   if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-    crypto.getRandomValues(buf)
+    // crypto.getRandomValues 单次最多 65536 字节（Web Crypto 硬限制）
+    // 超过必须分块调用，否则抛 QuotaExceededError
+    const CHUNK = 65536
+    let offset = 0
+    while (offset < n) {
+      const len = Math.min(CHUNK, n - offset)
+      crypto.getRandomValues(buf.subarray(offset, offset + len))
+      offset += len
+    }
   } else {
     for (let i = 0; i < n; i++) buf[i] = Math.floor(Math.random() * 256)
   }

@@ -24,9 +24,10 @@ import {
   type MockFileSpec,
 } from '../src/lib/mockDataGenerator'
 
-// ⚠️ 必须与 ecosystem.config.cjs ENCV_MOCK_ROOT + usePathResolver.encv-automation 命名空间一致
-// 根因复盘：2026-06-10 路径不一致 bug → 三处必须同步
-const MOCK_ROOT = process.env.ENCV_MOCK_ROOT || '/storage/emulated/0/encv-automation'
+// 真机规范：mock 数据直接写在 servingDir 下（mobile.server.dir=/storage/emulated/0）
+// ⚠️ 不要用 encv-automation 子目录，那是「自动化测试入口」的命名空间，
+//    不影响「启动后 mock 就位」（service-guard 检查的是 servingDir 根下的 01-plain-media）
+const MOCK_ROOT = process.env.ENCV_MOCK_ROOT || '/storage/emulated/0'
 let root = MOCK_ROOT
 let genType = 'all' as string
 let fileCount = 0

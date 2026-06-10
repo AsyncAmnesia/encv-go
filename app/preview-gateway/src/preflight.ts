@@ -50,7 +50,7 @@ function runSync(cmd: string, args: string[], cwd: string, env: NodeJS.ProcessEn
  *   2. 若 ${ENCV_MOCK_ROOT}/01-plain-media 不存在 → 跑 npx tsx scripts/generate-mock-files.ts
  */
 export async function ensureMockData(mobileDir: string): Promise<void> {
-  const mockRoot = process.env.ENCV_MOCK_ROOT ?? '/storage/emulated/0/encv-automation'
+  const mockRoot = process.env.ENCV_MOCK_ROOT ?? '/storage/emulated/0'
   log(`mock root: ${mockRoot}`)
 
   // 1. 确保目录存在
