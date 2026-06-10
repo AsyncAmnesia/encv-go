@@ -16,23 +16,13 @@
  * 如果不一致 → "source file not found" 错误（用户报告的问题）
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { resolve, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import {
   collectSpecs,
 } from '@/lib/mockDataGenerator'
 
-// 测试代码运行在 vitest (Node) 环境 — 用 ESM 静态 import 替代 require
-// （避免 vue-tsc 报 TS2580: Cannot find name 'require'，
-//  因为 tsconfig.json 没装 @types/node）
-//
-// __dirname 在 ESM 下不可用，用 import.meta.url 推导
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
-// 单元测试在 vitest 编译后位于 dist/ 或临时目录，向上回溯到仓库根
-// src/composables/__tests__/  → 上 3 级 = 仓库根
-const REPO_ROOT = resolve(__dirname, '..', '..', '..', '..')
+// 注：「跨链路配置文件防回归」测试已移出到 __tests__/path-chain-config-regression.test.ts
+//  （那里用 node:fs/path/url 协议读真实文件验证 ENCV_MOCK_ROOT 一致性）。
+// 本文件不再需要 node: 协议 — vue-tsc --noEmit 不会报 TS2307（不装 @types/node）。
 
 // mock crypto.getRandomValues 以避免 1MB 文件在 jsdom 中超出配额
 beforeEach(() => {
@@ -121,55 +111,8 @@ describe('端到端路径一致性测试', () => {
       expect(DEFAULT_AUTOMATION_SOURCE.startsWith(mockRoot.replace(/\/$/, ''))).toBe(true)
     })
 
-    /**
-     * ⚠️ 关键回归测试：三处 ENCV_MOCK_ROOT 必须完全一致
-     *
-     * 链路：
-     *   A. ecosystem.config.cjs 注入的 env
-     *   B. generate-mock-files.ts 的 fallback 常量
-     *   C. useAutomationTests.ts 的 DEFAULT_AUTOMATION_SOURCE 父目录
-     *
-     * 如果任一处漂移 → Mock 写盘路径 ≠ 任务读盘路径 → source file not found
-     *
-     * 根因复盘：2026-06-10 之前 B/C 不一致（B=/storage/emulated/0，C=/storage/emulated/0/encv-automation）
-     */
-    it('【防回归】ecosystem.config.cjs ENCV_MOCK_ROOT 必须含 encv-automation', () => {
-      // 用 node:fs 直读配置文件（vue-tsc 不识别 require 全局符号，ESM 替代）
-      const cfg = readFileSync(resolve(REPO_ROOT, 'ecosystem.config.cjs'), 'utf-8')
-      // 提取第一个 ENCV_MOCK_ROOT: '...' 值
-      const m = cfg.match(/ENCV_MOCK_ROOT:\s*['"]([^'"]+)['"]/)
-      expect(m, 'ENCV_MOCK_ROOT must be present in ecosystem.config.cjs').toBeTruthy()
-      expect(m![1]).toBe('/storage/emulated/0/encv-automation')
-    })
-
-    it('【防回归】generate-mock-files.ts 的 fallback 必须含 encv-automation', () => {
-      const src = readFileSync(
-        resolve(REPO_ROOT, 'app/encv-mobile/scripts/generate-mock-files.ts'),
-        'utf-8',
-      )
-      // 提取 MOCK_ROOT = process.env.ENCV_MOCK_ROOT || '...' 字符串
-      const m = src.match(/MOCK_ROOT\s*=\s*process\.env\.ENCV_MOCK_ROOT\s*\|\|\s*['"]([^'"]+)['"]/)
-      expect(m, 'MOCK_ROOT fallback must be present in generate-mock-files.ts').toBeTruthy()
-      expect(m![1]).toBe('/storage/emulated/0/encv-automation')
-    })
-
-    it('【防回归】三处 ENCV_MOCK_ROOT 必须完全一致', () => {
-      const cfg = readFileSync(resolve(REPO_ROOT, 'ecosystem.config.cjs'), 'utf-8')
-      const script = readFileSync(
-        resolve(REPO_ROOT, 'app/encv-mobile/scripts/generate-mock-files.ts'),
-        'utf-8',
-      )
-
-      const cfgMatch = cfg.match(/ENCV_MOCK_ROOT:\s*['"]([^'"]+)['"]/)
-      const scriptMatch = script.match(/MOCK_ROOT\s*=\s*process\.env\.ENCV_MOCK_ROOT\s*\|\|\s*['"]([^'"]+)['"]/)
-
-      expect(cfgMatch![1]).toBe(scriptMatch![1])
-
-      // 第三处：DEFAULT_AUTOMATION_SOURCE 的父目录
-      const expectedParent = '/storage/emulated/0/encv-automation'
-      expect(cfgMatch![1]).toBe(expectedParent)
-      expect(scriptMatch![1]).toBe(expectedParent)
-    })
+    // ⚠️ 三个「跨链路 ENCV_MOCK_ROOT 一致性」防回归测试已移出到
+    //   __tests__/path-chain-config-regression.test.ts（避免 vue-tsc 扫到 node:fs 协议）
   })
 
   // ==================== 阶段 2：Mock 文件生成路径 ====================
