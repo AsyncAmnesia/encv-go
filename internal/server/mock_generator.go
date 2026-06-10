@@ -6,8 +6,8 @@
 //   POST /api/mock/reset    { root }         → JSON { removed }
 //
 // 用途：自动化测试入口在前端触发时，需要把 mock 文件写入到：
-//   - dev 模式：<project>/__mock_data__/01-plain-media 等
-//   - 真机：    /storage/emulated/0/encv-automation/01-plain-media 等
+//   - 真机 / dev preview：<servingDir>/01-plain-media/ 等
+//   - 自动化测试命名空间：<servingDir>/encv-automation/01-plain-media/ 等
 // 前端在浏览器/真机 WebView 没有权限直写这些目录，必须走后端。
 //
 // 安全：root 必须在白名单前缀内（见 validateMockRoot），否则 403。
@@ -51,14 +51,17 @@ import (
 // ════════════════════════════════════════════════════════════════════
 
 // mockRootAllowList 是允许写入的根目录白名单（绝对路径前缀）。
-// dev 模式：项目根 + "__mock_data__/"
-// 真机：/storage/emulated/0/encv-automation/
+// 2026-06-10 改造：删除 dev 模式相对路径（`__mock_data__`），全部走绝对路径。
+//   1. /storage/emulated/0（servingDir 根，给 Files 浏览器用）
+//   2. /storage/emulated/0/encv-automation（自动化测试命名空间，withSafetyBoundary 改写后的目标）
+//   3. /sdcard/encv-automation（真机 symlink 兼容）
+//   4. /data/local/tmp/encv-automation（调试用）
 // 其他路径一律 403。
 var mockRootAllowList = []string{
-	"__mock_data__",                                // dev: 相对项目根（运行时被转为绝对路径）
-	"/storage/emulated/0/encv-automation",         // 真机
-	"/sdcard/encv-automation",                     // 真机 symlink 兼容
-	"/data/local/tmp/encv-automation",             // 调试用
+	"/storage/emulated/0",
+	"/storage/emulated/0/encv-automation",
+	"/sdcard/encv-automation",
+	"/data/local/tmp/encv-automation",
 }
 
 // mockGeneratorRequest 是 POST /api/mock/generate 的请求体
@@ -168,6 +171,18 @@ func generateMockSpecs(typeName string) []mockFileSpec {
 //   - event: progress  data: { "relativePath": "...", "size": N }
 //   - event: done      data: { "count": N, "totalSize": M }
 func (s *Server) handleMockGenerateGin(c *gin.Context) {
+	// 🆕 2026-06-10：显式意图确认（防擅自生成）
+	//  - 防止 preflight / 第三方爬虫 / 误调触发数据生成
+	//  - 前端 UI 按钮自动带 X-Confirm-Mock-Mutation: yes
+	//  - Node CLI 已废弃，不存在自动调用方
+	if c.GetHeader("X-Confirm-Mock-Mutation") != "yes" {
+		slog.Warn("Mock generate rejected: missing confirm header")
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "X-Confirm-Mock-Mutation header required (UI 按钮自动带；防擅自生成)",
+		})
+		return
+	}
+
 	var req mockGeneratorRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body: " + err.Error()})

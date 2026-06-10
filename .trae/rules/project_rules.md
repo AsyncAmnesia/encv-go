@@ -429,14 +429,16 @@ curl -s http://localhost:5173/src/views/Tasks.vue | grep "predictPlugin"
 
 ### Mock-data 流向（防混淆）
 
-> **仓库内不存在 mock-data 真身**。所有 mock 都在设备运行时路径 `/storage/emulated/0/`，由 `app/encv-mobile/scripts/generate-mock-files.ts`（TypeScript）动态生成。
+> **仓库内不存在 mock-data 真身**。所有 mock 都在设备运行时路径 `/storage/emulated/0/`，由**后端 API `/api/mock/generate`**（带 `X-Confirm-Mock-Mutation: yes` header）动态生成。
+>
+> 2026-06-10 改造：Node CLI 脚本 `app/encv-mobile/scripts/generate-mock-files.ts` 已废弃（与后端 API 重复入口）。
 
 | 真实路径 | 生成器 | 用途 |
 |---------|--------|------|
-| `/storage/emulated/0/01-plain-media/*` | `generate-mock-files.ts` | 视频/图片/音频/文档 |
-| `/storage/emulated/0/02-alist-encrypt/*` | `generate-mock-files.ts` | 小型加密夹具 |
-| `/storage/emulated/0/03-encv-containers/*` | `generate-mock-files.ts` | ENCV v4 容器 |
-| `/storage/emulated/0/04-boundary-test/*` | `generate-mock-files.ts` | 边界用例 |
+| `/storage/emulated/0/01-plain-media/*` | 后端 `POST /api/mock/generate` | 视频/图片/音频/文档 |
+| `/storage/emulated/0/02-alist-encrypt/*` | 后端 `POST /api/mock/generate` | 小型加密夹具 |
+| `/storage/emulated/0/03-encv-containers/*` | 后端 `POST /api/mock/generate` | ENCV v4 容器 |
+| `/storage/emulated/0/04-boundary-test/*` | 后端 `POST /api/mock/generate` | 边界用例 |
 
 **禁止**重新引入 `cmd/encv-mobile/mock-data/` 目录或类似仓库内 fixture（运行时生成即可）。
 

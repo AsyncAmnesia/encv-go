@@ -434,11 +434,11 @@ function buildChildSpecs(paths: ReturnType<typeof resolvePaths>): ChildSpec[] {
       // env 注入铁律：ENCV_DEV_PREVIEW=1 / ENCV_MOBILE=1 必须传递
       // （go run 路径下 .air-run.sh 兜底已删除，pm2 ecosystem.config.cjs env
       //  → preview-gateway process.env → air → go run → encv binary 一路继承）
+      // 2026-06-10 改造：删 ENCV_MOCK_ROOT（mobile overlay 直接决定 servingDir，不需要这个 env 中转）
       env: {
         ...process.env,
         ENCV_DEV_PREVIEW: process.env.ENCV_DEV_PREVIEW ?? '1',
         ENCV_MOBILE: process.env.ENCV_MOBILE ?? '1',
-        ENCV_MOCK_ROOT: process.env.ENCV_MOCK_ROOT ?? '/storage/emulated/0',
       },
       cwd: paths.repoRoot,
       readyUrl: 'http://127.0.0.1:2025/api/config',
@@ -511,12 +511,10 @@ async function main(): Promise<void> {
   // ── Step 1: 路径解析（fail-fast）──
   const paths = resolvePaths()
 
-  // ── Step 2: preflight（mock 数据生成）──
-  if (process.env.SKIP_MOCK_GEN !== '1') {
-    await ensureMockData(paths.mobileDir)
-  } else {
-    log('SKIP_MOCK_GEN=1, skipping mock data generation')
-  }
+  // ── Step 2:（已废弃）preflight mock 生成 ──
+  // 2026-06-10 改造：Node CLI 脚本已删，mock 数据由用户主动调后端 /api/mock/generate。
+  // ensureMockData 保留为 noop 桩（仅打 log）。
+  await ensureMockData(paths.mobileDir)
 
   // ── Step 3: 启动子进程 ──
   childrenManager = new ChildrenManager()

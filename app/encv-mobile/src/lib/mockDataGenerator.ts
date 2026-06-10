@@ -1,12 +1,14 @@
 /**
  * Mock 数据生成器（纯函数模块）
  *
- * 这是从 scripts/generate-mock-files.ts 提取的纯函数版本，不依赖 fs / child_process，
- * 可被前端 / 后端 / CLI 任何环境 import。
+ * 这是纯函数版本，不依赖 fs / child_process，可被前端 / 后端任何环境 import。
  *
  * - 前端：通过 POST /api/mock/generate 把 Uint8Array 发给后端写盘
  * - 后端：直接调用本模块的函数写文件
- * - CLI：scripts/generate-mock-files.ts 改写为 import 此模块
+ * - 单元测试：直接调 create*() 验证字节
+ *
+ * 2026-06-10 note：Node CLI 脚本 scripts/generate-mock-files.ts 已废弃（重复入口被砍）。
+ *               本模块继续被前端 / 后端 / 单元测试用，作为唯一 mock 字节定义源。
  *
  * 设计原则：
  * - 所有 create*() 函数返回 Uint8Array（pure，无副作用）
@@ -98,7 +100,7 @@ function joinPath(...parts: string[]): string {
 }
 
 // 注：mockDataGenerator 自身是纯算法 + 可选 writeToDisk 回调的库
-// 父目录建在调用方（scripts/generate-mock-files.ts 是 Node 环境，自己有 ensureParentDir）
+// 父目录建在调用方（后端 mock_generator.go 走 os.MkdirAll）
 // 这里不放 Node 专属 fs 代码（避免污染前端 bundle + 避开 vue-tsc TS2580: require 找不到）
 
 // ==================== JPEG ====================
@@ -644,7 +646,7 @@ export async function generateMockFiles(opts: GenerateOptions): Promise<Generate
   for (const s of specs) {
     if (opts.writeToDisk) {
       const fullPath = joinPath(opts.root, s.relativePath)
-      // 父目录由调用方保证（Node 端 scripts/generate-mock-files.ts 内有 ensureParentDir）
+      // 父目录由调用方保证（后端 mock_generator.go 走 os.MkdirAll）
       await opts.writeToDisk(fullPath, s.data)
     }
     count++

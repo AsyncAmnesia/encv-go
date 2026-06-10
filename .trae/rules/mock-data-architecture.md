@@ -1,17 +1,18 @@
-# Mock 数据生成铁律（多源同步 / 防退化）
+# Mock 数据生成铁律（多源同步 / 防退化 / 防擅自生成）
 
-> **核心原则：3 套 mock 生成逻辑必须同源 —— 后端 Go / 前端 TS / CLI 脚本共享字节或共享逻辑源。**
+> **核心原则：2 套 mock 生成逻辑必须同源 —— 后端 Go / 前端 TS 共享字节或共享逻辑源。**
 > **禁止任何一处独自写裸 header 字节冒充"合法媒体"。**
+> **任何调后端 /api/mock/* 都必须显式带 `X-Confirm-Mock-Mutation: yes` header（防擅自生成）。**
 
 ---
 
-## 一、3 套实现清单
+## 一、2 套实现清单（2026-06-10 改造）
 
 | 位置 | 用途 | 现状 |
 |------|------|------|
-| [app/encv-mobile/src/lib/mockDataGenerator.ts](file:///workspace/app/encv-mobile/src/lib/mockDataGenerator.ts) `createMP4/MKV/MP3/FLAC` | 前端运行时调用 | ✅ 内嵌 base64 合法字节（4.8KB mp4 / 170B mkv / 45KB mp3 / 94B flac） |
-| [app/encv-mobile/scripts/generate-mock-files.ts](file:///workspace/app/encv-mobile/scripts/generate-mock-files.ts) `createValidMP4/MKV/MP3/FLAC` | Node CLI 调 ffmpeg 生成 | ✅ ffmpeg 优先生成可播放媒体 + base64 fallback |
-| **[internal/server/mock_generator.go](file:///workspace/internal/server/mock_generator.go) `minimalMP4/MKV/MP3/FLAC`** | **后端 API 调给开发者选项** | **❌ 历史：36B 假 mp4（只有 ftyp+moov+mdat header，无视频帧）** |
+| [app/encv-mobile/src/lib/mockDataGenerator.ts](file:///workspace/app/encv-mobile/src/lib/mockDataGenerator.ts) `createMP4/MKV/MP3/FLAC` | 前端运行时调用 / 单元测试 | ✅ 内嵌 base64 合法字节（4.8KB mp4 / 170B mkv / 45KB mp3 / 94B flac） |
+| **[internal/server/mock_generator.go](file:///workspace/internal/server/mock_generator.go) `minimalMP4/MKV/MP3/FLAC`** | **后端 API 调给开发者选项** | **✅ ffmpeg 优先 + base64 fallback**（与前端 mockDataGenerator.ts 字节 1:1 同步） |
+| ❌ ~~Node CLI `app/encv-mobile/scripts/generate-mock-files.ts`~~ | 2026-06-10 **已删除** | 与后端 API 重复入口，废弃。Node 端需要 mock 文件请直接调后端 API。 |
 
 ## 二、2026-06-10 修复
 
@@ -173,13 +174,37 @@ registry.go:514 报 "no suitable plugin found to decrypt container"
 
 ## 七、调用入口
 
-| 入口 | 走哪 | 文件 |
+### 7.1 显式意图确认（防擅自生成）—— 🆕 2026-06-10 铁律
+
+**后端**：
+- `POST /api/mock/generate`：必须带 `X-Confirm-Mock-Mutation: yes` header，否则 403。
+- `POST /api/mock/reset`：必须带 `X-Confirm-Mock-Mutation: yes` header，否则 403。
+- 校验实现：[internal/server/mock_generator.go:handleMockGenerateGin](file:///workspace/internal/server/mock_generator.go) / handleMockResetGin。
+
+**前端**：
+- [src/api/mockGenerator.ts](file:///workspace/app/encv-mobile/src/api/mockGenerator.ts) `generateMockFilesViaBackend` / `resetMockFilesViaBackend` 自动带 header。
+- 第三方爬虫 / 误调 / curl 没带 header → 403。
+
+### 7.2 调用入口清单（2026-06-10 收口）
+
+| 入口 | 走哪 | 备注 |
 |------|------|------|
 | 开发者选项"生成 Mock"按钮 | 后端 API `/api/mock/generate` | [src/views/AutomationTestsDetail.vue](file:///workspace/app/encv-mobile/src/views/AutomationTestsDetail.vue) → `generateMockFilesViaBackend` |
 | 自动化测试 setup 阶段 | 后端 API | 同上 |
 | Workflow Dashboard "Mock Server Files" | 后端 API | [src/views/WorkflowDashboard.vue](file:///workspace/app/encv-mobile/src/views/WorkflowDashboard.vue) |
-| Node CLI（离线生成） | [scripts/generate-mock-files.ts](file:///workspace/app/encv-mobile/scripts/generate-mock-files.ts) | 调试 / 集成测试用 |
-| 前端运行时降级 | [src/lib/mockDataGenerator.ts](file:///workspace/app/encv-mobile/src/lib/mockDataGenerator.ts) | 单元测试 / Web preview 用 |
+| ~~Node CLI `scripts/generate-mock-files.ts`~~ | 已删除 | 2026-06-10 砍掉（与后端 API 重复入口） |
+| ~~Vite plugin `mock/index.ts`~~ | 已删除 | dev mock 中间件也调 CLI，CLI 删后整个 Vite plugin 删 |
+| ~~gateway preflight `ensureMockData`~~ | noop 桩 | [app/preview-gateway/src/preflight.ts](file:///workspace/app/preview-gateway/src/preflight.ts) 改 noop，gateway 启动不再自动写盘 |
+| 前端运行时降级（单元测试） | [src/lib/mockDataGenerator.ts](file:///workspace/app/encv-mobile/src/lib/mockDataGenerator.ts) | Web preview 单元测试用 |
+
+### 7.3 service-guard 不再查 mock 数据（2026-06-10 简化）
+
+[internal/server/mobile_api.go:handleServiceGuardGin](file:///workspace/internal/server/mobile_api.go) 2026-06-10 改造：
+- ❌ 删 01-plain-media marker 检查（4 子目录 + 文件数）
+- ❌ 删 `mockScript` / `previewScript` 字段
+- ✅ 只查 `servingDir === /storage/emulated/0`（mobile overlay 标准路径）
+
+mock 数据是否就位不再影响 service-guard 判定。用户没主动按"生成 Mock"按钮时目录为空是预期行为。
 
 ---
 
@@ -188,4 +213,18 @@ registry.go:514 报 "no suitable plugin found to decrypt container"
 > **任何带 "minimal*" 前缀的函数（`minimalMP4` / `minimalPNG` / `minimalMP3` 等）都不能只生成 header 字节。**
 > **header-only 的字节会让所有依赖完整 box tree 的下游（解码器、解密器、AI 解析器）静默失败。**
 
-如需最简"合法"字节，使用 [scripts/generate-mock-files.ts](file:///workspace/app/encv-mobile/scripts/generate-mock-files.ts) `createValid*` 或 ffmpeg，不允许 hand-roll header。
+如需最简"合法"字节，使用 ffmpeg 或 [src/lib/mockDataGenerator.ts](file:///workspace/app/encv-mobile/src/lib/mockDataGenerator.ts) `createMP4/MKV/MP3/FLAC`，不允许 hand-roll header。
+
+---
+
+## 九、历史：`__mock_data__` 已废弃（2026-06-10）
+
+dev 模式相对路径隔离层 `<project>/__mock_data__/` 已从以下位置全链路清除：
+- 后端 `mockRootAllowList`（[internal/server/mock_generator.go](file:///workspace/internal/server/mock_generator.go)）—— 不再含 `"__mock_data__"` 项
+- 后端 `validateMockRoot` —— 拒绝非绝对路径（dev 模式相对路径直接 400）
+- 后端测试用例 [internal/server/mock_generator_test.go](file:///workspace/internal/server/mock_generator_test.go)
+- 物理目录 `/workspace/__mock_data__/`
+- 前端注释 [src/api/mockGenerator.ts](file:///workspace/app/encv-mobile/src/api/mockGenerator.ts) / [src/lib/mockDataGenerator.ts](file:///workspace/app/encv-mobile/src/lib/mockDataGenerator.ts) / [src/composables/useAutomationTests.ts](file:///workspace/app/encv-mobile/src/composables/useAutomationTests.ts)
+- 跨层回归测试 [__tests__/path-chain-config-regression.test.ts](file:///workspace/app/encv-mobile/__tests__/path-chain-config-regression.test.ts)
+
+**mockRoot 必须是绝对路径**，允许前缀（白名单）：`/storage/emulated/0`、`/storage/emulated/0/encv-automation`、`/sdcard/encv-automation`、`/data/local/tmp/encv-automation`。

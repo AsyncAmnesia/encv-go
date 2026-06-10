@@ -254,8 +254,8 @@ export default {
     'containerVersion.recommended': '推荐',
     'containerVersion.deprecated': '已弃用',
 
-    'app.serviceGuardTitle': 'Capacitor 预览启动失败',
-    'app.serviceGuardMessage': '后端服务目录未包含 mock 数据（缺少 01-plain-media）。Capacitor 预览需要后端 server.dir 指向 mock 数据目录。正确启动步骤：\n\n1. 生成 mock 数据：\ncd app/encv-mobile && npx tsx scripts/generate-mock-files.ts --dir /storage/emulated/0\n\n2. 启动后端（mobile overlay 自动生效）：\nENCV_DEV_PREVIEW=1 go run ./cmd/encv-mobile/\n\n3. 启动 Vite 前端：\nnpx vite --host 0.0.0.0\n\n注意：不要用 ENCV_CONFIG_PATH，不要改 config.user.json，不要用 npx cap serve。',
+    'app.serviceGuardTitle': '后端 servingDir 校验失败',
+    'app.serviceGuardMessage': '后端 servingDir 不是 mobile 真机/预览标准路径 /storage/emulated/0。Capacitor 预览需要 ApplyMobileOverlay 生效。正确启动步骤：\n\n1. 用 mobile overlay 启动（推荐）：\nmake dev-mobile\n\n2. 或手工等价命令：\nENCV_MOBILE=1 ENCV_DEV_PREVIEW=1 go run ./cmd/encv start\n\n注意：不要用 ENCV_CONFIG_PATH，不要改 config.user.json，不要用 npx cap serve。',
     'app.serviceGuardRetry': '重试检测',
   },
   en: {
@@ -513,8 +513,8 @@ export default {
     'containerVersion.recommended': 'Recommended',
     'containerVersion.deprecated': 'Deprecated',
 
-    'app.serviceGuardTitle': 'Capacitor Preview Failed to Start',
-    'app.serviceGuardMessage': 'Backend service directory does not contain mock data (missing 01-plain-media). Capacitor preview requires server.dir to point to mock data. Correct startup steps:\n\n1. Generate mock data:\ncd app/encv-mobile && npx tsx scripts/generate-mock-files.ts --dir /storage/emulated/0\n\n2. Start backend (mobile overlay auto-applies):\nENCV_DEV_PREVIEW=1 go run ./cmd/encv-mobile/\n\n3. Start Vite frontend:\nnpx vite --host 0.0.0.0\n\nNote: Do NOT use ENCV_CONFIG_PATH, do NOT modify config.user.json, do NOT use npx cap serve.',
+    'app.serviceGuardTitle': 'Backend servingDir Validation Failed',
+    'app.serviceGuardMessage': 'Backend servingDir is not the mobile device/preview standard path /storage/emulated/0. Capacitor preview requires ApplyMobileOverlay to be active. Correct startup steps:\n\n1. Start with mobile overlay (recommended):\nmake dev-mobile\n\n2. Or manual equivalent:\nENCV_MOBILE=1 ENCV_DEV_PREVIEW=1 go run ./cmd/encv start\n\nNote: Do NOT use ENCV_CONFIG_PATH, do NOT modify config.user.json, do NOT use npx cap serve.',
     'app.serviceGuardRetry': 'Retry',
   },
 }

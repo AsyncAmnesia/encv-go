@@ -74,6 +74,20 @@ export interface GenerateTestCaseOptions {
   includeDeprecated?: boolean
 }
 
+/**
+ * 自动化测试默认源文件。
+ *
+ * 真实运行时由后端 /api/mock/generate 生成（用户主动按 UI 按钮 / 直接 curl），
+ * 写到 /storage/emulated/0/encv-automation/01-plain-media/ 命名空间。
+ *
+ * 路径派生：
+ *   - mockRoot = DEFAULT_AUTOMATION_SOURCE.split('/').slice(0, 5).join('/') + '/'
+ *             = /storage/emulated/0/encv-automation/
+ *   - withSafetyBoundary({forceAutomation: true}) 强制改写 /storage/emulated/0/* 到 encv-automation 命名空间
+ *
+ * 2026-06-10 note：Node CLI 脚本 scripts/generate-mock-files.ts 已废弃，但路径派生逻辑保留
+ *   （因为 servedir 仍来自 mobile overlay = /storage/emulated/0，encv-automation 子目录约定不变）。
+ */
 export const DEFAULT_AUTOMATION_SOURCE = '/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4'
 
 export function useAutomationTests() {

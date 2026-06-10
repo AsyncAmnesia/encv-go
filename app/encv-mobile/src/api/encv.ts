@@ -381,10 +381,11 @@ export async function uploadFile(targetPath: string, file: File): Promise<FileIt
 export interface ServiceGuardResult {
   ready: boolean
   servingDir: string
-  marker?: string
-  found?: string[]
+  expected: string
+  envDevPreview?: boolean
+  envMobile?: boolean
   detail?: string
-  hint?: string
+  remediation?: Array<{ scenario: string; command?: string; steps?: string[]; explain?: string }>
   error?: string
 }
 

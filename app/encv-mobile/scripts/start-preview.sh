@@ -60,7 +60,7 @@ step() { echo ""; echo "==> $*"; }
 # ---------- Step 0: 停止残留 ENCV 进程 ----------
 # ⚠️ 必须精确到「主预览」端口 (2025/8100) — 不能误杀 plugin-openlist-vite (:5174)
 #    和 preview-gateway (:16666)
-step "0/6 停止残留 ENCV 主预览进程 (:2025 / :8100)"
+step "0/5 停止残留 ENCV 主预览进程 (:2025 / :8100)"
 pkill -x air 2>/dev/null && echo "    killed air" || true
 pkill -f '^./tmp/encv' 2>/dev/null && echo "    killed ./tmp/encv" || true
 pkill -f '/tmp/encv start' 2>/dev/null && echo "    killed /tmp/encv start" || true
@@ -90,36 +90,26 @@ fi
 sleep 1
 
 # ---------- Step 1: 确保 node_modules 就绪 ----------
-step "1/6 确保 ${MOBILE_DIR}/node_modules 就绪（走 MCP 代理）"
+step "1/5 确保 ${MOBILE_DIR}/node_modules 就绪（走 MCP 代理）"
 cd "${MOBILE_DIR}"
 if [[ ! -d "node_modules/vite" ]]; then
-  echo "    node_modules 缺失，npm install ..."
-  npm install --no-audit --no-fund --prefer-offline
+    echo "    node_modules 缺失，npm install ..."
+    npm install --no-audit --no-fund --prefer-offline
 fi
 cd "${REPO_ROOT}"
 
-# ---------- Step 2: 生成 mock 数据 ----------
-# 沙箱首次启动时 ${MOCK_DIR} 还不存在（root 权限下可建），先 mkdir 再生成。
-if [[ ! -d "${MOCK_DIR}" ]]; then
-  step "2a/6 创建 mock 根目录 ${MOCK_DIR}（沙箱首次启动）"
-  mkdir -p "${MOCK_DIR}" || { echo "❌ 无法创建 ${MOCK_DIR}" >&2; exit 1; }
-fi
-step "2b/6 生成 mock 数据到 ${MOCK_DIR}"
-cd "${MOBILE_DIR}"
-npx tsx scripts/generate-mock-files.ts
-cd "${REPO_ROOT}"
-
-if [[ ! -d "${MOCK_DIR}/01-plain-media" ]]; then
-  echo "❌ 错误：mock 生成后仍缺少 ${MOCK_DIR}/01-plain-media 标记目录" >&2
-  exit 1
-fi
+# ---------- Step 2:（已废弃）生成 mock 数据 ----------
+# 2026-06-10 改造：Node CLI 脚本已删。mock 数据改由后端 /api/mock/generate 提供（用户主动点 UI 按钮）。
+# service-guard 不再检查 01-plain-media marker，只查 servingDir == /storage/emulated/0。
+# 用户没主动按"生成 Mock"按钮时，目录是空的——这是预期行为。
+# 注意：不在这里 mkdir /storage/emulated/0，由 backend 启动时 mobile overlay 验证目录可读即可。
 
 # ---------- Step 3: air 启动后端（前台子进程） ----------
 # env 注入策略：
 #   - pm2 监管：ecosystem.config.cjs 已注入 ENCV_DEV_PREVIEW=1 / ENCV_MOBILE=1
 #   - 裸脚本用户：.air-run.sh 末尾 `export ENCV_DEV_PREVIEW=:-1` 兜底
 # 这里不重复 inline 设，避免在 air rebuild 时不稳定。
-step "3/6 启动后端（air 监视重载，ENCV_DEV_PREVIEW/ENCV_MOBILE 由 .air-run.sh 兜底）"
+step "2/5 启动后端（air 监视重载，ENCV_DEV_PREVIEW/ENCV_MOBILE 由 .air-run.sh 兜底）"
 cd "${REPO_ROOT}"
 air &
 AIR_PID=$!
@@ -219,8 +209,8 @@ cat <<EOF
 ========================================
 EOF
 
-# ---------- Step 6: 保持前台运行（等待子进程或信号） ----------
-step "6/6 保持前台运行（按 Ctrl+C 停止）"
+# ---------- Step 5: 保持前台运行（等待子进程或信号） ----------
+step "5/5 保持前台运行（按 Ctrl+C 停止）"
 echo "    air pid=${AIR_PID}  vite pid=${VITE_PID}"
 echo "    等待子进程..."
 

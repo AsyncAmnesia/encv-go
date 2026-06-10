@@ -303,7 +303,8 @@ async function runServiceGuard(): Promise<void> {
     if (e?.code === 'SERVICE_GUARD_BLOCKED' || e instanceof ServiceGuardError) {
       const payload: ServiceGuardResult = e.payload || {}
       serviceGuardDetail.value = payload.detail || e.message || 'Unknown guard error'
-      serviceGuardHint.value = payload.hint || ''
+      // 2026-06-10 改造：service-guard 不再返回 hint 字段（remediation 是结构化数组，不是单 string）
+      serviceGuardHint.value = ''
       serviceGuardBlocked.value = true
       throw e
     }

@@ -74,16 +74,11 @@ module.exports = {
         SPAWN_VITE: '1',        // encv-mobile Vite (:8100)
         SPAWN_PLUGIN_VITE: '0', // plugin-openlist-web Vite (:5174)，按需 1
         SPAWN_OPENLIST: '0',    // OpenList fork (:5244)，按需 1
-        SKIP_MOCK_GEN: '0',     // 1=跳过 mock 数据生成（CI 或预热场景）
         // ── env 注入铁律（L1 pm2 注入） ──
         // 透传给 air 子进程，触发 ApplyMobileOverlay
         // (internal/config/config.go:292-294)
         ENCV_DEV_PREVIEW: '1',
         ENCV_MOBILE: '1',
-        // 真机规范：mock 数据直接写在 servingDir 下（mobile.server.dir=/storage/emulated/0）
-        // ⚠️ 不要用 encv-automation 子目录，那是「自动化测试入口」的命名空间，
-        //    不影响「启动后 mock 就位」（service-guard 检查的是 servingDir 根下的 01-plain-media）
-        ENCV_MOCK_ROOT: '/storage/emulated/0',
       },
       // 网关本体轻量；子进程会跑出来几百 MB（Go 编译 + Vite + node_modules）
       max_memory_restart: '256M',

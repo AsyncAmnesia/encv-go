@@ -1,16 +1,19 @@
 /**
  * path-chain-config-regression.test.ts
  *
- * ⚠️ 关键回归测试：跨链路 ENCV_MOCK_ROOT 一致性
+ * ⚠️ 关键回归测试：mock 数据根路径链路一致性
  *
  * 链路：
- *   A. ecosystem.config.cjs 注入的 env（pm2 启动时给 mock 脚本用）
- *   B. scripts/generate-mock-files.ts 的 fallback 常量
- *   C. encv-mobile src 内 DEFAULT_AUTOMATION_SOURCE 的父目录
+ *   A. 自动化测试 sourcePath 派生 = useAutomationTests.DEFAULT_AUTOMATION_SOURCE
+ *      父目录 = `${servingDir}/encv-automation/`，即 /storage/emulated/0/encv-automation/
+ *   B. withSafetyBoundary({forceAutomation: true}) 把 /storage/emulated/0/* 强制改写到 encv-automation 命名空间
  *
  * 如果任一处漂移 → Mock 写盘路径 ≠ 任务读盘路径 → "source file not found" 错误
- * （用户报告的问题：2026-06-10 之前 B/C 不一致，B=/storage/emulated/0，
- *  C=/storage/emulated/0/encv-automation）
+ *
+ * 2026-06-10 改造：
+ *   - 删 ENCV_MOCK_ROOT 相关测试（ecosystem.config.cjs 不再注入该 env，由 mobile overlay 直接决定 servingDir）
+ *   - 删 generate-mock-files.ts 相关测试（Node CLI 脚本已废弃）
+ *   - 保留 DEFAULT_AUTOMATION_SOURCE 父目录测试（自动化测试 sourcePath 命名空间硬约束）
  *
  * 文件位置说明：此文件在 /workspace/app/encv-mobile/__tests__/（仓库根级），
  * 不在 src/ 里 — 故 tsconfig.json 的 include 范围（src 之下的 ts）不会扫它，
@@ -34,45 +37,34 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 const REPO_ROOT = resolve(__dirname, '..', '..', '..')
 
-// ⚠️ 硬约束：修改前必须先看 usePathResolver.withSafetyBoundary + mobile overlay
-//   这是 mobile 端 mock 路径链路 A：servingDir/server.dir → task sourcePath 的唯一根
-const EXPECTED_MOCK_ROOT = '/storage/emulated/0/encv-automation'
+// ⚠️ 硬约束：自动化测试 sourcePath 父目录（withSafetyBoundary 改写后的目标 namespace）
+const EXPECTED_AUTOMATION_NS = '/storage/emulated/0/encv-automation'
 
 describe('path-chain — 配置文件防回归（跨链路一致）', () => {
-  it('【防回归】ecosystem.config.cjs ENCV_MOCK_ROOT 必须 = /storage/emulated/0/encv-automation', () => {
-    const cfg = readFileSync(resolve(REPO_ROOT, 'ecosystem.config.cjs'), 'utf-8')
-    // 提取第一个 ENCV_MOCK_ROOT: '...' 值
-    const m = cfg.match(/ENCV_MOCK_ROOT:\s*['"]([^'"]+)['"]/)
-    expect(m, 'ENCV_MOCK_ROOT must be present in ecosystem.config.cjs').toBeTruthy()
-    expect(m![1]).toBe(EXPECTED_MOCK_ROOT)
-  })
-
-  it('【防回归】generate-mock-files.ts 的 fallback 必须 = /storage/emulated/0/encv-automation', () => {
+  it('【防回归】useAutomationTests.DEFAULT_AUTOMATION_SOURCE 父目录必须 = /storage/emulated/0/encv-automation', () => {
     const src = readFileSync(
-      resolve(REPO_ROOT, 'app/encv-mobile/scripts/generate-mock-files.ts'),
+      resolve(REPO_ROOT, 'app/encv-mobile/src/composables/useAutomationTests.ts'),
       'utf-8',
     )
-    // 提取 MOCK_ROOT = process.env.ENCV_MOCK_ROOT || '...' 字符串
-    const m = src.match(/MOCK_ROOT\s*=\s*process\.env\.ENCV_MOCK_ROOT\s*\|\|\s*['"]([^'"]+)['"]/)
-    expect(m, 'MOCK_ROOT fallback must be present in generate-mock-files.ts').toBeTruthy()
-    expect(m![1]).toBe(EXPECTED_MOCK_ROOT)
+    // 提取 DEFAULT_AUTOMATION_SOURCE = '...' 字符串
+    const m = src.match(/DEFAULT_AUTOMATION_SOURCE\s*=\s*['"]([^'"]+)['"]/)
+    expect(m, 'DEFAULT_AUTOMATION_SOURCE must be present in useAutomationTests.ts').toBeTruthy()
+    const sourcePath = m![1]
+    // 父目录（去掉 01-plain-media/...）必须是 encv-automation 命名空间
+    expect(sourcePath.startsWith(`${EXPECTED_AUTOMATION_NS}/`)).toBe(true)
   })
 
-  it('【防回归】A/B 两处 ENCV_MOCK_ROOT 必须完全一致', () => {
+  it('【防回归】ecosystem.config.cjs 不再注入 ENCV_MOCK_ROOT（2026-06-10 废弃）', () => {
     const cfg = readFileSync(resolve(REPO_ROOT, 'ecosystem.config.cjs'), 'utf-8')
-    const script = readFileSync(
+    // ENCV_MOCK_ROOT 应该从 ecosystem.config.cjs 移除（mobile overlay 直接决定 servingDir）
+    expect(cfg).not.toMatch(/ENCV_MOCK_ROOT/)
+  })
+
+  it('【防回归】scripts/generate-mock-files.ts 不应再存在（Node CLI 已废弃）', () => {
+    const { existsSync } = require('node:fs') as typeof import('node:fs')
+    const exists = existsSync(
       resolve(REPO_ROOT, 'app/encv-mobile/scripts/generate-mock-files.ts'),
-      'utf-8',
     )
-
-    const cfgMatch = cfg.match(/ENCV_MOCK_ROOT:\s*['"]([^'"]+)['"]/)
-    const scriptMatch = script.match(/MOCK_ROOT\s*=\s*process\.env\.ENCV_MOCK_ROOT\s*\|\|\s*['"]([^'"]+)['"]/)
-
-    expect(cfgMatch).toBeTruthy()
-    expect(scriptMatch).toBeTruthy()
-    expect(cfgMatch![1]).toBe(scriptMatch![1])
-    // 锁定到硬约束
-    expect(cfgMatch![1]).toBe(EXPECTED_MOCK_ROOT)
-    expect(scriptMatch![1]).toBe(EXPECTED_MOCK_ROOT)
+    expect(exists, 'generate-mock-files.ts should be removed (2026-06-10)').toBe(false)
   })
 })

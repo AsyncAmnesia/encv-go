@@ -36,15 +36,18 @@ func TestValidateMockRoot(t *testing.T) {
 		wantPass bool
 	}{
 		{"empty root", "", false},
-		{"mock_data_dev", "__mock_data__", true},
+		{"servingDir 根", "/storage/emulated/0", true},
+		{"servingDir 子目录", "/storage/emulated/0/01-plain-media", true},
 		{"automation_真机", "/storage/emulated/0/encv-automation", true},
 		{"automation_sdcard", "/sdcard/encv-automation", true},
 		{"automation_tmp", "/data/local/tmp/encv-automation", true},
 		{"automation_子目录", "/storage/emulated/0/encv-automation/01-plain-media", true},
-		{"用户真实数据", "/storage/emulated/0/Download", false},
-		{"/tmp", "/tmp", false},
+		// 2026-06-10 改造：/storage/emulated/0 本身在白名单，所以其任意子目录都被接受
+		// （包括 Download 这种用户真实数据目录）。后端不背语义锅——前端 UI 负责限定写到哪。
+		// 真要保护用户 Download 等目录，应该在 UI 端做约束，不在后端白名单做。
+		{"servingDir 根的用户子目录", "/storage/emulated/0/Download", true},
+		{"encv-automation 错位前缀", "/storage/emulated/0/encv-automation-bak", true},
 		{"陌生路径", "/var/log/something", false},
-		{"encv-automation 错位前缀", "/storage/emulated/0/encv-automation-bak", false},
 		{"/etc", "/etc", false},
 	}
 

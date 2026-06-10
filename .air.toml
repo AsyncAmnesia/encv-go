@@ -13,7 +13,7 @@ tmp_dir = "tmp"
   #   - `bin` 字段不能指向不存在的文件（否则重启失败 exit 127）
   #     → 留空让 air 复用 cmd
   # ──────────────────────────────────────────────────────────
-  cmd = "bash -c 'go run ./cmd/encv start 2>&1 | tee ./tmp/encv-go-run.log'"
+  cmd = "bash -c 'export ENCV_MOBILE=${ENCV_MOBILE:-1}; export ENCV_DEV_PREVIEW=${ENCV_DEV_PREVIEW:-1}; go run ./cmd/encv start 2>&1 | tee ./tmp/encv-go-run.log'"
   bin = ""
   delay = 5000         # 5s 防 pipe 死锁误判
   grace_delay = 10000  # 10s 冷编空间

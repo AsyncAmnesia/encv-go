@@ -6,9 +6,11 @@
  *  - POST /api/mock/generate { root, type } → SSE 流式进度
  *  - POST /api/mock/reset { root } → JSON { removed }
  *
- * dev 模式下也可以调（dev 模式 dev 选项传入的 MOCK_ROOT 也走这个接口更稳）。
+ * 安全：后端 white-list 校验 root 前缀（必须是绝对路径，在 /storage/emulated/0[/encv-automation] 等白名单内）。
+ * 显式意图：必须带 X-Confirm-Mock-Mutation header（防擅自生成）。
  *
- * 安全：后端 white-list 校验 root 前缀（dev: __mock_data__/，真机: encv-automation/）。
+ * 2026-06-10 改造：Node CLI scripts/generate-mock-files.ts 已废弃，本 wrapper 仍是前端调用后端的唯一入口。
+ * dev 模式 mock 生成也走后端 API（不带 CLI，避免双源）。
  */
 import { getApiBaseUrl } from '@/api/encv'
 import type { MockFileType } from '@/lib/mockDataGenerator'
@@ -46,6 +48,7 @@ export async function generateMockFilesViaBackend(opts: MockGenerateOptions): Pr
     headers: {
       'Content-Type': 'application/json',
       'Accept': 'text/event-stream',
+      'X-Confirm-Mock-Mutation': 'yes', // 🆕 2026-06-10：显式意图确认（防擅自生成）
     },
     body: JSON.stringify({ root: opts.root, type: opts.type ?? 'all' }),
     signal: opts.signal,
