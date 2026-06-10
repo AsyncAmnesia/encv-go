@@ -19,47 +19,12 @@ import path from 'node:path'
 //
 // 非法启动方式会被此插件拦截并抛出异常 + 给出正确用法。
 
-function devStartGuard(): Plugin {
-  return {
-    name: 'dev-start-guard',
-    config() {
-      // SPAWN_VITE=1 表示由 preview-gateway spawn，合法
-      if (process.env.SPAWN_VITE === '1') return
-
-      // 检测是否在 PM2 管理下
-      const isPm2 = !!process.env.PM2_HOME
-
-      // 如果既不是 PM2 spawn 也不是 gateway 子进程 → 非法直接启动
-      if (!isPm2 && !process.env.PPA_SPAWNED) {
-        throw new Error(`
-╔══════════════════════════════════════════════════════════╗
-║  [dev-start-guard] 检测到非法启动方式！立即终止。        ║
-╠══════════════════════════════════════════════════════════╣
-║                                                          ║
-║  ❌ 你正在直接运行 vite / npm run dev                    ║
-║     这在本项目中是非法的。                               ║
-║                                                          ║
-║  原因：                                                   ║
-║    ① preview-gateway(:16666) 是唯一对外入口               ║
-║       内部管理子进程(vite:8100, air:2025 等)             ║
-║    ② 直接 vite 不注入 ENCV_DEV_PREVIEW / ENCV_MOBILE env ║
-║    ③ Vite 扫描 plugin-openlist/index.html → 文件找不到  ║
-║    ④ HMR 缺 gateway dynamicHmrHostPlugin Host 头透传      ║
-║                                                          ║
-║  ✅ 正确启动方式：                                        ║
-║    pm2 start /workspace/ecosystem.config.cjs              ║
-║                                                          ║
-║  或重启：                                                 ║
-║    pm2 restart preview-gateway                           ║
-║    pm2 logs preview-gateway --lines 20                   ║
-║                                                          ║
-║  预览地址：http://localhost:16666/                        ║
-╚══════════════════════════════════════════════════════════╝
-`.trim())
-      }
-    },
-  }
-}
+// ⚠️ 防御：dev 模式启动守卫
+//  - 详细逻辑见 src/lib/dev-start-guard.ts（含 build/CI 跳过规则）
+//  - 单测见 src/composables/__tests__/dev-start-guard.test.ts
+//  - 文件必须在 src/ 下 — vite 5/6/7/8 默认不 transform src/ 外的 .ts，
+//    scripts/ 下的 .ts 会被 vite 当 external → 守卫拿不到 devStartGuard 函数
+import { devStartGuard } from './src/lib/dev-start-guard'
 
 // =============================================================================
 // ENCV Mobile Vite Config
