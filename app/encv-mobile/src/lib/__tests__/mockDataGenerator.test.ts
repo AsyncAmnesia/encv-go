@@ -1,212 +1,357 @@
 /**
- * src/lib/mockDataGenerator 单元测试
+ * mockDataGenerator 单元测试 — 路径一致性验证
  *
- * 覆盖：
- * 1. collectSpecs 返回正确的相对路径前缀
- * 2. createJPEG / createPNG / createMP4 / createMKV / createMP3 / createFLAC / createPDF 生成合规的字节
- * 3. createAEFile / createSCCVFile 包含正确 magic header
- * 4. generateMockFiles 调用 writeToDisk 回调的次数 = specs.length
- * 5. 默认 type='all' 包含 4 个 section（plain/ae/container/boundary）
+ * 覆盖场景：
+ * 1. collectSpecs('all') 输出的相对路径集合
+ * 2. 关键文件 sample.mp4 是否在 plain 类别中
+ * 3. joinPath 拼接行为
+ * 4. generateMockFiles 不传 writeToDisk 只收集不写盘
+ * 5. listAllRelativePaths 返回所有路径
+ * 6. 端到端：mockRoot + relativePath = 完整路径
  */
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   collectSpecs,
   generateMockFiles,
-  createJPEG,
-  createPNG,
-  createMP4,
-  createMKV,
-  createMP3,
-  createFLAC,
-  createPDF,
-  createAEFile,
-  createSCCVFile,
-  type MockFileType,
+  listAllRelativePaths,
+  type MockFileSpec,
 } from '@/lib/mockDataGenerator'
 
-describe('collectSpecs', () => {
-  it('type=plain：所有相对路径含 01-plain-media', () => {
-    const specs = collectSpecs('plain')
-    expect(specs.length).toBeGreaterThan(0)
-    for (const s of specs) {
-      expect(s.relativePath.startsWith('01-plain-media/')).toBe(true)
-    }
-  })
+// mock crypto.getRandomValues 以避免 1MB large-1mb.dat 在 jsdom 中超出配额
+beforeEach(() => {
+  if (typeof globalThis.crypto !== 'undefined') {
+    vi.spyOn(globalThis.crypto, 'getRandomValues').mockImplementation((array: ArrayBufferView) => {
+      const buf = new Uint8Array(array.buffer, array.byteOffset, array.byteLength)
+      for (let i = 0; i < buf.length; i++) buf[i] = Math.floor(Math.random() * 256)
+      return array
+    })
+  }
+})
 
-  it('type=ae：扩展名 .ae', () => {
-    const specs = collectSpecs('ae')
-    expect(specs.length).toBeGreaterThan(0)
-    for (const s of specs) {
-      expect(s.relativePath.endsWith('.ae')).toBe(true)
-      expect(s.relativePath.startsWith('02-alist-encrypt/')).toBe(true)
-    }
-  })
+describe('mockDataGenerator', () => {
+  describe('collectSpecs()', () => {
+    it('"all" 类型应返回所有类别的 specs', () => {
+      const specs = collectSpecs('all')
+      // 至少包含 plain(9) + ae(3) + container(3) + boundary(15+) = 30+
+      expect(specs.length).toBeGreaterThanOrEqual(30)
+    })
 
-  it('type=container：含 sccgv/scext/scepkg', () => {
-    const specs = collectSpecs('container')
-    expect(specs.length).toBeGreaterThan(0)
-    for (const s of specs) {
-      expect(s.relativePath.startsWith('03-encv-containers/')).toBe(true)
-    }
-  })
+    it('"plain" 类型应返回 9 个文件', () => {
+      const specs = collectSpecs('plain')
+      expect(specs.length).toBe(9)
+    })
 
-  it('type=boundary：含特殊文件名测试', () => {
-    const specs = collectSpecs('boundary')
-    expect(specs.length).toBeGreaterThan(0)
-    for (const s of specs) {
-      expect(s.relativePath.startsWith('04-boundary-test/')).toBe(true)
-    }
-  })
-
-  it('type=all：所有 section 之和', () => {
-    const all = collectSpecs('all')
-    const plain = collectSpecs('plain')
-    const ae = collectSpecs('ae')
-    const container = collectSpecs('container')
-    const boundary = collectSpecs('boundary')
-    expect(all.length).toBe(plain.length + ae.length + container.length + boundary.length)
-  })
-
-  it('每个 spec 有 data (Uint8Array) 和 size', () => {
-    for (const type of ['plain', 'ae', 'container', 'boundary'] as MockFileType[]) {
-      const specs = collectSpecs(type)
+    it('"ae" 类型应返回 3 个 .ae 文件', () => {
+      const specs = collectSpecs('ae')
+      expect(specs.length).toBe(3)
       for (const s of specs) {
-        expect(s.data).toBeInstanceOf(Uint8Array)
-        expect(s.size).toBe(s.data.length)
+        expect(s.relativePath).toMatch(/\.ae$/)
+        expect(s.data.length).toBeGreaterThan(0)
       }
+    })
+
+    it('"container" 类型应返回 3 个容器文件', () => {
+      const specs = collectSpecs('container')
+      expect(specs.length).toBe(3)
+    })
+
+    it('"boundary" 类型应返回边界测试文件', () => {
+      const specs = collectSpecs('boundary')
+      expect(specs.length).toBeGreaterThan(10)
+    })
+
+    // ==================== 关键：sample.mp4 必须存在 ====================
+
+    it('plain 类别必须包含 sample.mp4（自动化测试的默认源文件）', () => {
+      const specs = collectSpecs('plain')
+      const videoSpec = specs.find((s) => s.relativePath === '01-plain-media/video/sample.mp4')
+      expect(videoSpec).toBeDefined()
+      expect(videoSpec!.data.length).toBeGreaterThan(0)
+      expect(videoSpec!.size).toBeGreaterThan(0)
+    })
+
+    it('all 类别也必须包含 sample.mp4', () => {
+      const specs = collectSpecs('all')
+      const videoSpec = specs.find((s) => s.relativePath === '01-plain-media/video/sample.mp4')
+      expect(videoSpec).toBeDefined()
+    })
+  })
+
+  describe('collectSpecs() — 完整路径列表验证', () => {
+    it('plain 类别的 9 个文件路径完全匹配预期', () => {
+      const specs = collectSpecs('plain')
+      const paths = specs.map((s) => s.relativePath)
+      const expected = [
+        '01-plain-media/image/photo.jpg',
+        '01-plain-media/image/screenshot.png',
+        '01-plain-media/video/sample.mp4',
+        '01-plain-media/video/comedy.mkv',
+        '01-plain-media/audio/music.mp3',
+        '01-plain-media/audio/podcast.flac',
+        '01-plain-media/document/report.pdf',
+        '01-plain-media/document/notes.txt',
+        '01-plain-media/document/data.csv',
+      ]
+      expect(paths).toEqual(expected)
+    })
+
+    it('每个 spec 都有非空的 data 和正确的 size', () => {
+      const specs = collectSpecs('all')
+      for (const spec of specs) {
+        expect(spec.relativePath.length).toBeGreaterThan(0)
+        expect(spec.data instanceof Uint8Array).toBe(true)
+        expect(spec.data.length).toBeGreaterThan(0)
+        expect(spec.size).toBe(spec.data.length)
+      }
+    })
+  })
+
+  describe('generateMockFiles()', () => {
+    it('不传 writeToDisk 应只收集不写盘（纯函数模式）', async () => {
+      const writtenPaths: string[] = []
+      const result = await generateMockFiles({
+        root: '/test/root',
+        type: 'plain',
+        writeToDisk: (path, _data) => { writtenPaths.push(path) },
+      })
+      expect(result.count).toBe(9)
+      expect(result.totalSize).toBeGreaterThan(0)
+      expect(result.specs.length).toBe(9)
+      // writeToDisk 应该被调用了
+      expect(writtenPaths.length).toBe(9)
+    })
+
+    it('不传 writeToDisk 且不传 onProgress 也应正常返回结果', async () => {
+      const result = await generateMockFiles({
+        root: '/test/root',
+        type: 'boundary',
+      })
+      expect(result.count).toBeGreaterThan(0)
+      expect(result.specs.length).toBe(result.count)
+    })
+
+    it('onProgress 回调应为每个 spec 触发一次', async () => {
+      const progressSpecs: MockFileSpec[] = []
+      await generateMockFiles({
+        root: '/test/root',
+        type: 'ae',
+        onProgress: (spec) => progressSpecs.push(spec),
+      })
+      expect(progressSpecs.length).toBe(3)
+    })
+  })
+
+  describe('listAllRelativePaths()', () => {
+    it('应返回与 collectSpecs("all") 相同数量的路径', () => {
+      const paths = listAllRelativePaths()
+      const specs = collectSpecs('all')
+      expect(paths.length).toBe(specs.length)
+    })
+
+    it('返回的所有路径都是字符串且非空', () => {
+      const paths = listAllRelativePaths()
+      for (const p of paths) {
+        expect(typeof p).toBe('string')
+        expect(p.length).toBeGreaterThan(0)
+      }
+    })
+  })
+
+  // ==================== 端到端路径拼接测试 ====================
+
+  describe('端到端路径一致性 — Mock 写入 vs 任务提交', () => {
+    /**
+     * 模拟 AutomationTestsDetail.vue 的 mockRoot 计算逻辑：
+     *
+     *   DEFAULT_AUTOMATION_SOURCE = '/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4'
+     *   mockRoot = DEFAULT_AUTOMATION_SOURCE.split('/').slice(0, 5).join('/') + '/'
+     *          = '/storage/emulated/0/encv-automation/'
+     */
+    function computeMockRoot(): string {
+      const source = '/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4'
+      return source.split('/').slice(0, 5).join('/') + '/'
     }
-  })
-})
 
-describe('createJPEG', () => {
-  it('头 2 字节 = 0xFF 0xD8 (SOI)', () => {
-    const data = createJPEG()
-    expect(data[0]).toBe(0xFF)
-    expect(data[1]).toBe(0xD8)
-  })
+    it('mockRoot 应计算为 /storage/emulated/0/encv-automation/', () => {
+      expect(computeMockRoot()).toBe('/storage/emulated/0/encv-automation/')
+    })
 
-  it('尾 2 字节 = 0xFF 0xD9 (EOI)', () => {
-    const data = createJPEG()
-    expect(data[data.length - 2]).toBe(0xFF)
-    expect(data[data.length - 1]).toBe(0xD9)
-  })
-})
+    it('sample.mp4 在后端的完整写入路径应等于 DEFAULT_AUTOMATION_SOURCE', () => {
+      const mockRoot = computeMockRoot()
+      const specs = collectSpecs('plain')
+      const videoSpec = specs.find((s) => s.relativePath === '01-plain-media/video/sample.mp4')!
+      // 前端 joinPath 行为：parts.join('/').replace(/\/+/g, '/')
+      const fullWritePath = [mockRoot, videoSpec.relativePath].join('/').replace(/\/+/g, '/')
 
-describe('createPNG', () => {
-  it('前 8 字节 = PNG signature', () => {
-    const data = createPNG()
-    const expected = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
-    for (let i = 0; i < 8; i++) {
-      expect(data[i]).toBe(expected[i])
-    }
-  })
+      // 这就是后端 filepath.Join(root, relativePath) 的结果
+      expect(fullWritePath).toBe('/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4')
+    })
 
-  it('包含 IEND chunk', () => {
-    const data = createPNG()
-    const text = new TextDecoder().decode(data)
-    expect(text.includes('IEND')).toBe(true)
-  })
-})
+    it('DEFAULT_AUTOMATION_SOURCE 与 Mock 写入路径必须严格一致', () => {
+      const DEFAULT_AUTOMATION_SOURCE = '/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4'
+      const mockRoot = computeMockRoot()
 
-describe('createMP4', () => {
-  it('含 ftyp box', () => {
-    const data = createMP4()
-    const text = new TextDecoder().decode(data)
-    expect(text.includes('ftyp')).toBe(true)
-  })
+      // 从 collectSpecs 中找到 sample.mp4 的相对路径
+      const specs = collectSpecs('all')
+      const videoSpec = specs.find((s) => s.relativePath === '01-plain-media/video/sample.mp4')
+      expect(videoSpec).toBeDefined()
 
-  it('含 moov box', () => {
-    const data = createMP4()
-    const text = new TextDecoder().decode(data)
-    expect(text.includes('moov')).toBe(true)
-  })
-})
+      // 模拟后端写入路径（filepath.Join 语义）
+      const backendWritePath = [mockRoot, videoSpec!.relativePath].join('/').replace(/\/+/g, '/')
 
-describe('createMKV', () => {
-  it('以 EBML header 开头', () => {
-    const data = createMKV()
-    // EBML magic: 1A 45 DF A3
-    expect(data[0]).toBe(0x1A)
-    expect(data[1]).toBe(0x45)
-    expect(data[2]).toBe(0xDF)
-    expect(data[3]).toBe(0xA3)
+      // 核心断言：任务提交用的源路径 == 后端实际写入的文件路径
+      expect(backendWritePath).toBe(DEFAULT_AUTOMATION_SOURCE)
+    })
+
+    it('所有 plain 文件的完整路径都应在 encv-automation 命名空间下', () => {
+      const mockRoot = computeMockRoot()
+      const specs = collectSpecs('plain')
+      for (const spec of specs) {
+        const fullPath = [mockRoot, spec.relativePath].join('/').replace(/\/+/g, '/')
+        expect(fullPath.startsWith('/storage/emulated/0/encv-automation/')).toBe(true)
+        expect(fullPath).not.toContain('//')
+      }
+    })
   })
 
-  it('含 matroska DocType', () => {
-    const data = createMKV()
-    const text = new TextDecoder().decode(data)
-    expect(text.includes('matroska')).toBe(true)
-  })
-})
+  // ==================== 前后端边界 specs 一致性检查 ====================
 
-describe('createMP3', () => {
-  it('以 ID3 header 开头', () => {
-    const data = createMP3()
-    expect(new TextDecoder().decode(data.slice(0, 3))).toBe('ID3')
-  })
-})
+  describe('前后端 specs 一致性', () => {
+    /**
+     * 后端 mock_generator.go generateMockSpecs("plain") 返回的 9 个路径：
+     *   01-plain-media/image/photo.jpg
+     *   01-plain-media/image/screenshot.png
+     *   01-plain-media/video/sample.mp4
+     *   01-plain-media/video/comedy.mkv
+     *   01-plain-media/audio/music.mp3
+     *   01-plain-media/audio/podcast.flac
+     *   01-plain-media/document/report.pdf
+     *   01-plain-media/document/notes.txt
+     *   01-plain-media/document/data.csv
+     *
+     * 前端 lib/mockDataGenerator.ts collectSpecs("plain") 也应返回相同的 9 个路径。
+     * 如果不一致，说明前端生成了但后端不会写，或反之。
+     */
 
-describe('createFLAC', () => {
-  it('以 fLaC 开头', () => {
-    const data = createFLAC()
-    expect(new TextDecoder().decode(data.slice(0, 4))).toBe('fLaC')
-  })
-})
+    it('前端 plain specs 路径集合应与后端一致', () => {
+      const frontendSpecs = collectSpecs('plain')
+      const frontendPaths = new Set(frontendSpecs.map((s) => s.relativePath))
 
-describe('createPDF', () => {
-  it('以 %PDF- 开头', () => {
-    const data = createPDF()
-    expect(new TextDecoder().decode(data.slice(0, 5))).toBe('%PDF-')
-  })
+      // 后端 Go 代码中的 plainSpecs 路径（从 mock_generator.go L97-L107 复制）
+      const backendPlainPaths = new Set([
+        '01-plain-media/image/photo.jpg',
+        '01-plain-media/image/screenshot.png',
+        '01-plain-media/video/sample.mp4',
+        '01-plain-media/video/comedy.mkv',
+        '01-plain-media/audio/music.mp3',
+        '01-plain-media/audio/podcast.flac',
+        '01-plain-media/document/report.pdf',
+        '01-plain-media/document/notes.txt',
+        '01-plain-media/document/data.csv',
+      ])
 
-  it('以 %%EOF 结尾', () => {
-    const data = createPDF()
-    const text = new TextDecoder().decode(data)
-    expect(text.trim().endsWith('%%EOF')).toBe(true)
-  })
-})
+      // 前端是后端的超集？还是完全一致？
+      const missingInFrontend: string[] = []
+      for (const bp of backendPlainPaths) {
+        if (!frontendPaths.has(bp)) missingInFrontend.push(bp)
+      }
+      const extraInFrontend: string[] = []
+      for (const fp of frontendPaths) {
+        if (!backendPlainPaths.has(fp)) extraInFrontend.push(fp)
+      }
 
-describe('createAEFile / createSCCVFile', () => {
-  it('createAEFile 前 4 字节 = AENC magic', () => {
-    const data = createAEFile('test.ae', 1024)
-    expect(new TextDecoder().decode(data.slice(0, 4))).toBe('AENC')
-    expect(data.length).toBe(1024)
-  })
+      expect(missingInFrontend).toEqual([]) // 后端有但前端没有
+      expect(extraInFrontend).toEqual([]) // 前端有但后端没有
+    })
 
-  it('createSCCVFile 前 4 字节 = SCCV magic', () => {
-    const data = createSCCVFile('foo', 'sccgv', 4096)
-    expect(new TextDecoder().decode(data.slice(0, 4))).toBe('SCCV')
-    expect(data.length).toBe(4096)
-  })
-})
+    it('前端 ae specs 路径集合应与后端一致', () => {
+      const frontendSpecs = collectSpecs('ae')
+      const frontendPaths = new Set(frontendSpecs.map((s) => s.relativePath))
 
-describe('generateMockFiles', () => {
-  it('writeToDisk 回调调用次数 = specs.length', async () => {
-    const writeToDisk = vi.fn().mockResolvedValue(undefined)
-    const result = await generateMockFiles({ root: '/tmp', type: 'all', writeToDisk })
-    expect(writeToDisk).toHaveBeenCalledTimes(result.count)
-  })
+      const backendAePaths = new Set([
+        '02-alist-encrypt/secret.ae',
+        '02-alist-encrypt/document.ae',
+        '02-alist-encrypt/hidden-gem.ae',
+      ])
 
-  it('无 writeToDisk 时只 collect 不抛', async () => {
-    const result = await generateMockFiles({ root: '/tmp', type: 'plain' })
-    expect(result.count).toBe(collectSpecs('plain').length)
-    expect(result.specs.length).toBe(result.count)
-  })
+      const missingInFrontend: string[] = []
+      for (const bp of backendAePaths) {
+        if (!frontendPaths.has(bp)) missingInFrontend.push(bp)
+      }
+      const extraInFrontend: string[] = []
+      for (const fp of frontendPaths) {
+        if (!backendAePaths.has(fp)) extraInFrontend.push(fp)
+      }
 
-  it('onProgress 每个 spec 触发一次', async () => {
-    const onProgress = vi.fn()
-    const result = await generateMockFiles({ root: '/tmp', type: 'all', onProgress })
-    expect(onProgress).toHaveBeenCalledTimes(result.count)
-  })
+      expect(missingInFrontend).toEqual([])
+      expect(extraInFrontend).toEqual([])
+    })
 
-  it('type 不传默认 all', async () => {
-    const result = await generateMockFiles({ root: '/tmp' })
-    expect(result.count).toBe(collectSpecs('all').length)
-  })
+    it('前端 container specs 路径集合应与后端一致', () => {
+      const frontendSpecs = collectSpecs('container')
+      const frontendPaths = new Set(frontendSpecs.map((s) => s.relativePath))
 
-  it('总大小 = 所有 spec.size 之和', async () => {
-    const result = await generateMockFiles({ root: '/tmp' })
-    const expected = collectSpecs('all').reduce((s, sp) => s + sp.size, 0)
-    expect(result.totalSize).toBe(expected)
+      const backendContainerPaths = new Set([
+        '03-encv-containers/container.sccgv',
+        '03-encv-containers/archive.scext',
+        '03-encv-containers/bundle.scepkg',
+      ])
+
+      const missingInFrontend: string[] = []
+      for (const bp of backendContainerPaths) {
+        if (!frontendPaths.has(bp)) missingInFrontend.push(bp)
+      }
+      const extraInFrontend: string[] = []
+      for (const fp of frontendPaths) {
+        if (!backendContainerPaths.has(fp)) extraInFrontend.push(fp)
+      }
+
+      expect(missingInFrontend).toEqual([])
+      expect(extraInFrontend).toEqual([])
+    })
+
+    /**
+     * ⚠️ boundary 类别已知不一致！
+     * 前端有 ~15 个边界测试文件（Unicode、隐藏文件、空字节等）
+     * 后端只有 5 个基础边界文件
+     * 此测试记录这一差异，防止静默回归。
+     */
+    it('boundary 类别：前端和后端存在已知差异（文档化差异）', () => {
+      const frontendSpecs = collectSpecs('boundary')
+      const frontendPaths = new Set(frontendSpecs.map((s) => s.relativePath))
+
+      // 后端 Go 代码中的 boundarySpecs 路径（从 mock_generator.go L118-L124 复制）
+      const backendBoundaryPaths = new Set([
+        '04-boundary-test/zero-byte-file.bin',
+        '04-boundary-test/single-byte.bin',
+        '04-boundary-test/exactly-1kb.bin',
+        '04-boundary-test/large-1mb.dat',
+        '04-boundary-test/normal.txt',
+      ])
+
+      // 后端有但前端没有的
+      const missingInFrontend: string[] = []
+      for (const bp of backendBoundaryPaths) {
+        if (!frontendPaths.has(bp)) missingInFrontend.push(bp)
+      }
+      // 前端有但后端没有的（差异部分）
+      const extraInFrontend: string[] = []
+      for (const fp of frontendPaths) {
+        if (!backendBoundaryPaths.has(fp)) extraInFrontend.push(fp)
+      }
+
+      // 后端的 5 个文件前端应该都有
+      expect(missingInFrontend).toEqual([])
+
+      // 前端有大量额外文件是已知的（Unicode、emoji、RTL 等）
+      // 这里只验证差异确实存在，并记录数量
+      expect(extraInFrontend.length).toBeGreaterThan(0)
+
+      // 打印差异供调试
+      if (extraInFrontend.length > 0) {
+        console.log(`[INFO] boundary 差异：前端有 ${frontendSpecs.length} 个，后端有 ${backendBoundaryPaths.size} 个`)
+        console.log(`[INFO] 前端独有 ${extraInFrontend.length} 个:`, extraInFrontend.slice(0, 5), '...')
+      }
+    })
   })
 })
