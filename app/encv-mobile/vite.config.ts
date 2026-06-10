@@ -260,6 +260,12 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
+      // ⚠️ 防御：显式声明入口 HTML，防止 Vite 自动扫描 plugin-openlist 等子目录的 index.html
+      // 导致去 src/views/ 找 OpenListWebView.vue 等不存在的文件（子项目有自己的 vite 配置和 @ alias）
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        'debug-decrypt': path.resolve(__dirname, 'public/debug-decrypt.html'),
+      },
       output: {
         // Vite 8 (rolldown) requires manualChunks to be a function, not an object.
         manualChunks(id: string) {
