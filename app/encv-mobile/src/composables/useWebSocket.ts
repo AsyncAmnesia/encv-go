@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { getWebSocketUrl } from '@/api/encv'
+import { getWebSocketUrl, isOpenPreviewBrowser } from '@/api/encv'
 import { eventBus } from './useEventBus'
 
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected'
@@ -86,6 +86,24 @@ function handleMessage(event: MessageEvent) {
 
 function connect() {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+    return
+  }
+
+  // 🆕 2026-06-10 沙箱 OpenPreview 浏览器：trae 反代 :16000 不支持 WebSocket upgrade
+  //   （实测：WebSocket upgrade → 502 "WebSocket upgrade failed"）。
+  //   此时 new WebSocket('wss://trae.cn/ws') → 1006 异常关闭 →
+  //   onclose emit `server:status` `{online:false}` → 覆盖 HTTP 探测的 true →
+  //   UI 永远显示"离线"+"Connection closed (code: 1006)"。
+  //   修复：OpenPreview 浏览器下不连 WS，直接 emit online:true 让 UI 显示"在线"，
+  //   业务侧需要的实时功能（DevLogs 实时流、agent 流式 chat）由调用方自己降级
+  //   （HTTP 轮询 / 提示用户切到沙箱本地或 APK 真机）。
+  if (isOpenPreviewBrowser()) {
+    console.info('[ENCV-WS] OpenPreview browser detected, skipping WebSocket (trae reverse-proxy :16000 does not support WS upgrade). Use HTTP polling / fallback paths.')
+    connectionState.value = 'disconnected'
+    // 只 emit online:true，**不** emit connection-error（避免 UI 误显"Connection closed"）。
+    // 业务侧需要的实时功能（DevLogs 实时流、agent 流式 chat）由调用方自己降级
+    // （HTTP 轮询 / 提示用户切到沙箱本地或 APK 真机）。
+    eventBus.emit('server:status', { online: true })
     return
   }
 

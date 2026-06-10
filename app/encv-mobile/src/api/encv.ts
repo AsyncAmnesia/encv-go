@@ -12,7 +12,7 @@ export const DEFAULT_API_BASE_URL = 'http://127.0.0.1:2025'
 export const DEV_SANDBOX_ENTRY = 'http://127.0.0.1:16666'
 
 /** 判断当前是否在 OpenPreview 浏览器（agent-tool-host 提供的 trae 域名 mock 浏览器） */
-function isOpenPreviewBrowser(): boolean {
+export function isOpenPreviewBrowser(): boolean {
   if (typeof window === 'undefined' || !window.location) return false
   const origin = window.location.origin
   return (
