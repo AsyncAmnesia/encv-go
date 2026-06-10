@@ -41,19 +41,26 @@
 
 ---
 
-### 反模式 C：阻塞 + web_server 类型假装常驻
+### 反模式 C：阻塞 + web_server 类型假装常驻（2026-06-10 已废止）
 
-**症状**：用 `command_type: web_server, blocking: true` 跑 `node server.js`，命令一直不返回。
+**症状**：用 `command_type: web_server, blocking: true` 跑 `node server.js` 或 `while true; do curl ...; sleep 5; done`，命令一直不返回。
 
-**根因**：web_server 命令是给 OpenPreview 工具注册端口用的「在线占位」。但**真正提供 web 服务的进程**必须由 pm2 守护，**不能用 RunCommand 自身当 server**。
+**历史根因（已废止）**：之前认为"OpenPreview 工具需要 web_server 类型命令作为 command_id 来源"，所以让 agent 起一个 while-true 循环作为占位。
+
+**2026-06-10 真相（用户痛批后纠正）**：
+- OpenPreview 工具本身就是端口注册入口，**不需要**任何阻塞 web_server 进程作为"来源"
+- `command_id` 只需取**任一已运行** RunCommand 的 id（如 `pm2 start` 那条、或后续 `curl` 健康检查的 id），工具不强制要求 web_server 类型
+- 起 `while true; curl; sleep` 阻塞进程 = 纯浪费 token、违反 §一 反模式 A
 
 **禁止**：
-- ❌ `node server.js` (blocking, command_type=web_server)
-- ❌ 任何 RunCommand 自身的进程扮演"长跑 web server"
+- ❌ `while true; do curl ...; sleep 5; done` (blocking, command_type=web_server) 当作"OpenPreview 来源"
+- ❌ `node server.js` (blocking, command_type=web_server) 把 RunCommand 自身当 server
+- ❌ 任何 RunCommand 自身扮演"长跑 web server 占位"
 
 **正确做法**：
-- ✅ 真实 server 进程：先 `pm2 start` 起来
-- ✅ OpenPreview 注册：另起一个 `command_type=web_server, blocking=true` 的 RunCommand（如 `while true; do curl -s http://localhost:15003/health; sleep 30; done`），它**循环**健康检查**已经在跑的** server → 工具会把这个命令的 command_id 当作 web_server 来源
+- ✅ 真实 server 进程：先 `pm2 start` 起来（preview-gateway:16666 + openpreview-stub:15003）
+- ✅ OpenPreview 注册：直接调 `OpenPreview(command_id=<任一已运行命令的 id>, preview_url="http://localhost:16666/")`
+- ✅ 工具调用完后立即返回，session/TTL 由 agent-tool-host 管理
 
 ---
 
@@ -79,7 +86,8 @@
 - ✅ **不** build：vite dev (8100) 跑源码 + HMR，源码改动已自动热重载
 - ✅ **不**启新进程：preview-gateway (16666) 已在 pm2 守护（除非 `pm2 list` 显示 offline 才需要 `pm2 restart`）
 - ✅ Preview 链接直接用：**http://localhost:16666/**
-- ✅ 调用 OpenPreview 工具展示 16666 链接（command_id 取最近一次 `curl -sI :16666/` 健康检查的 RunCommand 即可）
+- ✅ **调 OpenPreview 工具**展示 16666 链接（command_id 取**任一已运行的 RunCommand id**，如 `pm2 start` 那条或任何 `curl` 健康检查）
+- ✅ **不要**起 `while true; curl` 阻塞 web_server 进程（§一 反模式 C，已废止）
 - ✅ 如真要"完整重打"前端（如 Capacitor sync 场景），必须先和用户确认目标，并明确告知 `pnpm build` 不会重启 dev 服务
 
 **反查清单（用户说 preview/build/dev 时，先问自己）**：
@@ -199,38 +207,47 @@ curl -s http://localhost:16666/__gateway/health | jq '{ok, children: [.children[
 **首次访问 :16666** → agent-tool-host 内部 `:80` register 端点 `requires_auth=true`，**普通 HTTP 请求 401 拒绝**。
 只有 `OpenPreview` 工具（IDE 内部命令）能完成 register。
 
-### 3.2 标准激活流程
+### 3.2 标准激活流程（2026-06-10 重写：直接调 OpenPreview 工具，零阻塞）
+
+> **历史反模式**（已删除）：之前 §3.2 让 agent 起一个 `command_type=web_server, blocking=true` 的 `while true; curl ...; sleep 5` 进程作为 command_id 来源。
+> 这是 §一 反模式 C 的具体实例（"阻塞 + web_server 类型假装常驻"），被 2026-06-10 用户痛批。
+> **真相**：OpenPreview 工具本身就是端口注册入口，**不需要**任何阻塞 web_server 进程。
 
 ```bash
-# Step 1: 准备 web_server 类型 command 来源
-#   openpreview-stub 已经在 :15003（pm2 守护），但工具历史里需要
-#   一个 command_type=web_server 的命令作为「来源」。
+# 1. 确认沙箱内 4 端口在线（16666 / 15003 / 2025 / 8100）
+pm2 list                              # 2 个 online (preview-gateway + openpreview-stub)
+curl -sI http://localhost:16666/      # 200 OK
+curl -s http://localhost:16666/__gateway/health | jq .ok  # true
 
-# Step 2: 启动 web_server 类型 RunCommand（阻塞但**不浪费**——它循环探测已运行的 server）
-#   命令示例:
-#     while true; do
-#       curl -s http://localhost:15003/ > /dev/null || exit 1
-#       sleep 5
-#     done
-#   command_type=web_server, blocking=true
-#   工具会把这个命令当作 web_server，拿到 command_id
+# 2. 直接调 OpenPreview 工具（agent 工具栏里有，不需阻塞进程）
+#    - command_id：取**启动 dev server** 的那条 RunCommand 的 id（pm2 start 那条 / 或任何后续 curl 健康检查的 id 都可，工具不强制）
+#    - preview_url：沙箱内统一入口 = http://localhost:16666/
+OpenPreview(
+  command_id="<RunCommand 工具历史里任一条已运行命令的 id>",
+  preview_url="http://localhost:16666/"
+)
 
-# Step 3: 调用 OpenPreview 工具
-#   OpenPreview(
-#     command_id="<Step 2 的 command_id>",
-#     preview_url="http://localhost:16666/"
-#   )
-#   完成 :16666 在 agent-tool-host 的注册
+# 3. 验证（OpenPreview 调用后，外网 :16000 才能代理到 :16666）
+curl -sI http://127.0.0.1:16000/      # 期望 200（不再 400）
+# 或：用户浏览器访问 trae 域名直接看到 UI
 ```
+
+**为什么不需要阻塞进程**：
+- OpenPreview 工具是 Trae IDE 提供的**注册工具**，调用即在 agent-tool-host 内部建立路由
+- 不依赖任何"长跑命令占位"
+- 工具调用完后立即返回，session/TTL 由 agent-tool-host 自己管理
+- 详见 [trae_web_sandbox_network.md §八](file:///workspace/.trae/rules/trae_web_sandbox_network.md) - "Preview Proxy 路由必须由 OpenPreview 工具注册"
 
 ### 3.3 错误模式
 
 | 错误 | 原因 | 修复 |
 |------|------|------|
-| `OpenPreview` 返回 401 | 命令不是 web_server 类型 | 用 `command_type: web_server` 重启 |
-| `OpenPreview` 返回 port already registered | 上一次注册过；先取消 | 检查 agent-tool-host 内部 preview-proxy 状态 |
+| `OpenPreview` 返回 401 | command_id 失效（agent-tool-host 重启过） | 重启沙箱后重调一次 OpenPreview |
+| `OpenPreview` 返回 port already registered | 上一次注册过同端口 | 等 5s 自动过期，或重启 agent-tool-host |
+| `curl :16000/` 返回 400 | 没调过 OpenPreview 或 session 过期 | 重调 OpenPreview 工具 |
 | `curl :16666/` 返回 502 | preview-gateway 子进程（encv-go / encv-mobile-vite）未就绪 | `curl :16666/__gateway/health | jq .children` 看哪个没 ready；`pm2 logs preview-gateway --lines 100` |
 | `curl :16666/` 200 但浏览器白屏 | encv-mobile-vite 子进程死了 | `pm2 restart preview-gateway`（整组重启） |
+| 浏览器报 `WebSocket error: ws://...16000/ws` | **预期行为**（§九 9.5 矩阵：沙箱浏览器模式 /ws 不可达） | 无需修复，console 日志可见诊断信息 |
 
 ### 3.4 mock 浏览器约束（**沙箱架构硬约束，2026-06-08 用户承认**）
 
@@ -264,6 +281,7 @@ curl -s http://localhost:16666/__gateway/health | jq '{ok, children: [.children[
 | `node server.js` blocking | 直接跑 node | `pm2 start server.js --name xxx` |
 | `vite --port N &` blocking | `vite --port 8100 &` | `pm2 restart preview-gateway`（vite 由 gateway 内部 spawn，不需手起） |
 | 任何 `&` 启后台 | `cmd &` | `pm2 start` |
+| **`while true; curl; sleep`**（OpenPreview 来源占位） | `while true; do curl -s :15003/; sleep 5; done` (blocking, command_type=web_server) | **直接调 OpenPreview 工具**（`command_id=<任一已运行 RunCommand id>`，零阻塞） |
 | **`pnpm build`（误当作 dev 预览）** | `pnpm build` | vite dev (8100) 跑源码 + HMR，**不 build** |
 | **`pnpm preview`（vite 静态预览，孤儿前端）** | `pnpm preview --port 4173` | preview-gateway (16666) → vite dev (8100) → Go 后端 |
 | **任意 `npx serve dist` / `http-server dist`** | 静态文件服务绕开 API 反代 | preview-gateway (16666) 是唯一合法入口 |
