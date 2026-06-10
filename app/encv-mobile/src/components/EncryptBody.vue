@@ -59,7 +59,8 @@
 
     <!-- 加密强度选择（AES-128 / AES-256）—— 仅 v4 容器支持
          v2/v3 容器的 Header 没有 CipherMode 字段（v4 才有，offset 2040-2042），
-         故 cipher mode 控件只在 version === 4 时显示。 -->
+         故 cipher mode 控件只在 version === 4 时显示。
+         整行点击切换：使用 RadioItem 包装器（统一所有 radio 选择项的 UX） -->
     <div v-if="isV4Container" class="form-section">
       <div class="section-label">{{ t('tasks.cipherMode') }}</div>
       <ion-radio-group
@@ -67,30 +68,35 @@
         @ionChange="(e: any) => props.onUpdateCipherMode?.(e.detail.value)"
         class="cipher-radio-group"
       >
-        <ion-item lines="none" class="extra-field-item cipher-item">
-          <ion-radio :value="0" slot="start" />
-          <ion-label class="ion-text-wrap">
-            <div class="cipher-title">
-              <span>{{ t('tasks.cipherMode128') }}</span>
-              <ion-badge color="primary" class="recommended-badge">{{ t('tasks.cipherModeRecommended') }}</ion-badge>
-            </div>
-            <ion-note class="cipher-desc">{{ t('tasks.cipherMode128Help') }}</ion-note>
-          </ion-label>
-        </ion-item>
-        <ion-item lines="none" class="extra-field-item cipher-item">
-          <ion-radio :value="1" slot="start" />
-          <ion-label class="ion-text-wrap">
-            <div class="cipher-title">
-              <span>{{ t('tasks.cipherMode256') }}</span>
-            </div>
-            <ion-note class="cipher-desc">{{ t('tasks.cipherMode256Help') }}</ion-note>
-          </ion-label>
-        </ion-item>
+        <RadioItem
+          :value="0"
+          :selected="state.cipherMode"
+          class="extra-field-item cipher-item"
+          @select="(v) => props.onUpdateCipherMode?.(v as number)"
+        >
+          <div class="cipher-title">
+            <span>{{ t('tasks.cipherMode128') }}</span>
+            <ion-badge color="primary" class="recommended-badge">{{ t('tasks.cipherModeRecommended') }}</ion-badge>
+          </div>
+          <ion-note class="cipher-desc">{{ t('tasks.cipherMode128Help') }}</ion-note>
+        </RadioItem>
+        <RadioItem
+          :value="1"
+          :selected="state.cipherMode"
+          class="extra-field-item cipher-item"
+          @select="(v) => props.onUpdateCipherMode?.(v as number)"
+        >
+          <div class="cipher-title">
+            <span>{{ t('tasks.cipherMode256') }}</span>
+          </div>
+          <ion-note class="cipher-desc">{{ t('tasks.cipherMode256Help') }}</ion-note>
+        </RadioItem>
       </ion-radio-group>
     </div>
 
     <!-- 压缩选择（无 / zstd）—— 仅 v4 容器支持
-         v2/v3 容器没有 zstd seekable 支持，compression 控件只在 version === 4 时显示。 -->
+         v2/v3 容器没有 zstd seekable 支持，compression 控件只在 version === 4 时显示。
+         整行点击切换：使用 RadioItem 包装器 -->
     <div v-if="isV4Container" class="form-section">
       <div class="section-label">{{ t('tasks.compressionMode') }}</div>
       <ion-radio-group
@@ -98,24 +104,28 @@
         @ionChange="(e: any) => props.onUpdateCompressionMode?.(e.detail.value)"
         class="cipher-radio-group"
       >
-        <ion-item lines="none" class="extra-field-item cipher-item">
-          <ion-radio value="none" slot="start" />
-          <ion-label class="ion-text-wrap">
-            <div class="cipher-title">
-              <span>{{ t('tasks.compressionNone') }}</span>
-            </div>
-            <ion-note class="cipher-desc">{{ t('tasks.compressionNoneHelp') }}</ion-note>
-          </ion-label>
-        </ion-item>
-        <ion-item lines="none" class="extra-field-item cipher-item">
-          <ion-radio value="zstd" slot="start" />
-          <ion-label class="ion-text-wrap">
-            <div class="cipher-title">
-              <span>{{ t('tasks.compressionZstd') }}</span>
-            </div>
-            <ion-note class="cipher-desc">{{ t('tasks.compressionZstdHelp') }}</ion-note>
-          </ion-label>
-        </ion-item>
+        <RadioItem
+          value="none"
+          :selected="state.compressionMode"
+          class="extra-field-item cipher-item"
+          @select="(v) => props.onUpdateCompressionMode?.(v as 'none' | 'zstd')"
+        >
+          <div class="cipher-title">
+            <span>{{ t('tasks.compressionNone') }}</span>
+          </div>
+          <ion-note class="cipher-desc">{{ t('tasks.compressionNoneHelp') }}</ion-note>
+        </RadioItem>
+        <RadioItem
+          value="zstd"
+          :selected="state.compressionMode"
+          class="extra-field-item cipher-item"
+          @select="(v) => props.onUpdateCompressionMode?.(v as 'none' | 'zstd')"
+        >
+          <div class="cipher-title">
+            <span>{{ t('tasks.compressionZstd') }}</span>
+          </div>
+          <ion-note class="cipher-desc">{{ t('tasks.compressionZstdHelp') }}</ion-note>
+        </RadioItem>
       </ion-radio-group>
     </div>
 
@@ -183,7 +193,6 @@ import {
   IonSelectOption,
   IonToggle,
   IonNote,
-  IonRadio,
   IonRadioGroup,
   IonBadge,
   modalController,
@@ -193,6 +202,7 @@ import { useI18n } from '@/composables/useI18n'
 import ContainerVersionSelector from '@/components/ContainerVersionSelector.vue'
 import FilePickerModal from '@/components/FilePickerModal.vue'
 import InputWithHistory from '@/components/InputWithHistory.vue'
+import RadioItem from '@/components/RadioItem.vue'
 import type { ContainerVersionInfo, TaskField } from '@/api/encv'
 import type { NewTaskState } from '@/components/NewTaskState'
 

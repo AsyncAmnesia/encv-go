@@ -132,6 +132,41 @@ const UPSTREAMS: Upstream[] = [
     hint: 'Check pm2 status for start-preview (encv-go :2025)',
   },
   {
+    // /api/stream/external → encv-go (:2025) — 外部文件流式预览（独立路径避免与 /api 误判）
+    match: '/api/stream/external',
+    target: 'http://127.0.0.1:2025',
+    wsTarget: 'ws://127.0.0.1:2025',
+    name: 'encv-go',
+    hint: 'Check pm2 status for start-preview (encv-go :2025)',
+  },
+  {
+    // /preview/ → encv-go (:2025) — 文本/图片/通用文件预览 SPA
+    // 不能仅靠 '/preview'（不带尾斜杠）匹配；URL 通常为 /preview/text?file=...
+    match: '/preview',
+    target: 'http://127.0.0.1:2025',
+    wsTarget: 'ws://127.0.0.1:2025',
+    name: 'encv-go',
+    hint: 'Check pm2 status for start-preview (encv-go :2025)',
+  },
+  {
+    // /stream 和 /decrypt → encv-go (:2025) — 视频/媒体流式端点
+    // 修复 trae 外网域名下 sample.mp4 播放失败：之前这俩路径未代理，落到 vite 默认 upstream
+    // 返 SPA HTML（text/html 413B），导致 video 元素 networkState=3 readyState=0。
+    // 必须先于 DEFAULT_UPSTREAM 匹配。
+    match: '/stream',
+    target: 'http://127.0.0.1:2025',
+    wsTarget: 'ws://127.0.0.1:2025',
+    name: 'encv-go',
+    hint: 'Check pm2 status for start-preview (encv-go :2025)',
+  },
+  {
+    match: '/decrypt',
+    target: 'http://127.0.0.1:2025',
+    wsTarget: 'ws://127.0.0.1:2025',
+    name: 'encv-go',
+    hint: 'Check pm2 status for start-preview (encv-go :2025)',
+  },
+  {
     match: '/p/',
     target: 'http://127.0.0.1:2025',
     wsTarget: 'ws://127.0.0.1:2025',
@@ -209,13 +244,17 @@ function logUpstream(req: IncomingMessage, up: Upstream, status: 'OK' | 'FAIL', 
  */
 function pickUpstream(url: string | undefined, referer: string | undefined, cookie: string | undefined): Upstream {
   if (!url) return DEFAULT_UPSTREAM
+  // 关键：req.url 包含 query string。'/stream?path=xxx' 不应误判为「不是 /stream」。
+  // 提早去掉 ? 之后的部分，只看 path。
+  const pathOnly = url.split('?', 1)[0] ?? '/'
   for (const up of UPSTREAMS) {
     // 把 '/openlist-ui' 同时匹配 '/openlist-ui' 和 '/openlist-ui/...'
     // 把 '/openlist'   同时匹配 '/openlist'   和 '/openlist/...'
     // 把 '/api'        匹配 '/api'  和 '/api/...'
-    if (url === up.match) return up
-    if (url === up.match + '/') return up
-    if (url.startsWith(up.match + '/')) return up
+    // 把 '/stream'     匹配 '/stream' 和 '/stream?...'（query 已被剥）
+    if (pathOnly === up.match) return up
+    if (pathOnly === up.match + '/') return up
+    if (pathOnly.startsWith(up.match + '/')) return up
   }
   // Cookie-based fallback: when user has visited /openlist-ui/ in this session,
   // they've received a Set-Cookie: __plugin_spa=1. Subsequent subresource requests
