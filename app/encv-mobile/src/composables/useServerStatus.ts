@@ -1,7 +1,7 @@
-import { ref, onMounted, onUnmounted } from 'vue'
-import { checkServerStatus, setApiBaseUrl, DEFAULT_API_BASE_URL, isOpenPreviewBrowser } from '@/api/encv'
+import { ref, onMounted, onUnmounted, type Ref } from 'vue'
+import { checkServerStatus, setApiBaseUrl, DEFAULT_API_BASE_URL } from '@/api/encv'
 import { eventBus } from './useEventBus'
-import { useWebSocket } from './useWebSocket'
+import { useRealtimeTransport, type TransportMode } from './useRealtimeTransport'
 import { isNative, restartBackend, stopBackend, getBackendStatus } from '@/plugins/GoProcess'
 import { useApiBaseProbe } from './useApiBaseProbe'
 
@@ -12,9 +12,7 @@ const isRestarting = ref(false)
 const isStopping = ref(false)
 // 🆕 2026-06-10 详情页状态展示增强
 const latencyMs = ref(0)              // 上次 checkStatus HTTP 响应延迟
-const transportMode = ref<'http-poll' | 'ws' | 'native-bridge' | 'unknown'>('unknown')
 const lastCheckedAt = ref<Date | null>(null)  // 上次探测时间
-const isSandboxBrowser = ref(false)   // OpenPreview 浏览器标记（只读）
 let initialized = false
 let nativeBridgeListenerAdded = false
 
@@ -40,7 +38,10 @@ function onConnectionError(data: { error: string }) {
   if (isRestarting.value) return
   // 🆕 2026-06-10 sandbox 浏览器下不显示 "Connection closed (code: 1006)"
   //  （trae 反代 :16000 不支持 WS 是已知架构限制，不是用户后端故障）
-  if (isSandboxBrowser.value) return
+  // transport 内部已分流：http-poll / native-bridge 模式不 emit connection-error
+  // 这里再加一层 isSandboxBrowser 防御：万一 transport 误触发了，仍不打扰用户
+  const transport = useRealtimeTransport()
+  if (transport.isSandboxBrowser.value) return
   lastError.value = data.error
 }
 
@@ -56,23 +57,22 @@ async function checkStatus() {
 }
 
 /**
- * 手动重连：先跑 probe 探测链，命中后用新 baseUrl 重建 WS。
+ * 手动重连：先跑 probe 探测链，命中后用新 baseUrl 重建 transport。
  * 用于：
  *   - 冷启动后仍 offline（探测失败） → 再次尝试
  *   - 用户在 Settings 改了 baseUrl → 立即让状态同步
- *   - WS 死掉且 HTTP 链路也没救 → 重探
- *
- * 与 useApiBaseProbe.probe() 的区别：本函数额外处理 WS 重连 + eventBus 通知。
+ *   - transport 死掉且 HTTP 链路也没救 → 重探
  */
 async function manualReconnect(): Promise<{ ok: boolean; baseUrl?: string; error?: string }> {
   isRestarting.value = true
-  useWebSocket().disconnect()
+  const transport = useRealtimeTransport()
+  transport.disconnect()
   try {
     const result = await useApiBaseProbe().probe({ force: true })
     // probe 成功 → setApiBaseUrl 已写，再用 checkStatus 探一次确认"链路真通"
     const check = await checkStatus()
     if (check.online) {
-      useWebSocket().connect()
+      transport.connect()
       eventBus.emit('api-base:connected', { baseUrl: result.baseUrl, source: result.source })
       return { ok: true, baseUrl: result.baseUrl }
     }
@@ -94,12 +94,7 @@ async function manualReconnect(): Promise<{ ok: boolean; baseUrl?: string; error
  *
  * 场景：用户在聊天过程中把 app 切到后台几分钟，网络环境可能已变
  *  （切 WiFi / 出隧道 / VPN 切换）。切回前台时再跑一次 probe，
- *  若 baseUrl 变了 → setApiBaseUrl → api-base:connected → useWebSocket 重连。
- *
- * 关键约束：
- *   - 只在 'visible' 切换时触发，避免 'hidden' 误触发
- *   - probe 内部 10s 节流，避免切应用瞬间多次触发
- *   - native 模式（APK 内嵌 backend）下 backend port 不会变，跳过探测
+ *  若 baseUrl 变了 → setApiBaseUrl → api-base:connected → useRealtimeTransport 重连。
  */
 let _visibilityListenerAdded = false
 function setupVisibilityProbe() {
@@ -107,13 +102,14 @@ function setupVisibilityProbe() {
   if (typeof document === 'undefined') return
   _visibilityListenerAdded = true
 
+  const transport = useRealtimeTransport()
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return
     if (isNative()) {
-      // APK 模式：backend 跑在设备本地 127.0.0.1，IP 不会变；只需重连 WS
+      // APK 模式：backend 跑在设备本地 127.0.0.1，IP 不会变；只需重连 transport
       if (!isOnline.value) {
         console.info('[useServerStatus] visibility visible + offline → reconnect')
-        useWebSocket().forceReconnect()
+        transport.forceReconnect()
       }
       return
     }
@@ -125,7 +121,7 @@ function setupVisibilityProbe() {
         // 重新 check status 以更新 isOnline
         checkStatus().then((check) => {
           if (check.online) {
-            useWebSocket().connect()
+            transport.connect()
           }
         })
       }
@@ -141,6 +137,7 @@ function addNativeBridgeListener() {
   nativeBridgeListenerAdded = true
 
   if (typeof window !== 'undefined') {
+    const transport = useRealtimeTransport()
     const syncStatus = (event: Event) => {
       const customEvent = event as CustomEvent
       const detail = customEvent.detail || {}
@@ -158,7 +155,7 @@ function addNativeBridgeListener() {
         lastError.value = ''
         isRestarting.value = false
         isStopping.value = false
-        useWebSocket().connect()
+        transport.connect()
       }
       if (detail.error) {
         lastError.value = detail.error
@@ -180,14 +177,14 @@ function addNativeBridgeListener() {
 async function handleRestart(): Promise<boolean> {
   if (!isNative()) {
     isOnline.value = false
-    useWebSocket().disconnect()
+    useRealtimeTransport().disconnect()
     return false
   }
   isRestarting.value = true
   isStopping.value = false
   isOnline.value = false
   lastError.value = ''
-  useWebSocket().disconnect()
+  useRealtimeTransport().disconnect()
   try {
     const result = await restartBackend()
     isRestarting.value = false
@@ -201,7 +198,7 @@ async function handleRestart(): Promise<boolean> {
           setApiBaseUrl(newUrl)
         }
         lastError.value = ''
-        useWebSocket().connect()
+        useRealtimeTransport().connect()
       }
     } else {
       lastError.value = result.lastError || lastError.value
@@ -220,7 +217,7 @@ async function handleStop(): Promise<boolean> {
   isRestarting.value = false
   isOnline.value = false
   lastError.value = ''
-  useWebSocket().disconnect()
+  useRealtimeTransport().disconnect()
   try {
     const result = await stopBackend()
     isStopping.value = false
@@ -234,20 +231,10 @@ async function handleStop(): Promise<boolean> {
 }
 
 export function useServerStatus() {
-  const { connect, connectionState } = useWebSocket()
+  const transport = useRealtimeTransport()
 
   addNativeBridgeListener()
   setupVisibilityProbe()
-
-  // 🆕 2026-06-10 初始化 transport 模式 + sandbox 标记
-  if (isNative()) {
-    transportMode.value = 'native-bridge'
-  } else if (isOpenPreviewBrowser()) {
-    transportMode.value = 'http-poll'
-    isSandboxBrowser.value = true
-  } else {
-    transportMode.value = 'ws'
-  }
 
   onMounted(async () => {
     if (!initialized) {
@@ -258,7 +245,7 @@ export function useServerStatus() {
           isOnline.value = true
           backendPort.value = status.port
           lastError.value = status.lastError || ''
-          connect()
+          transport.connect()
         } else if (status.lastError) {
           lastError.value = status.lastError
         }
@@ -266,15 +253,12 @@ export function useServerStatus() {
         // Web/dev 模式：跑探测链（cached → loopback → LAN 候选）
         // 探测成功 → 写 localStorage + setApiBaseUrl + connect
         // 探测失败 → 保留旧值兜底，不弹死错误
-        // 🆕 2026-06-09 沙箱 mock 浏览器：probe 在 trae 沙箱下也可能 throw（fallback 路径
-        //   已 graceful，但保险起见这里也包 try-catch —— 任何未预期 throw 都不能让
-        //   [App] onErrorCaptured 抓到，导致整个 SPA 渲染错误边界）
         try {
           const result = await useApiBaseProbe().probe()
           if (result.baseUrl) {
             const check = await checkStatus()
             if (check.online) {
-              connect()
+              transport.connect()
               eventBus.emit('api-base:connected', { baseUrl: result.baseUrl, source: result.source })
             } else {
               // 罕见：探测到 URL 但 health check 失败
@@ -284,14 +268,14 @@ export function useServerStatus() {
           } else {
             // 全失败，尝试 legacy checkStatus 兜底
             const fallback = await checkStatus()
-            if (fallback.online) connect()
+            if (fallback.online) transport.connect()
           }
         } catch (probeErr) {
           // 🆕 任何意外 throw → 兜底 legacy checkStatus，不让 [App] 错误边界捕获
           console.warn('[useServerStatus] probe threw unexpectedly, falling back:', probeErr instanceof Error ? probeErr.message : String(probeErr))
           try {
             const fallback = await checkStatus()
-            if (fallback.online) connect()
+            if (fallback.online) transport.connect()
           } catch (fallbackErr) {
             console.debug('[useServerStatus] legacy fallback also failed (expected in trae sandbox):', fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr))
           }
@@ -303,6 +287,8 @@ export function useServerStatus() {
   })
 
   onUnmounted(() => {
+    // server:status / server:connection-error 是模块级单例订阅（不在 composable 内
+    // 注销），所以多 component 共享 isOnline 状态
   })
 
   return {
@@ -312,15 +298,15 @@ export function useServerStatus() {
     isRestarting,
     isStopping,
     checkStatus,
-    connectionState,
-    // 🆕 2026-06-10 详情页状态展示
+    connectionState: transport.connectionState,
+    // 🆕 2026-06-10 详情页状态展示（统一从 transport 读，不再各自判定）
     latencyMs,
-    transportMode,
+    transportMode: transport.transportMode as Readonly<Ref<TransportMode>>,
     lastCheckedAt,
-    isSandboxBrowser,
+    isSandboxBrowser: transport.isSandboxBrowser,
     restartBackend: handleRestart,
     stopBackend: handleStop,
-    // 手动重连：跑探测链 + 重建 WS（用于 Settings "立即探测" / 错误 banner "重试"）
+    // 手动重连：跑探测链 + 重建 transport（用于 Settings "立即探测" / 错误 banner "重试"）
     manualReconnect,
     // 直接暴露 probe composable，UI 可调 probe() / setManual() / resetToDefault()
     probe: useApiBaseProbe,

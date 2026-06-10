@@ -11,14 +11,23 @@ export const DEFAULT_API_BASE_URL = 'http://127.0.0.1:2025'
 //   - APK 真机（capacitor://）直连 127.0.0.1:2025
 export const DEV_SANDBOX_ENTRY = 'http://127.0.0.1:16666'
 
-/** 判断当前是否在 OpenPreview 浏览器（agent-tool-host 提供的 trae 域名 mock 浏览器） */
+/** 判断当前是否在 OpenPreview 浏览器（agent-tool-host 提供的 trae 域名 mock 浏览器）
+ *
+ * 🆕 2026-06-10 修复：把 trae 反代端口 16000 也算上
+ *   背景：trae 反代 16000 不支持 WebSocket upgrade，OpenPreview 工具激活时
+ *   location 可能是 `http://127.0.0.1:16000`（trae 把页面代理到 16000），
+ *   这种情况下 origin.hostname === '127.0.0.1'，原 trae 域名正则匹配不到。
+ *   必须靠端口 16000 嗅探。
+ */
 export function isOpenPreviewBrowser(): boolean {
   if (typeof window === 'undefined' || !window.location) return false
   const origin = window.location.origin
+  const port = window.location.port
   return (
     /trae\.cn$/i.test(origin) ||
     /agent-sandbox/i.test(origin) ||
-    /^run-agent-/i.test(origin)
+    /^run-agent-/i.test(origin) ||
+    port === '16000'  // 🆕 trae 反代端口
   )
 }
 

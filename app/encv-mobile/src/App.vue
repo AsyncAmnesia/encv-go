@@ -117,7 +117,7 @@ import { ref, onMounted, onErrorCaptured, onUnmounted } from 'vue'
 import { IonApp, IonRouterOutlet, IonIcon, IonButton } from '@ionic/vue'
 import { warningOutline, refreshOutline, bugOutline, alertCircleOutline, codeSlashOutline, copyOutline } from 'ionicons/icons'
 import { useTheme } from '@/composables/useTheme'
-import { useWebSocket } from '@/composables/useWebSocket'
+import { useRealtimeTransport } from '@/composables/useRealtimeTransport'
 import { isNative, requestNotificationPermission, requestStoragePermission } from '@/plugins/GoProcess'
 import { hijackConsole } from '@/composables/useFrontendLogs'
 import { autoInitVConsole } from '@/composables/useDevTools'
@@ -130,7 +130,8 @@ import { initHighRefreshRate } from '@/composables/useHighRefreshRate'
 
 const { initTheme, detectP3Support } = useTheme()
 const { t } = useI18n()
-const { connect, disconnect } = useWebSocket()
+const transport = useRealtimeTransport()
+const { connect, disconnect } = transport
 
 const serviceGuardBlocked = ref(false)
 const serviceGuardDetail = ref('')
