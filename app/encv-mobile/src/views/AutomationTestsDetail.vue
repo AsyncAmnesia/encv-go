@@ -389,9 +389,37 @@ async function handleLoadPlugins() {
 }
 
 /**
+ * 把 ext 映射到 mock 目录分类
+ *   mp4/mkv/avi/mov → 'video'
+ *   mp3/flac/ogg/m4a/wav → 'audio'
+ *   png/jpg/jpeg/gif/webp → 'image'
+ *   pdf → 'pdf'
+ *   doc/docx/xls/xlsx/ppt/pptx → 'wps'
+ *   txt/md → 'text'
+ *   encv → 'alist-encrypted'
+ */
+function categoryForExt(ext: string): string {
+  const e = ext.toLowerCase().replace(/^\./, '')
+  if (['mp4', 'mkv', 'avi', 'mov', 'webm', 'flv', 'wmv'].includes(e)) return 'video'
+  if (['mp3', 'flac', 'ogg', 'm4a', 'wav', 'aac', 'opus'].includes(e)) return 'audio'
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tiff'].includes(e)) return 'image'
+  if (['pdf'].includes(e)) return 'pdf'
+  if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(e)) return 'wps'
+  if (['txt', 'md', 'rtf', 'log'].includes(e)) return 'text'
+  if (['encv', 'ae'].includes(e)) return 'alist-encrypted'
+  return 'misc'
+}
+
+/**
  * 根据已加载的插件，动态构建 WorkflowDefinition。
  * 这是核心：把旧的「硬编码笛卡尔积」升级为 DAG 工作流定义，
  * 然后通过引擎的 runWorkflow() 执行。
+ *
+ * 🆕 2026-06-10 重构：彻底消除硬编码
+ *   - 源文件按 plugin.supportedExtensions 选（不再一刀切 sample.mp4）
+ *   - 加密选项遍历 plugin.taskOptions.ExtraFields（不再硬编码 v4 cipherMode/compressionMode）
+ *   - v2/v3 仍走回归测试
+ *   - AI agent 等非 V4 插件不参与加密选项笛卡尔积
  */
 function buildDynamicWorkflow(): void {
   if (plugins.value.length === 0) {
@@ -405,29 +433,107 @@ function buildDynamicWorkflow(): void {
     const opts = plugin.taskOptions
     if (!opts) continue
 
-    const versions = opts.supportVersionSelect && opts.supportedVersions
+    // ====== 修 #4：按 plugin.supportedExtensions 选源文件 ======
+    const supportedExts = plugin.supportedExtensions ?? []
+    if (supportedExts.length === 0) continue
+    // 简单策略：每个 plugin 取 supportedExts[0]（避免笛卡尔积爆炸）
+    // 复杂策略：可遍历所有 ext 展开，但会让 case 数 × N
+    const sourceExt = supportedExts[0]
+    const sourcePath = `${mockRoot.value}01-plain-media/${categoryForExt(sourceExt)}/sample.${sourceExt}`
+
+    const versions: number[] = opts.supportVersionSelect && opts.supportedVersions
       ? opts.supportedVersions
       : [opts.defaultVersion]
 
+    // ====== 修 #5：遍历 plugin.taskOptions.ExtraFields ======
+    // 只对 type='select' 且 Options 长度 > 1 的字段展开笛卡尔积
+    // type='bool' 单独处理（true/false）
+    // type='string' / 'number' / 'password' 不展开（用 default）
+    const selectFields: { field: any; values: string[] }[] = []
+    const boolFields: { field: any }[] = []
+    for (const f of opts.extraFields ?? []) {
+      // 跳过 decrypt 专用 / encrypt 专用 field（按 Condition 过滤）
+      // Condition='encrypt' → 仅 encrypt 时展开
+      if (f.condition === 'encrypt' || f.condition === 'decrypt') {
+        // 暂存，下面按 taskType 过滤
+      }
+      if (f.type === 'select' && Array.isArray(f.options) && f.options.length > 1) {
+        selectFields.push({ field: f, values: f.options })
+      } else if (f.type === 'bool') {
+        boolFields.push({ field: f })
+      }
+    }
+
     for (const taskType of ['encrypt', 'decrypt'] as const) {
       for (const version of versions) {
-        const isV4 = version === 4
-        const cipherModes: Array<number | undefined> = isV4 && taskType === 'encrypt' ? [0, 1] : [undefined]
-        const compressionModes: Array<'none' | 'zstd' | undefined> = isV4 && taskType === 'encrypt' ? ['none', 'zstd'] : [undefined]
+        // 按 taskType 过滤 ExtraFields
+        const taskSelectFields = selectFields.filter(
+          (sf) => !sf.field.condition || sf.field.condition === taskType,
+        )
+        const taskBoolFields = boolFields.filter(
+          (bf) => !bf.field.condition || bf.field.condition === taskType,
+        )
 
-        for (const cipherMode of cipherModes) {
-          for (const compressionMode of compressionModes) {
+        // 笛卡尔积展开 select 字段（每个字段至少取 1 个值，所以是 product(len(values))）
+        const selectCombos = cartesianExpand(
+          taskSelectFields.map((sf) => sf.values),
+        )
+        // 笛卡尔积展开 bool 字段（2^N）
+        const boolCombos: boolean[][] = []
+        if (taskBoolFields.length === 0) {
+          boolCombos.push([])
+        } else {
+          const n = taskBoolFields.length
+          for (let mask = 0; mask < 1 << n; mask++) {
+            boolCombos.push(Array.from({ length: n }, (_, i) => Boolean(mask & (1 << i))))
+          }
+        }
+
+        for (const selectCombo of selectCombos) {
+          for (const boolCombo of boolCombos) {
+            const extraFields: Record<string, string> = {}
+
+            // 应用 select 字段值
+            taskSelectFields.forEach((sf, i) => {
+              const val = selectCombo[i]
+              if (val !== undefined) extraFields[sf.field.key] = val
+            })
+
+            // 应用 bool 字段值（"true" / "false"）
+            taskBoolFields.forEach((bf, i) => {
+              extraFields[bf.field.key] = boolCombo[i] ? 'true' : 'false'
+            })
+
+            // 构建 step id / name
             const idParts = [
-              plugin.name, taskType, `v${version}`,
-              cipherMode !== undefined ? `c${cipherMode}` : '',
-              compressionMode || '',
-            ].filter(Boolean)
-            const stepId = idParts.join('-')
+              plugin.name,
+              taskType,
+              `v${version}`,
+              sourceExt,
+            ]
+            // 加密选项加入 id（让每个组合都是独立 step）
+            for (const sf of taskSelectFields) {
+              const v = extraFields[sf.field.key]
+              if (v) idParts.push(`${sf.field.key}=${v}`)
+            }
+            for (const bf of taskBoolFields) {
+              const v = extraFields[bf.field.key]
+              if (v) idParts.push(`${bf.field.key}=${v}`)
+            }
+            const stepId = idParts.join('|')
 
-            // 构建可读名称：包含加密选型参数
-            const nameParts = [plugin.name, taskType.toUpperCase()]
-            if (cipherMode !== undefined) nameParts.push(`AES-${cipherMode === 0 ? '128' : '256'}-GCM`)
-            if (compressionMode) nameParts.push(compressionMode.toUpperCase())
+            const nameParts: string[] = [plugin.name, taskType.toUpperCase(), `v${version}`, sourceExt]
+            for (const sf of taskSelectFields) {
+              const v = extraFields[sf.field.key]
+              if (v) {
+                const label = sf.field.optionLabels?.[v] ?? v
+                nameParts.push(`${sf.field.key}=${label}`)
+              }
+            }
+            for (const bf of taskBoolFields) {
+              const v = extraFields[bf.field.key]
+              if (v) nameParts.push(`${bf.field.key}=${v}`)
+            }
 
             steps.push({
               id: stepId,
@@ -437,15 +543,12 @@ function buildDynamicWorkflow(): void {
                 taskType,
                 pluginName: plugin.name,
                 params: {
-                  sourcePath: DEFAULT_AUTOMATION_SOURCE,
+                  sourcePath,
                   password: 'automation-test-pwd',
                   version,
-                  cipherMode,
-                  compressionMode: compressionMode ?? undefined,
+                  extraFields: Object.keys(extraFields).length > 0 ? extraFields : undefined,
                 },
               },
-              // 解密任务依赖加密成功（通过 if 条件）
-              ...(taskType === 'decrypt' ? { if: { op: 'always' } as any } : {}),
             })
 
             dynamicTestCases.value.push({
@@ -453,8 +556,9 @@ function buildDynamicWorkflow(): void {
               pluginName: plugin.name,
               taskType,
               version,
-              cipherMode,
-              compressionMode,
+              sourcePath,
+              sourceExt,
+              extraFields: { ...extraFields },
             })
           }
         }
@@ -467,7 +571,7 @@ function buildDynamicWorkflow(): void {
   const wfDef: WorkflowDefinition = {
     id: 'dynamic-auto-test',
     name: '自动化测试套件（动态）',
-    description: `基于已加载插件 (${plugins.value.length}) 动态生成，矩阵展开 plugin × version × cipher × compression`,
+    description: `${plugins.value.length} 插件 × 源扩展名 × 版本 × 加密选项笛卡尔积（遍历 ExtraFields）`,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     trigger: 'manual',
@@ -476,7 +580,7 @@ function buildDynamicWorkflow(): void {
       {
         id: 'test-all',
         name: '全量测试（并行）',
-        strategy: { type: 'parallel', max: 5 }, // 并行提交最多 5 个
+        strategy: { type: 'parallel', max: 5 },
         steps,
       },
     ],
@@ -487,6 +591,16 @@ function buildDynamicWorkflow(): void {
   } else {
     engine.createDefinition(wfDef)
   }
+}
+
+/** 笛卡尔积展开：输入 [[1,2],[a,b,c]] → 输出 [[1,a],[1,b],[1,c],[2,a],[2,b],[2,c]] */
+function cartesianExpand(arrays: string[][]): string[][] {
+  if (arrays.length === 0) return [[]]
+  if (arrays.some((a) => a.length === 0)) return [[]]
+  return arrays.reduce<string[][]>(
+    (acc, curr) => acc.flatMap((a) => curr.map((c) => [...a, c])),
+    [[]],
+  )
 }
 
 async function handleRunWorkflow() {

@@ -84,6 +84,65 @@ export function useWorkflowEngine() {
   })
 
   // ==================== WS 回调监听 ====================
+  // 🆕 2026-06-10 修复：补齐 task:update / task:progress / task:created 监听
+  // 历史 bug：startListening 只监听 task:completed → 测试报告 "running" 期间
+  //   step.status 永远是 'pending'，completedSteps = 0 / totalSteps = N
+  //   progress 一直 0%、徽章一直 ◌（用户截图的"测试报告状态更新异常"）
+  // 修复：完整订阅 4 个 task 事件，currentRun.jobs[].steps[].status 实时同步
+
+  function findStepByTaskId(taskId: string): { step: StepRun; job: JobRun } | null {
+    if (!currentRun.value) return null
+    for (const job of currentRun.value.jobs) {
+      for (const step of job.steps) {
+        if (step.taskId === taskId) return { step, job }
+      }
+    }
+    return null
+  }
+
+  function onTaskCreated(data: { id: string; type: string; sourcePath: string }) {
+    if (!currentRun.value) return
+    // 任务刚被后端创建 → step 从 'pending' 升级到 'queued'（如果后端已绑 taskId）
+    const found = findStepByTaskId(data.id)
+    if (found && found.step.status === 'pending') {
+      found.step.status = 'queued'
+    }
+  }
+
+  function onTaskUpdate(data: { id: string; type: string; status: string; progress: number }) {
+    if (!currentRun.value) return
+    const found = findStepByTaskId(data.id)
+    if (!found) return
+    const { step } = found
+
+    // 状态机升级（pending → queued → running）
+    if (data.status === 'running' && (step.status === 'pending' || step.status === 'queued')) {
+      step.status = 'running'
+      if (!step.startedAt) step.startedAt = new Date().toISOString()
+    } else if (data.status === 'cancelling' && step.status === 'running') {
+      step.status = 'cancelling'
+    } else if (data.status === 'cancelled' && !isTerminalStep(step.status)) {
+      step.status = 'cancelled'
+      step.completedAt = new Date().toISOString()
+      if (step.startedAt) {
+        step.durationMs = Date.now() - new Date(step.startedAt).getTime()
+      }
+    }
+    if (typeof data.progress === 'number') {
+      step.progress = data.progress
+    }
+  }
+
+  function onTaskProgress(data: { id: string; progress: number; phase: string; speed: string; eta: string }) {
+    if (!currentRun.value) return
+    const found = findStepByTaskId(data.id)
+    if (!found) return
+    const { step } = found
+    if (typeof data.progress === 'number') step.progress = data.progress
+    if (data.phase) step.phase = data.phase
+    if (data.speed) step.speed = data.speed
+    if (data.eta) step.eta = data.eta
+  }
 
   function onTaskCompleted(data: { id: string; error?: string }) {
     if (!currentRun.value || currentRun.value.status !== 'running') return
@@ -124,10 +183,16 @@ export function useWorkflowEngine() {
 
   function startListening() {
     eventBus.on('task:completed', onTaskCompleted)
+    eventBus.on('task:update', onTaskUpdate)
+    eventBus.on('task:progress', onTaskProgress)
+    eventBus.on('task:created', onTaskCreated)
   }
 
   function stopListening() {
     eventBus.off('task:completed', onTaskCompleted)
+    eventBus.off('task:update', onTaskUpdate)
+    eventBus.off('task:progress', onTaskProgress)
+    eventBus.off('task:created', onTaskCreated)
   }
 
   // ==================== 执行核心 ====================
@@ -441,7 +506,9 @@ export function useWorkflowEngine() {
       spec.params.password ?? '',
       spec.params.version,
       spec.pluginName,
-      {},
+      // 🆕 2026-06-10：把 spec.params.extraFields 透传给后端 createTask
+      // 历史 bug：遍历 ExtraFields 生成的 case 完全丢失了加密选项（fn_rounds / stream_preset / 等）
+      spec.params.extraFields ?? {},
       spec.params.secondaryPassword,
       spec.params.cipherMode,
       spec.params.compressionMode,

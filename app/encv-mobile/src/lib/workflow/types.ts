@@ -19,6 +19,7 @@ export type StepStatus =
   | 'submitted'
   | 'queued'
   | 'running'
+  | 'cancelling'
   | 'success'
   | 'failure'
   | 'cancelled'
@@ -94,6 +95,8 @@ export interface EncvTaskActionParams {
   cipherMode?: number
   compressionMode?: 'none' | 'zstd'
   secondaryPassword?: string
+  /** 🆕 2026-06-10：插件 ExtraFields 键值对（按 plugin.taskOptions 声明） */
+  extraFields?: Record<string, string>
 }
 
 export interface EncvTaskActionSpec {
@@ -194,6 +197,11 @@ export interface StepRun {
   output?: Record<string, unknown>
   /** matrix 展开时的变量快照 */
   matrixVars?: Record<string, string>
+  // 🆕 2026-06-10：实时进度（由 task:update / task:progress WS 事件驱动）
+  progress?: number
+  phase?: string
+  speed?: string
+  eta?: string
 }
 
 export interface JobRun {

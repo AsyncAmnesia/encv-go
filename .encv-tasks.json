@@ -1,1 +1,648 @@
-[]
+[
+  {
+    "id": "14aac608-7715-4fa5-b922-fa3aca7f48c8",
+    "type": "decrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "video",
+    "status": "failed",
+    "progress": 10,
+    "phase": "initializing",
+    "error": "no decrypting plugin found: no suitable plugin found to decrypt container: /storage/emulated/0/encv-automation/01-plain-...",
+    "errorDetail": "no decrypting plugin found: no suitable plugin found to decrypt container: /storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T18:11:36.019577493Z",
+        "completedAt": "2026-06-10T18:11:36.019632267Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T18:11:36.019632267Z",
+        "completedAt": "2026-06-10T18:11:36.019859042Z"
+      },
+      {
+        "phase": "initializing",
+        "startedAt": "2026-06-10T18:11:36.019859042Z"
+      }
+    ],
+    "createdAt": "2026-06-10T18:11:34.515261134Z",
+    "completedAt": "2026-06-10T18:11:36.021092359Z"
+  },
+  {
+    "id": "940b80cb-3079-4639-9896-b3b7b04b6510",
+    "type": "decrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "alist_encrypt",
+    "status": "failed",
+    "progress": 10,
+    "phase": "initializing",
+    "error": "no decrypting plugin found: no suitable plugin found to decrypt container: /storage/emulated/0/encv-automation/01-plain-...",
+    "errorDetail": "no decrypting plugin found: no suitable plugin found to decrypt container: /storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T18:11:36.705073642Z",
+        "completedAt": "2026-06-10T18:11:36.705115999Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T18:11:36.705115999Z",
+        "completedAt": "2026-06-10T18:11:36.705209135Z"
+      },
+      {
+        "phase": "initializing",
+        "startedAt": "2026-06-10T18:11:36.705209135Z"
+      }
+    ],
+    "createdAt": "2026-06-10T18:11:35.992105661Z",
+    "completedAt": "2026-06-10T18:11:36.705754789Z"
+  },
+  {
+    "id": "f332f64e-4d7d-472b-a7a7-22d0f85dcb74",
+    "type": "encrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "wps",
+    "status": "completed",
+    "progress": 100,
+    "phase": "completed",
+    "containerVersion": 4,
+    "outputPath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.4pm.sccgwps",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T18:11:36.705847667Z",
+        "completedAt": "2026-06-10T18:11:36.705912597Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T18:11:36.705912597Z",
+        "completedAt": "2026-06-10T18:11:36.705966376Z"
+      },
+      {
+        "phase": "initializing",
+        "startedAt": "2026-06-10T18:11:36.705966376Z",
+        "completedAt": "2026-06-10T18:11:36.705983011Z"
+      },
+      {
+        "phase": "preprocessing",
+        "startedAt": "2026-06-10T18:11:36.705983011Z",
+        "completedAt": "2026-06-10T18:11:36.727361811Z",
+        "detail": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.4pm.sccgwps"
+      }
+    ],
+    "createdAt": "2026-06-10T18:11:35.008849224Z",
+    "completedAt": "2026-06-10T18:11:36.727361811Z"
+  },
+  {
+    "id": "54568c87-7e45-4486-b7db-c95b3958f54d",
+    "type": "decrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "text",
+    "status": "failed",
+    "progress": 10,
+    "phase": "initializing",
+    "error": "no decrypting plugin found: no suitable plugin found to decrypt container: /storage/emulated/0/encv-automation/01-plain-...",
+    "errorDetail": "no decrypting plugin found: no suitable plugin found to decrypt container: /storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T18:11:37.400908012Z",
+        "completedAt": "2026-06-10T18:11:37.401060082Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T18:11:37.401060082Z",
+        "completedAt": "2026-06-10T18:11:37.401165033Z"
+      },
+      {
+        "phase": "initializing",
+        "startedAt": "2026-06-10T18:11:37.401165033Z"
+      }
+    ],
+    "createdAt": "2026-06-10T18:11:35.81012007Z",
+    "completedAt": "2026-06-10T18:11:37.402153134Z"
+  },
+  {
+    "id": "0a9fa0ae-cb94-414b-aeba-e03e0d7e6757",
+    "type": "encrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "video",
+    "status": "completed",
+    "progress": 100,
+    "phase": "completed",
+    "containerVersion": 4,
+    "outputPath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.4pm.sccgv",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T18:11:34.668035609Z",
+        "completedAt": "2026-06-10T18:11:34.668232202Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T18:11:34.668232202Z",
+        "completedAt": "2026-06-10T18:11:34.668493816Z"
+      },
+      {
+        "phase": "initializing",
+        "startedAt": "2026-06-10T18:11:34.668493816Z",
+        "completedAt": "2026-06-10T18:11:34.668501855Z"
+      },
+      {
+        "phase": "preprocessing",
+        "startedAt": "2026-06-10T18:11:34.668501855Z",
+        "completedAt": "2026-06-10T18:11:35.339068385Z",
+        "detail": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.4pm.sccgv"
+      }
+    ],
+    "createdAt": "2026-06-10T18:11:33.791883843Z",
+    "completedAt": "2026-06-10T18:11:35.339068385Z"
+  },
+  {
+    "id": "2a53f94a-7277-440f-9b72-6ea41693b94c",
+    "type": "encrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "video",
+    "status": "completed",
+    "progress": 100,
+    "phase": "completed",
+    "containerVersion": 4,
+    "outputPath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.4pm.sccgv",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T18:11:36.729096278Z",
+        "completedAt": "2026-06-10T18:11:36.729135117Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T18:11:36.729135117Z",
+        "completedAt": "2026-06-10T18:11:36.729197527Z"
+      },
+      {
+        "phase": "initializing",
+        "startedAt": "2026-06-10T18:11:36.729197527Z",
+        "completedAt": "2026-06-10T18:11:36.729212718Z"
+      },
+      {
+        "phase": "preprocessing",
+        "startedAt": "2026-06-10T18:11:36.729212718Z",
+        "completedAt": "2026-06-10T18:11:37.400013439Z",
+        "detail": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.4pm.sccgv"
+      }
+    ],
+    "createdAt": "2026-06-10T18:11:33.923582757Z",
+    "completedAt": "2026-06-10T18:11:37.400013439Z"
+  },
+  {
+    "id": "5cce3071-ed8d-48ba-9124-94a178e77971",
+    "type": "encrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "video",
+    "status": "completed",
+    "progress": 100,
+    "phase": "completed",
+    "containerVersion": 4,
+    "outputPath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.4pm.sccgv",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T18:11:37.402347195Z",
+        "completedAt": "2026-06-10T18:11:37.402425081Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T18:11:37.402425081Z",
+        "completedAt": "2026-06-10T18:11:37.402500471Z"
+      },
+      {
+        "phase": "initializing",
+        "startedAt": "2026-06-10T18:11:37.402500471Z",
+        "completedAt": "2026-06-10T18:11:37.402508006Z"
+      },
+      {
+        "phase": "preprocessing",
+        "startedAt": "2026-06-10T18:11:37.402508006Z",
+        "completedAt": "2026-06-10T18:11:38.046301927Z",
+        "detail": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.4pm.sccgv"
+      }
+    ],
+    "createdAt": "2026-06-10T18:11:34.134074096Z",
+    "completedAt": "2026-06-10T18:11:38.046301927Z"
+  },
+  {
+    "id": "816bb75e-f48d-4864-ad3c-e2447ba8951c",
+    "type": "encrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "audio",
+    "status": "completed",
+    "progress": 100,
+    "phase": "completed",
+    "containerVersion": 4,
+    "outputPath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.4pm.sccga",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T18:11:38.069401762Z",
+        "completedAt": "2026-06-10T18:11:38.069490691Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T18:11:38.069490691Z",
+        "completedAt": "2026-06-10T18:11:38.069548051Z"
+      },
+      {
+        "phase": "initializing",
+        "startedAt": "2026-06-10T18:11:38.069548051Z",
+        "completedAt": "2026-06-10T18:11:38.069554318Z"
+      },
+      {
+        "phase": "preprocessing",
+        "startedAt": "2026-06-10T18:11:38.069554318Z",
+        "completedAt": "2026-06-10T18:11:38.089883911Z",
+        "detail": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.4pm.sccga"
+      }
+    ],
+    "createdAt": "2026-06-10T18:11:34.64258755Z",
+    "completedAt": "2026-06-10T18:11:38.089883911Z"
+  },
+  {
+    "id": "37b1fc61-8e05-483b-a2e0-888c18cfd233",
+    "type": "encrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "pdf",
+    "status": "completed",
+    "progress": 100,
+    "phase": "completed",
+    "containerVersion": 4,
+    "outputPath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.4pm.sccgpdf",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T18:11:38.046974795Z",
+        "completedAt": "2026-06-10T18:11:38.047032517Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T18:11:38.047032517Z",
+        "completedAt": "2026-06-10T18:11:38.04710229Z"
+      },
+      {
+        "phase": "initializing",
+        "startedAt": "2026-06-10T18:11:38.04710229Z",
+        "completedAt": "2026-06-10T18:11:38.047111318Z"
+      },
+      {
+        "phase": "preprocessing",
+        "startedAt": "2026-06-10T18:11:38.047111318Z",
+        "completedAt": "2026-06-10T18:11:38.068669305Z",
+        "detail": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.4pm.sccgpdf"
+      }
+    ],
+    "createdAt": "2026-06-10T18:11:35.527045473Z",
+    "completedAt": "2026-06-10T18:11:38.068669305Z"
+  },
+  {
+    "id": "96334a3f-1358-4af3-8800-d1a577096790",
+    "type": "encrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "video",
+    "status": "completed",
+    "progress": 100,
+    "phase": "completed",
+    "containerVersion": 4,
+    "outputPath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.4pm.sccgv",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T18:11:35.339690657Z",
+        "completedAt": "2026-06-10T18:11:35.339786927Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T18:11:35.339786927Z",
+        "completedAt": "2026-06-10T18:11:35.339829421Z"
+      },
+      {
+        "phase": "initializing",
+        "startedAt": "2026-06-10T18:11:35.339829421Z",
+        "completedAt": "2026-06-10T18:11:35.339836327Z"
+      },
+      {
+        "phase": "preprocessing",
+        "startedAt": "2026-06-10T18:11:35.339836327Z",
+        "completedAt": "2026-06-10T18:11:36.017340724Z",
+        "detail": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.4pm.sccgv"
+      }
+    ],
+    "createdAt": "2026-06-10T18:11:34.027228697Z",
+    "completedAt": "2026-06-10T18:11:36.017340724Z"
+  },
+  {
+    "id": "00b8415e-c52f-46fb-958c-84a9daf52d1c",
+    "type": "decrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "video",
+    "status": "failed",
+    "progress": 10,
+    "phase": "initializing",
+    "error": "no decrypting plugin found: no suitable plugin found to decrypt container: /storage/emulated/0/encv-automation/01-plain-...",
+    "errorDetail": "no decrypting plugin found: no suitable plugin found to decrypt container: /storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T18:11:36.018328361Z",
+        "completedAt": "2026-06-10T18:11:36.018556143Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T18:11:36.018556143Z",
+        "completedAt": "2026-06-10T18:11:36.018666434Z"
+      },
+      {
+        "phase": "initializing",
+        "startedAt": "2026-06-10T18:11:36.018666434Z"
+      }
+    ],
+    "createdAt": "2026-06-10T18:11:34.419401864Z",
+    "completedAt": "2026-06-10T18:11:36.019455967Z"
+  },
+  {
+    "id": "1fbc2515-73c2-47f6-840e-e20127dd6fb6",
+    "type": "decrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "audio",
+    "status": "failed",
+    "progress": 10,
+    "phase": "initializing",
+    "error": "no decrypting plugin found: no suitable plugin found to decrypt container: /storage/emulated/0/encv-automation/01-plain-...",
+    "errorDetail": "no decrypting plugin found: no suitable plugin found to decrypt container: /storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T18:11:36.021239549Z",
+        "completedAt": "2026-06-10T18:11:36.021284285Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T18:11:36.021284285Z",
+        "completedAt": "2026-06-10T18:11:36.021370807Z"
+      },
+      {
+        "phase": "initializing",
+        "startedAt": "2026-06-10T18:11:36.021370807Z"
+      }
+    ],
+    "createdAt": "2026-06-10T18:11:34.735752715Z",
+    "completedAt": "2026-06-10T18:11:36.0223411Z"
+  },
+  {
+    "id": "6022b825-85f7-47ca-9575-1d21aab79fe2",
+    "type": "decrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "image",
+    "status": "failed",
+    "progress": 10,
+    "phase": "initializing",
+    "error": "no decrypting plugin found: no suitable plugin found to decrypt container: /storage/emulated/0/encv-automation/01-plain-...",
+    "errorDetail": "no decrypting plugin found: no suitable plugin found to decrypt container: /storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T18:11:38.090473959Z",
+        "completedAt": "2026-06-10T18:11:38.09055799Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T18:11:38.09055799Z",
+        "completedAt": "2026-06-10T18:11:38.090659599Z"
+      },
+      {
+        "phase": "initializing",
+        "startedAt": "2026-06-10T18:11:38.090659599Z"
+      }
+    ],
+    "createdAt": "2026-06-10T18:11:34.918328098Z",
+    "completedAt": "2026-06-10T18:11:38.091184675Z"
+  },
+  {
+    "id": "26256574-5afa-41ba-a3fa-a67fea678396",
+    "type": "encrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "image",
+    "status": "completed",
+    "progress": 100,
+    "phase": "completed",
+    "containerVersion": 4,
+    "outputPath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.4pm.sccgi",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T18:11:38.091274624Z",
+        "completedAt": "2026-06-10T18:11:38.091326264Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T18:11:38.091326264Z",
+        "completedAt": "2026-06-10T18:11:38.091381858Z"
+      },
+      {
+        "phase": "initializing",
+        "startedAt": "2026-06-10T18:11:38.091381858Z",
+        "completedAt": "2026-06-10T18:11:38.091389426Z"
+      },
+      {
+        "phase": "preprocessing",
+        "startedAt": "2026-06-10T18:11:38.091389426Z",
+        "completedAt": "2026-06-10T18:11:38.111879257Z",
+        "detail": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.4pm.sccgi"
+      }
+    ],
+    "createdAt": "2026-06-10T18:11:34.830486634Z",
+    "completedAt": "2026-06-10T18:11:38.111879257Z"
+  },
+  {
+    "id": "bc190994-4280-4595-9140-46af1b5cc53b",
+    "type": "decrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "wps",
+    "status": "failed",
+    "progress": 10,
+    "phase": "initializing",
+    "error": "no decrypting plugin found: no suitable plugin found to decrypt container: /storage/emulated/0/encv-automation/01-plain-...",
+    "errorDetail": "no decrypting plugin found: no suitable plugin found to decrypt container: /storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T18:11:38.114029101Z",
+        "completedAt": "2026-06-10T18:11:38.114070832Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T18:11:38.114070832Z",
+        "completedAt": "2026-06-10T18:11:38.114229173Z"
+      },
+      {
+        "phase": "initializing",
+        "startedAt": "2026-06-10T18:11:38.114229173Z"
+      }
+    ],
+    "createdAt": "2026-06-10T18:11:35.43173424Z",
+    "completedAt": "2026-06-10T18:11:38.11476321Z"
+  },
+  {
+    "id": "2f30a1a1-ec41-4add-ae0d-fb4b42a2f339",
+    "type": "encrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "text",
+    "status": "completed",
+    "progress": 100,
+    "phase": "completed",
+    "containerVersion": 4,
+    "outputPath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.4pm.sccgt",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T18:11:38.114845296Z",
+        "completedAt": "2026-06-10T18:11:38.114927391Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T18:11:38.114927391Z",
+        "completedAt": "2026-06-10T18:11:38.114977057Z"
+      },
+      {
+        "phase": "initializing",
+        "startedAt": "2026-06-10T18:11:38.114977057Z",
+        "completedAt": "2026-06-10T18:11:38.114982523Z"
+      },
+      {
+        "phase": "preprocessing",
+        "startedAt": "2026-06-10T18:11:38.114982523Z",
+        "completedAt": "2026-06-10T18:11:38.135659491Z",
+        "detail": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.4pm.sccgt"
+      }
+    ],
+    "createdAt": "2026-06-10T18:11:35.712757682Z",
+    "completedAt": "2026-06-10T18:11:38.135659491Z"
+  },
+  {
+    "id": "bced7eca-4e0c-462f-844f-9050e7b18255",
+    "type": "encrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "alist_encrypt",
+    "status": "completed",
+    "progress": 100,
+    "phase": "completed",
+    "outputPath": "/storage/emulated/0/encv-automation/01-plain-media/video/cJeDcgjRQopv7kTTt.bin",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T18:11:38.136340761Z",
+        "completedAt": "2026-06-10T18:11:38.136385754Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T18:11:38.136385754Z",
+        "completedAt": "2026-06-10T18:11:38.136525124Z"
+      },
+      {
+        "phase": "initializing",
+        "startedAt": "2026-06-10T18:11:38.136525124Z",
+        "completedAt": "2026-06-10T18:11:38.136532838Z"
+      },
+      {
+        "phase": "preprocessing",
+        "startedAt": "2026-06-10T18:11:38.136532838Z",
+        "completedAt": "2026-06-10T18:11:38.137295429Z",
+        "detail": "/storage/emulated/0/encv-automation/01-plain-media/video/cJeDcgjRQopv7kTTt.bin"
+      }
+    ],
+    "createdAt": "2026-06-10T18:11:35.902327801Z",
+    "completedAt": "2026-06-10T18:11:38.137295429Z"
+  },
+  {
+    "id": "505f7df5-a41c-47c5-b2d5-d3912d0eb81f",
+    "type": "encrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "video",
+    "status": "completed",
+    "progress": 100,
+    "phase": "completed",
+    "containerVersion": 4,
+    "outputPath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.4pm.sccgv",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T18:11:36.022570278Z",
+        "completedAt": "2026-06-10T18:11:36.022623016Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T18:11:36.022623016Z",
+        "completedAt": "2026-06-10T18:11:36.022900474Z"
+      },
+      {
+        "phase": "initializing",
+        "startedAt": "2026-06-10T18:11:36.022900474Z",
+        "completedAt": "2026-06-10T18:11:36.022908618Z"
+      },
+      {
+        "phase": "preprocessing",
+        "startedAt": "2026-06-10T18:11:36.022908618Z",
+        "completedAt": "2026-06-10T18:11:36.704496132Z",
+        "detail": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.4pm.sccgv"
+      }
+    ],
+    "createdAt": "2026-06-10T18:11:34.276082497Z",
+    "completedAt": "2026-06-10T18:11:36.704496132Z"
+  },
+  {
+    "id": "ac6a2a38-d587-48b7-b387-47fc4fd999ac",
+    "type": "decrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "pdf",
+    "status": "failed",
+    "progress": 10,
+    "phase": "initializing",
+    "error": "no decrypting plugin found: no suitable plugin found to decrypt container: /storage/emulated/0/encv-automation/01-plain-...",
+    "errorDetail": "no decrypting plugin found: no suitable plugin found to decrypt container: /storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T18:11:36.728080875Z",
+        "completedAt": "2026-06-10T18:11:36.728120751Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T18:11:36.728120751Z",
+        "completedAt": "2026-06-10T18:11:36.728213587Z"
+      },
+      {
+        "phase": "initializing",
+        "startedAt": "2026-06-10T18:11:36.728213587Z"
+      }
+    ],
+    "createdAt": "2026-06-10T18:11:35.616793679Z",
+    "completedAt": "2026-06-10T18:11:36.728990278Z"
+  }
+]

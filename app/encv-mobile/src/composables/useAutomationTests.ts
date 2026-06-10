@@ -123,6 +123,87 @@ export function useAutomationTests() {
     eventBus.off('task:update', onTaskUpdate)
   }
 
+  // ==================== 本地持久化（修 #2：测试结果保存到本地方便分析） ====================
+  // 🆕 2026-06-10 修复：测试结果原只存内存，刷新页面 / 关 App 丢失
+  // 修复：localStorage 持久化最近 50 次 run + 当前 run，AI agent 也能用
+
+  const RESULTS_STORAGE_KEY = 'encv_automation_results_v1'
+  const MAX_PERSISTED_RUNS = 50
+
+  interface PersistedRun {
+    id: string
+    startedAt: string
+    completedAt?: string
+    totalCases: number
+    passed: number
+    failed: number
+    skipped: number
+    results: TestCaseResult[]
+  }
+
+  function loadPersistedRuns(): PersistedRun[] {
+    try {
+      const raw = localStorage.getItem(RESULTS_STORAGE_KEY)
+      if (!raw) return []
+      const parsed = JSON.parse(raw) as PersistedRun[]
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+
+  function savePersistedRuns(runs: PersistedRun[]): void {
+    try {
+      // 按 startedAt 倒序裁剪到 MAX_PERSISTED_RUNS
+      const trimmed = [...runs]
+        .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+        .slice(0, MAX_PERSISTED_RUNS)
+      localStorage.setItem(RESULTS_STORAGE_KEY, JSON.stringify(trimmed))
+    } catch (e) {
+      console.debug('[useAutomationTests] localStorage save failed:', e)
+    }
+  }
+
+  /** 把当前 results 快照成 PersistedRun 并写入 localStorage */
+  function persistCurrentRun(): void {
+    if (results.value.length === 0) return
+    const startedAt = results.value
+      .map((r) => r.submittedAt ?? '')
+      .filter(Boolean)
+      .sort()[0] ?? new Date().toISOString()
+    const completedAt = new Date().toISOString()
+    const passed = results.value.filter((r) => r.status === 'passed').length
+    const failed = results.value.filter((r) => r.status === 'failed').length
+    const skipped = results.value.filter((r) => r.status === 'skipped').length
+    const run: PersistedRun = {
+      id: `ar-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      startedAt,
+      completedAt,
+      totalCases: results.value.length,
+      passed,
+      failed,
+      skipped,
+      results: results.value,
+    }
+    const all = loadPersistedRuns()
+    all.unshift(run)
+    savePersistedRuns(all)
+  }
+
+  /** 暴露给 UI：读取历史 run（用户可以打开看历史报告） */
+  function getPersistedRuns(): PersistedRun[] {
+    return loadPersistedRuns()
+  }
+
+  /** 暴露给 UI：清空历史 */
+  function clearPersistedRuns(): void {
+    try {
+      localStorage.removeItem(RESULTS_STORAGE_KEY)
+    } catch {
+      // noop
+    }
+  }
+
   async function loadPlugins(): Promise<void> {
     isLoadingPlugins.value = true
     lastError.value = null
@@ -250,6 +331,10 @@ export function useAutomationTests() {
       progress.value.completed++
     }
 
+    // 🆕 2026-06-10：所有 case 提交完后立即持久化当前 run 到 localStorage
+    // 即使用户中途关 App，下次也能在 "历史运行" 看到完整结果
+    persistCurrentRun()
+
     isRunning.value = false
   }
 
@@ -275,5 +360,8 @@ export function useAutomationTests() {
     reset,
     startListening,
     stopListening,
+    // 🆕 2026-06-10：本地持久化
+    getPersistedRuns,
+    clearPersistedRuns,
   }
 }

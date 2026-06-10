@@ -148,26 +148,41 @@
           <!-- 修复：连续 ≥2 个 triggeredBy != 'user' 的 task → 折叠成 1 张 group card -->
           <!--       点 group card 右侧 chevron 展开/折叠详情 -->
           <ion-item-sliding v-if="item.kind === 'group'">
-            <ion-item button detail @click="toggleTaskGroup(item.groupKey!)">
-              <ion-icon :icon="cogOutline" color="primary" slot="start"></ion-icon>
+            <ion-item button detail @click="toggleTaskGroup(item.groupKey!)" :class="['task-group-card', `group-tone-${item.tone}`]">
+              <div class="group-icon-bubble" :class="`group-tone-${item.tone}`" slot="start">
+                <ion-icon :icon="item.tone === 'ai_agent' ? hardwareChipOutline : cogOutline"></ion-icon>
+              </div>
               <ion-label>
-                <h2>{{ t('tasks.triggeredBy_automation') }} · {{ item.tasks.length }} {{ t('tasks.tasksCount') }}</h2>
-                <p class="card-meta-row">
+                <h2 class="group-title">
+                  {{ item.tone === 'ai_agent' ? t('tasks.triggeredBy_ai_agent') : t('tasks.triggeredBy_automation') }}
+                  <span class="group-count">· {{ item.tasks.length }} {{ t('tasks.tasksCount') }}</span>
+                </h2>
+                <p class="card-meta-row group-meta-row">
                   <ion-badge v-if="item.summary.passed > 0" color="success" class="status-badge">
-                    ✓ {{ item.summary.passed }}
+                    <ion-icon :icon="checkmarkCircle" class="badge-icon"></ion-icon>
+                    {{ item.summary.passed }}
                   </ion-badge>
                   <ion-badge v-if="item.summary.failed > 0" color="danger" class="status-badge">
-                    ✗ {{ item.summary.failed }}
+                    <ion-icon :icon="closeCircle" class="badge-icon"></ion-icon>
+                    {{ item.summary.failed }}
                   </ion-badge>
                   <ion-badge v-if="item.summary.running > 0" color="warning" class="status-badge">
-                    ▶ {{ item.summary.running }}
+                    <ion-spinner name="dots" class="badge-spinner"></ion-spinner>
+                    {{ item.summary.running }}
                   </ion-badge>
                   <ion-badge v-if="item.summary.pending > 0" color="medium" class="status-badge">
-                    ⋯ {{ item.summary.pending }}
+                    {{ item.summary.pending }}
                   </ion-badge>
                 </p>
-                <p class="task-time-info">
+                <div class="group-progress-track">
+                  <div
+                    class="group-progress-fill"
+                    :style="{ width: item.summary.percent + '%' }"
+                  ></div>
+                </div>
+                <p class="task-time-info group-time-info">
                   <span class="time-created">{{ formatDateTime(item.summary.latestCreatedAt) }}</span>
+                  <span class="group-percent-label">{{ item.summary.percent }}%</span>
                 </p>
               </ion-label>
               <ion-button
@@ -176,6 +191,7 @@
                 size="small"
                 @click.stop="toggleTaskGroup(item.groupKey!)"
                 :title="isTaskGroupExpanded(item.groupKey!) ? t('tasks.collapse') : t('tasks.expand')"
+                class="group-chevron-btn"
               >
                 <ion-icon
                   :icon="isTaskGroupExpanded(item.groupKey!) ? chevronBack : chevronForward"
@@ -430,7 +446,7 @@ async function handleClearCompleted() {
 const GROUP_FOLD_THRESHOLD = 2
 
 type DisplayItem =
-  | { kind: 'group'; key: string; groupKey: string; tasks: EncvTask[]; summary: { passed: number; failed: number; running: number; pending: number; latestCreatedAt: string } }
+  | { kind: 'group'; key: string; groupKey: string; tone: 'automation' | 'ai_agent'; tasks: EncvTask[]; summary: { passed: number; failed: number; running: number; pending: number; percent: number; latestCreatedAt: string } }
   | { kind: 'task'; key: string; task: EncvTask }
 
 const expandedGroupKeys = ref<Set<string>>(new Set())
@@ -502,12 +518,20 @@ function buildGroupItem(groupKey: string, seg: EncvTask[]): DisplayItem {
       latest = t
     }
   }
+  // 🆕 2026-06-10：完成度 = (passed + failed) / total（不算 running/pending）
+  // 跟 task 卡片 progress 对齐
+  const finished = passed + failed
+  const percent = seg.length > 0 ? Math.round((finished / seg.length) * 100) : 0
+  // tone: 用第一张 task 的 triggeredBy 决定（折叠段内都是同 triggeredBy）
+  const firstBy = getTriggeredBy(seg[0].id)
+  const tone: 'automation' | 'ai_agent' = firstBy === 'ai_agent' ? 'ai_agent' : 'automation'
   return {
     kind: 'group',
     key: groupKey,
     groupKey,
+    tone,
     tasks: seg,
-    summary: { passed, failed, running, pending, latestCreatedAt: latest.createdAt },
+    summary: { passed, failed, running, pending, percent, latestCreatedAt: latest.createdAt },
   }
 }
 
@@ -660,6 +684,119 @@ onMounted(() => {
   margin-top: 2px;
   font-size: 11px;
   color: var(--encv-text-secondary);
+}
+
+/* ============================================================
+   🆕 2026-06-10 修复：自动化测试 / AI agent 任务组卡片美化
+   ============================================================ */
+.task-group-card {
+  --background: var(--ion-color-light);
+  border-left: 4px solid var(--ion-color-primary);
+  margin: 8px 0;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: background 0.2s ease;
+}
+.task-group-card.group-tone-ai_agent {
+  border-left-color: var(--ion-color-secondary);
+  --background: linear-gradient(135deg, rgba(139, 92, 246, 0.08), rgba(139, 92, 246, 0.02));
+}
+.task-group-card.group-tone-automation {
+  border-left-color: var(--ion-color-primary);
+  --background: linear-gradient(135deg, rgba(79, 140, 255, 0.08), rgba(79, 140, 255, 0.02));
+}
+
+.group-icon-bubble {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  margin-right: 4px;
+}
+.group-icon-bubble.group-tone-ai_agent {
+  background: var(--ion-color-secondary);
+  color: white;
+}
+.group-icon-bubble.group-tone-automation {
+  background: var(--ion-color-primary);
+  color: white;
+}
+.group-icon-bubble ion-icon {
+  font-size: 22px;
+}
+
+.group-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 4px;
+  color: var(--ion-color-dark);
+}
+.group-count {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ion-color-medium-shade);
+  margin-left: 4px;
+}
+
+.group-meta-row {
+  margin: 6px 0;
+}
+.group-meta-row .status-badge {
+  font-size: 11px;
+  padding: 3px 8px;
+  margin-right: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.badge-icon {
+  font-size: 12px;
+}
+.badge-spinner {
+  width: 10px;
+  height: 10px;
+  --color: currentColor;
+}
+
+.group-progress-track {
+  height: 6px;
+  background: var(--ion-color-step-100, rgba(0, 0, 0, 0.06));
+  border-radius: 3px;
+  overflow: hidden;
+  margin: 6px 0 4px;
+}
+.group-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--ion-color-primary), var(--ion-color-primary-shade));
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+.group-tone-ai_agent .group-progress-fill {
+  background: linear-gradient(90deg, var(--ion-color-secondary), var(--ion-color-secondary-shade));
+}
+
+.group-time-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 2px 0 0;
+  font-size: 11px;
+}
+.group-percent-label {
+  font-weight: 600;
+  color: var(--ion-color-primary);
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+.group-tone-ai_agent .group-percent-label {
+  color: var(--ion-color-secondary);
+}
+
+.group-chevron-btn {
+  --color: var(--ion-color-medium-shade);
+  margin: 0;
 }
 
 .time-created {

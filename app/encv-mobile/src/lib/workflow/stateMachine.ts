@@ -23,7 +23,8 @@ const VALID_TRANSITIONS: Record<StepStatus, Set<StepStatus>> = {
   pending: new Set(['submitted', 'cancelled']),
   submitted: new Set(['queued', 'cancelled']),
   queued: new Set(['running', 'cancelled']),
-  running: new Set(['success', 'failure', 'cancelled', 'timed_out']),
+  running: new Set(['cancelling', 'success', 'failure', 'cancelled', 'timed_out']),
+  cancelling: new Set(['cancelled', 'failure', 'success']), // 取消中 → 已取消/成功/失败
   success: new Set(),       // 终态
   failure: new Set(),       // 终态
   cancelled: new Set(),     // 终态
