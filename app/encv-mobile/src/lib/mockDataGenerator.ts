@@ -89,20 +89,9 @@ function joinPath(...parts: string[]): string {
   return parts.join('/').replace(/\/+/g, '/')
 }
 
-/**
- * ⚠️ 防御：确保父目录存在
- *
- * 根因复盘：2026-06-10 mock 生成 ENOENT（与 scripts/generate-mock-files.ts 同源）
- * 写盘回调未先建父目录导致失败
- */
-function ensureParentDir(fullPath: string): void {
-  // 兼容浏览器与 Node
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const fs: any = (globalThis as any).fs ?? require?.('fs')
-  if (!fs) return // 浏览器环境下无 fs，跳过
-  const parent = fullPath.split('/').slice(0, -1).join('/')
-  if (parent) fs.mkdirSync(parent, { recursive: true })
-}
+// 注：mockDataGenerator 自身是纯算法 + 可选 writeToDisk 回调的库
+// 父目录建在调用方（scripts/generate-mock-files.ts 是 Node 环境，自己有 ensureParentDir）
+// 这里不放 Node 专属 fs 代码（避免污染前端 bundle + 避开 vue-tsc TS2580: require 找不到）
 
 // ==================== JPEG ====================
 
@@ -773,7 +762,7 @@ export async function generateMockFiles(opts: GenerateOptions): Promise<Generate
   for (const s of specs) {
     if (opts.writeToDisk) {
       const fullPath = joinPath(opts.root, s.relativePath)
-      ensureParentDir(fullPath)  // ⚠️ 防御：递归创建父目录
+      // 父目录由调用方保证（Node 端 scripts/generate-mock-files.ts 内有 ensureParentDir）
       await opts.writeToDisk(fullPath, s.data)
     }
     count++

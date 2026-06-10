@@ -16,9 +16,23 @@
  * 如果不一致 → "source file not found" 错误（用户报告的问题）
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   collectSpecs,
 } from '@/lib/mockDataGenerator'
+
+// 测试代码运行在 vitest (Node) 环境 — 用 ESM 静态 import 替代 require
+// （避免 vue-tsc 报 TS2580: Cannot find name 'require'，
+//  因为 tsconfig.json 没装 @types/node）
+//
+// __dirname 在 ESM 下不可用，用 import.meta.url 推导
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+// 单元测试在 vitest 编译后位于 dist/ 或临时目录，向上回溯到仓库根
+// src/composables/__tests__/  → 上 3 级 = 仓库根
+const REPO_ROOT = resolve(__dirname, '..', '..', '..', '..')
 
 // mock crypto.getRandomValues 以避免 1MB 文件在 jsdom 中超出配额
 beforeEach(() => {
@@ -120,9 +134,8 @@ describe('端到端路径一致性测试', () => {
      * 根因复盘：2026-06-10 之前 B/C 不一致（B=/storage/emulated/0，C=/storage/emulated/0/encv-automation）
      */
     it('【防回归】ecosystem.config.cjs ENCV_MOCK_ROOT 必须含 encv-automation', () => {
-      // 用 fs 直读配置文件（vitest 不解析 cjs，但文本比对足够）
-      const fs = require('fs')
-      const cfg = fs.readFileSync('/workspace/ecosystem.config.cjs', 'utf-8')
+      // 用 node:fs 直读配置文件（vue-tsc 不识别 require 全局符号，ESM 替代）
+      const cfg = readFileSync(resolve(REPO_ROOT, 'ecosystem.config.cjs'), 'utf-8')
       // 提取第一个 ENCV_MOCK_ROOT: '...' 值
       const m = cfg.match(/ENCV_MOCK_ROOT:\s*['"]([^'"]+)['"]/)
       expect(m, 'ENCV_MOCK_ROOT must be present in ecosystem.config.cjs').toBeTruthy()
@@ -130,9 +143,8 @@ describe('端到端路径一致性测试', () => {
     })
 
     it('【防回归】generate-mock-files.ts 的 fallback 必须含 encv-automation', () => {
-      const fs = require('fs')
-      const src = fs.readFileSync(
-        '/workspace/app/encv-mobile/scripts/generate-mock-files.ts',
+      const src = readFileSync(
+        resolve(REPO_ROOT, 'app/encv-mobile/scripts/generate-mock-files.ts'),
         'utf-8',
       )
       // 提取 MOCK_ROOT = process.env.ENCV_MOCK_ROOT || '...' 字符串
@@ -142,10 +154,9 @@ describe('端到端路径一致性测试', () => {
     })
 
     it('【防回归】三处 ENCV_MOCK_ROOT 必须完全一致', () => {
-      const fs = require('fs')
-      const cfg = fs.readFileSync('/workspace/ecosystem.config.cjs', 'utf-8')
-      const script = fs.readFileSync(
-        '/workspace/app/encv-mobile/scripts/generate-mock-files.ts',
+      const cfg = readFileSync(resolve(REPO_ROOT, 'ecosystem.config.cjs'), 'utf-8')
+      const script = readFileSync(
+        resolve(REPO_ROOT, 'app/encv-mobile/scripts/generate-mock-files.ts'),
         'utf-8',
       )
 
