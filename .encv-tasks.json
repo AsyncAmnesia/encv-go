@@ -1,1 +1,362 @@
-[]
+[
+  {
+    "id": "4f554652-8aea-43ab-848b-0b1183bd47b4",
+    "type": "encrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "video",
+    "status": "failed",
+    "progress": 5,
+    "phase": "analyzing",
+    "error": "source file not found, it may have been moved or deleted",
+    "errorDetail": "source file not found: stat /storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4: no such file or directory",
+    "containerVersion": 4,
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T02:01:53.935903225Z",
+        "completedAt": "2026-06-10T02:01:53.935961023Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T02:01:53.935961023Z"
+      }
+    ],
+    "createdAt": "2026-06-10T02:01:53.081100301Z",
+    "completedAt": "2026-06-10T02:01:53.935967562Z"
+  },
+  {
+    "id": "1df03f2f-cbf4-4429-830c-fc7977acd2b8",
+    "type": "encrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "video",
+    "status": "failed",
+    "progress": 5,
+    "phase": "analyzing",
+    "error": "source file not found, it may have been moved or deleted",
+    "errorDetail": "source file not found: stat /storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4: no such file or directory",
+    "containerVersion": 4,
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T02:01:53.936109211Z",
+        "completedAt": "2026-06-10T02:01:53.936128786Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T02:01:53.936128786Z"
+      }
+    ],
+    "createdAt": "2026-06-10T02:01:53.167553402Z",
+    "completedAt": "2026-06-10T02:01:53.936136408Z"
+  },
+  {
+    "id": "d4addf11-0d41-48c0-a7d5-cf429a9ec689",
+    "type": "encrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "video",
+    "status": "failed",
+    "progress": 5,
+    "phase": "analyzing",
+    "error": "source file not found, it may have been moved or deleted",
+    "errorDetail": "source file not found: stat /storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4: no such file or directory",
+    "containerVersion": 4,
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T02:01:53.936176941Z",
+        "completedAt": "2026-06-10T02:01:53.936199119Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T02:01:53.936199119Z"
+      }
+    ],
+    "createdAt": "2026-06-10T02:01:53.260474418Z",
+    "completedAt": "2026-06-10T02:01:53.936204025Z"
+  },
+  {
+    "id": "0fb1ed03-515f-4c15-b4e5-9e32d91eb24a",
+    "type": "decrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "video",
+    "status": "failed",
+    "progress": 5,
+    "phase": "analyzing",
+    "error": "source file not found, it may have been moved or deleted",
+    "errorDetail": "source file not found: stat /storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4: no such file or directory",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T02:01:53.936244024Z",
+        "completedAt": "2026-06-10T02:01:53.936271389Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T02:01:53.936271389Z"
+      }
+    ],
+    "createdAt": "2026-06-10T02:01:53.443806406Z",
+    "completedAt": "2026-06-10T02:01:53.936278035Z"
+  },
+  {
+    "id": "6e20e46b-4074-4607-8028-89122c17681f",
+    "type": "encrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "audio",
+    "status": "failed",
+    "progress": 5,
+    "phase": "analyzing",
+    "error": "source file not found, it may have been moved or deleted",
+    "errorDetail": "source file not found: stat /storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4: no such file or directory",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T02:01:53.936316577Z",
+        "completedAt": "2026-06-10T02:01:53.936337616Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T02:01:53.936337616Z"
+      }
+    ],
+    "createdAt": "2026-06-10T02:01:53.631771456Z",
+    "completedAt": "2026-06-10T02:01:53.93634265Z"
+  },
+  {
+    "id": "1aaaacb3-0e4d-4c74-9c9b-d72a813ba075",
+    "type": "decrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "pdf",
+    "status": "queued",
+    "progress": 0,
+    "createdAt": "2026-06-10T02:01:54.269768179Z"
+  },
+  {
+    "id": "0307d2aa-751a-4ba8-a772-6a7a3f2882f1",
+    "type": "encrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "text",
+    "status": "queued",
+    "progress": 0,
+    "createdAt": "2026-06-10T02:01:54.353951924Z"
+  },
+  {
+    "id": "8cd5ea10-86f6-4595-8b77-ec1fd161fc8f",
+    "type": "decrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "video",
+    "status": "failed",
+    "progress": 5,
+    "phase": "analyzing",
+    "error": "source file not found, it may have been moved or deleted",
+    "errorDetail": "source file not found: stat /storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4: no such file or directory",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T02:01:53.936378751Z",
+        "completedAt": "2026-06-10T02:01:53.936403554Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T02:01:53.936403554Z"
+      }
+    ],
+    "createdAt": "2026-06-10T02:01:53.543875858Z",
+    "completedAt": "2026-06-10T02:01:53.936410432Z"
+  },
+  {
+    "id": "06462fa9-851e-449f-bdeb-bbf546697201",
+    "type": "encrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "image",
+    "status": "failed",
+    "progress": 5,
+    "phase": "analyzing",
+    "error": "source file not found, it may have been moved or deleted",
+    "errorDetail": "source file not found: stat /storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4: no such file or directory",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T02:01:53.936465894Z",
+        "completedAt": "2026-06-10T02:01:53.93649352Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T02:01:53.93649352Z"
+      }
+    ],
+    "createdAt": "2026-06-10T02:01:53.810874828Z",
+    "completedAt": "2026-06-10T02:01:53.936498776Z"
+  },
+  {
+    "id": "6742e346-e9bd-4142-92a2-4227fe09c590",
+    "type": "encrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "video",
+    "status": "failed",
+    "progress": 5,
+    "phase": "analyzing",
+    "error": "source file not found, it may have been moved or deleted",
+    "errorDetail": "source file not found: stat /storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4: no such file or directory",
+    "containerVersion": 3,
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T02:01:53.935676418Z",
+        "completedAt": "2026-06-10T02:01:53.935723096Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T02:01:53.935723096Z"
+      }
+    ],
+    "createdAt": "2026-06-10T02:01:52.991257649Z",
+    "completedAt": "2026-06-10T02:01:53.935750044Z"
+  },
+  {
+    "id": "6f0db7f7-a109-4d33-8a8b-dc06490697d8",
+    "type": "encrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "video",
+    "status": "failed",
+    "progress": 5,
+    "phase": "analyzing",
+    "error": "source file not found, it may have been moved or deleted",
+    "errorDetail": "source file not found: stat /storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4: no such file or directory",
+    "containerVersion": 4,
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T02:01:53.936027158Z",
+        "completedAt": "2026-06-10T02:01:53.936055247Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T02:01:53.936055247Z"
+      }
+    ],
+    "createdAt": "2026-06-10T02:01:53.356697229Z",
+    "completedAt": "2026-06-10T02:01:53.93606094Z"
+  },
+  {
+    "id": "c074b125-a452-4289-a4a0-4a93c9455ade",
+    "type": "decrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "image",
+    "status": "failed",
+    "progress": 5,
+    "phase": "analyzing",
+    "error": "source file not found, it may have been moved or deleted",
+    "errorDetail": "source file not found: stat /storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4: no such file or directory",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T02:01:53.936534464Z",
+        "completedAt": "2026-06-10T02:01:53.936562052Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T02:01:53.936562052Z"
+      }
+    ],
+    "createdAt": "2026-06-10T02:01:53.910511148Z",
+    "completedAt": "2026-06-10T02:01:53.936568362Z"
+  },
+  {
+    "id": "9fde83f6-c774-4bfb-98c7-81ecfcb4ded0",
+    "type": "encrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "pdf",
+    "status": "queued",
+    "progress": 0,
+    "createdAt": "2026-06-10T02:01:54.177551663Z"
+  },
+  {
+    "id": "0b21ab59-142e-4a96-8fe9-e89ca08c2e81",
+    "type": "decrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "audio",
+    "status": "failed",
+    "progress": 5,
+    "phase": "analyzing",
+    "error": "source file not found, it may have been moved or deleted",
+    "errorDetail": "source file not found: stat /storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4: no such file or directory",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T02:01:53.935816217Z",
+        "completedAt": "2026-06-10T02:01:53.935844543Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T02:01:53.935844543Z"
+      }
+    ],
+    "createdAt": "2026-06-10T02:01:53.719480585Z",
+    "completedAt": "2026-06-10T02:01:53.93585702Z"
+  },
+  {
+    "id": "0c61af1c-6e64-4274-bee0-d3009b3205e3",
+    "type": "encrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "wps",
+    "status": "queued",
+    "progress": 0,
+    "createdAt": "2026-06-10T02:01:53.998269974Z"
+  },
+  {
+    "id": "0b28e061-7a93-40cd-b546-ae27cb0f05b7",
+    "type": "decrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "wps",
+    "status": "queued",
+    "progress": 0,
+    "createdAt": "2026-06-10T02:01:54.087096254Z"
+  },
+  {
+    "id": "0ddf1c15-de5a-4755-bc7f-1882914e0771",
+    "type": "decrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "text",
+    "status": "queued",
+    "progress": 0,
+    "createdAt": "2026-06-10T02:01:54.441238011Z"
+  },
+  {
+    "id": "7d9a3ff2-0484-4fa7-a16a-f197602d77e0",
+    "type": "encrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "alist_encrypt",
+    "status": "queued",
+    "progress": 0,
+    "createdAt": "2026-06-10T02:01:54.541076038Z"
+  },
+  {
+    "id": "f15bb43b-f39e-408b-b216-2a84f86b8ac7",
+    "type": "decrypt",
+    "sourcePath": "/storage/emulated/0/encv-automation/01-plain-media/video/sample.mp4",
+    "password": "automation-test-pwd",
+    "pluginName": "alist_encrypt",
+    "status": "queued",
+    "progress": 0,
+    "createdAt": "2026-06-10T02:01:54.636161495Z"
+  }
+]
