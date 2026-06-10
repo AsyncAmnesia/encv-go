@@ -14,6 +14,10 @@ export default {
     'tasks.cancel': '取消',
     'tasks.retry': '重试',
     'tasks.remove': '移除',
+    // 🆕 2026-06-10 修复：自动化测试 / AI agent 任务组折叠
+    'tasks.tasksCount': '个任务',
+    'tasks.expand': '展开',
+    'tasks.collapse': '折叠',
     'tasks.newTask': '新建任务',
     'tasks.close': '关闭',
     'tasks.taskType': '任务类型',
@@ -151,6 +155,10 @@ export default {
     'tasks.cancel': 'Cancel',
     'tasks.retry': 'Retry',
     'tasks.remove': 'Remove',
+    // 🆕 2026-06-10 fix: group collapse for automation / AI agent task batches
+    'tasks.tasksCount': 'tasks',
+    'tasks.expand': 'Expand',
+    'tasks.collapse': 'Collapse',
     'tasks.newTask': 'New Task',
     'tasks.close': 'Close',
     'tasks.taskType': 'Task Type',

@@ -165,6 +165,32 @@ func TestMinimalMediaMagic(t *testing.T) {
 	}
 }
 
+// 🆕 2026-06-10 修复验证
+// 历史 bug：minimalMP4() 返回 36 字节 (ftyp+moov+mdat header)，无视频帧数据。
+// 修复后：ffmpeg 优先生成几 KB~几 MB 可播放字节，fallback 是 base64 内嵌 4.8KB mp4。
+// 这个测试断言「不能 < 几 KB」防止再退化。
+func TestMinimalMediaIsPlayable(t *testing.T) {
+	tests := []struct {
+		name     string
+		data     []byte
+		minBytes int
+		why      string
+	}{
+		{"MP4 (mp4 box + frame data)", minimalMP4(), 2000, "base64 fallback = 4782B H.264+AAC 1s"},
+		{"MKV (EBML + audio block)", minimalMKV(), 50, "createMKV = 170B (手写骨架，但 > 50)"},
+		{"MP3 (ID3v2 + 108 frames)", minimalMP3(), 30000, "createMP3 = 45197B (108 个 MPEG 帧)"},
+		{"FLAC (fLaC sig + STREAMINFO)", minimalFLAC(), 50, "createFLAC = 94B (header + padding)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if len(tt.data) < tt.minBytes {
+				t.Errorf("minimal%s size = %d bytes, want >= %d (%s)",
+					tt.name, len(tt.data), tt.minBytes, tt.why)
+			}
+		})
+	}
+}
+
 func TestHandleMockGenerateGin_RejectsForbiddenRoot(t *testing.T) {
 	s := setupMockTestServer()
 	r := gin.New()

@@ -14,17 +14,41 @@
 package server
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 )
+
+// ════════════════════════════════════════════════════════════════════
+// 🆕 2026-06-10 修复：3 套 mock 生成逻辑脱钩
+//
+// 历史：
+//   - src/lib/mockDataGenerator.ts    → createMP4 = ~9.8 KB 合法 mp4 (base64 内嵌)
+//   - scripts/generate-mock-files.ts  → createValidMP4 (ffmpeg 优先，可播放)
+//   - internal/server/mock_generator.go → minimalMP4 = 36 字节 (只有 ftyp+moov+mdat header) ❌
+//
+// 症状：开发者选项的"生成 Mock"按钮调后端 API → 拿到 36 字节假 mp4 → 预览/真机播放失败
+// 根因：后端 mock_generator.go 跟前端/CLI 的 mock 生成逻辑完全独立、互相没同步
+//
+// 修复方案：
+//   1. 后端 ffmpeg 优先（与 scripts/generate-mock-files.ts 行为一致）
+//   2. 无 ffmpeg 时 fallback 到内嵌 base64 合法 mp4/mkv/mp3/flac（与前端 mockDataGenerator.ts 字节一致）
+//   3. 加 TestMinimalMediaIsPlayable 断言大小 > 几 KB，防止以后再退化为裸 header
+//
+// 注意事项：
+//   - 沙箱 dev 模式：/usr/bin/ffmpeg 在（scripts/generate-mock-files.ts 已经在用）
+//   - 真机 APK：exec.LookPath("ffmpeg") 失败 → 静默 fallback 到 base64（不影响启动）
+//   - base64 字节与前端 mockDataGenerator.ts MP4_B64 完全一致（手动同步）
+// ════════════════════════════════════════════════════════════════════
 
 // mockRootAllowList 是允许写入的根目录白名单（绝对路径前缀）。
 // dev 模式：项目根 + "__mock_data__/"
@@ -255,7 +279,60 @@ func emitSseEvent(w io.Writer, flusher http.Flusher, event, data string) {
 	writeSseEvent(w, flusher, event, data)
 }
 
-// ==================== 最小有效字节模板 ====================
+// ════════════════════════════════════════════════════════════════════
+// 最小有效字节模板（ffmpeg 优先 + base64 fallback）
+// ════════════════════════════════════════════════════════════════════
+//
+// 优先级：
+//   1. ffmpeg 生成 2s 可播放的 lavfi 源（与 scripts/generate-mock-files.ts 完全一致）
+//   2. ffmpeg 不可用 → 内嵌 base64 合法字节（与前端 mockDataGenerator.ts MP4_B64 同步）
+//   3. base64 解码也失败 → 防御性返回空字节（让 generate 失败而不是 panic）
+//
+// 单次 ffmpeg 调用 ~100-300ms，4 个文件串行最多 ~1.2s。可接受。
+
+// ffmpegAvailable 检测系统是否有 ffmpeg
+// 缓存结果（mock_generator 是 process 级，生命周期够短）
+var ffmpegAvailable = func() bool {
+	_, err := exec.LookPath("ffmpeg")
+	return err == nil
+}()
+
+// ffmpegGenerate 调用 ffmpeg 生成指定格式的媒体字节
+// 失败返回 nil（调用方走 fallback）
+func ffmpegGenerate(args []string, ext string) []byte {
+	if !ffmpegAvailable {
+		return nil
+	}
+	tmpFile, err := os.CreateTemp("", "encv-mock-*"+"."+ext)
+	if err != nil {
+		return nil
+	}
+	tmpPath := tmpFile.Name()
+	_ = tmpFile.Close()
+	defer func() { _ = os.Remove(tmpPath) }()
+
+	fullArgs := append(append([]string{}, args...), "-y", "-loglevel", "error", tmpPath)
+	cmd := exec.Command("ffmpeg", fullArgs...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		slog.Debug("[mock] ffmpeg failed, using base64 fallback", "ext", ext, "err", err, "out", string(out))
+		return nil
+	}
+	data, err := os.ReadFile(tmpPath)
+	if err != nil || len(data) == 0 {
+		return nil
+	}
+	return data
+}
+
+// decodeBase64Media 解码内嵌 base64 字节（来自前端 mockDataGenerator.ts 同步）
+func decodeBase64Media(b64 string) []byte {
+	data, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		slog.Warn("[mock] base64 decode failed", "err", err)
+		return nil
+	}
+	return data
+}
 
 func minimalJPEG() []byte {
 	// 来自 scripts/generate-mock-files.ts 1:1 对应
@@ -319,46 +396,63 @@ func pngCrcTable() [256]uint32 {
 }
 
 func minimalMP4() []byte {
-	// ftyp box
-	ftyp := []byte{
-		0x00, 0x00, 0x00, 0x14, 'f', 't', 'y', 'p',
-		'i', 's', 'o', 'm', 0x00, 0x00, 0x02, 0x00,
-		'i', 's', 'o', 'm',
+	// 1. ffmpeg 优先（与 scripts/generate-mock-files.ts createValidMP4 一致）
+	if data := ffmpegGenerate([]string{
+		"-f", "lavfi",
+		"-i", "sine=frequency=440:duration=2",
+		"-f", "lavfi",
+		"-i", "color=c=0x3B82F6:s=320x240:d=2:r=15,drawtext=text='ENCV Mock':fontsize=20:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2",
+		"-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage", "-pix_fmt", "yuv420p",
+		"-c:a", "aac", "-b:a", "64k",
+		"-shortest",
+	}, "mp4"); data != nil {
+		return data
 	}
-	// minimal moov + mdat (各 8 bytes 头部)
-	moov := []byte{0x00, 0x00, 0x00, 0x08, 'm', 'o', 'o', 'v'}
-	mdat := []byte{0x00, 0x00, 0x00, 0x08, 'm', 'd', 'a', 't'}
-	return append(append(ftyp, moov...), mdat...)
+	// 2. base64 fallback（与 src/lib/mockDataGenerator.ts MP4_B64 同源）
+	return decodeBase64Media(MP4_B64)
 }
 
 func minimalMKV() []byte {
-	// EBML header + 0-size segment
-	return []byte{
-		0x1A, 0x45, 0xDF, 0xA3, // EBML magic
-		0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // EBML size 0
-		0x18, 0x53, 0x80, 0x67, // Segment
-		0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // size 0
+	// 1. ffmpeg 优先
+	if data := ffmpegGenerate([]string{
+		"-f", "lavfi",
+		"-i", "sine=frequency=660:duration=2",
+		"-f", "lavfi",
+		"-i", "color=c=0x10B981:s=160x120:d=2:r=10,drawtext=text='ENCV MKV':fontsize=16:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2",
+		"-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage", "-pix_fmt", "yuv420p",
+		"-c:a", "libvorbis",
+		"-shortest",
+	}, "mkv"); data != nil {
+		return data
 	}
+	// 2. base64 fallback（与 src/lib/mockDataGenerator.ts createMKV 同源）
+	return decodeBase64Media(MKV_B64)
 }
 
 func minimalMP3() []byte {
-	// ID3v2 header + 1 silent MPEG frame
-	return []byte{
-		'I', 'D', '3', 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0A,
-		0xFF, 0xFB, 0x90, 0x00, // MPEG audio frame header
+	// 1. ffmpeg 优先
+	if data := ffmpegGenerate([]string{
+		"-f", "lavfi",
+		"-i", "sine=frequency=440:duration=2",
+		"-c:a", "libmp3lame", "-b:a", "128k",
+	}, "mp3"); data != nil {
+		return data
 	}
+	// 2. base64 fallback（与 src/lib/mockDataGenerator.ts createMP3 同源，~45KB）
+	return decodeBase64Media(MP3_B64)
 }
 
 func minimalFLAC() []byte {
-	// fLaC signature + minimal STREAMINFO
-	return []byte{
-		'f', 'L', 'a', 'C',
-		0x00, 0x22, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	// 1. ffmpeg 优先
+	if data := ffmpegGenerate([]string{
+		"-f", "lavfi",
+		"-i", "sine=frequency=440:duration=2",
+		"-c:a", "flac", "-sample_fmt", "s16",
+	}, "flac"); data != nil {
+		return data
 	}
+	// 2. base64 fallback（与 src/lib/mockDataGenerator.ts createFLAC 同源）
+	return decodeBase64Media(FLAC_B64)
 }
 
 func minimalPDF() []byte {

@@ -142,110 +142,154 @@
       </div>
 
       <ion-list v-else>
-        <ion-item-sliding v-for="task in filteredTasks" :key="task.id">
-          <ion-item @click="openTaskDetail(task)" button detail>
-            <ion-icon
-              :icon="getTaskIcon(task)"
-              :color="getTaskColor(task)"
-              slot="start"
-            ></ion-icon>
-            <ion-label>
-              <h2>{{ getTaskName(task) }}</h2>
-              <p class="card-meta-row">
-                <span class="task-id">#{{ task.id.slice(0, 6) }}</span>
-                <ion-badge :color="getStatusColor(task.status)" class="status-badge">
-                  {{ getStatusLabel(task.status) }}
-                </ion-badge>
-                <span class="task-type">{{ task.type === 'encrypt' ? t('tasks.encrypt') : t('tasks.decrypt') }}</span>
-                <ion-badge v-if="task.pluginName" color="primary" class="plugin-badge">
-                  {{ task.pluginName }}
-                </ion-badge>
-                <ion-badge
-                  v-if="getTriggeredBy(task.id) !== 'user'"
-                  :color="getTriggeredByColor(task.id)"
-                  class="triggered-by-badge"
-                  :title="t('tasks.triggeredBy') + ': ' + t('tasks.triggeredBy_' + getTriggeredBy(task.id))"
-                >
-                  <ion-icon :icon="getTriggeredByIcon(task.id)" class="triggered-by-icon"></ion-icon>
-                  {{ t('tasks.triggeredBy_' + getTriggeredBy(task.id)) }}
-                </ion-badge>
-              </p>
-              <p class="task-time-info">
-                <span class="time-created">{{ formatDateTime(task.createdAt) }}</span>
-                <span v-if="getTaskDuration(task)" class="time-duration">{{ getTaskDuration(task) }}</span>
-              </p>
-              <div v-if="task.status === 'running' || task.status === 'cancelling'" class="progress-section">
-                <ion-progress-bar
-                  :value="task.progress / 100"
-                  :class="['task-progress', { 'progress-cancelling': task.status === 'cancelling' }]"
-                ></ion-progress-bar>
-                <div class="progress-detail">
-                  <span v-if="task.phase" class="phase-label">{{ getPhaseLabel(task.phase) }}</span>
-                  <span class="progress-percent">{{ task.progress }}%</span>
-                  <span v-if="task.speed" class="speed-label">{{ task.speed }}</span>
-                  <span v-if="task.eta" class="eta-label">{{ t('tasks.eta') }} {{ task.eta }}</span>
+        <template v-for="item in displayedItems" :key="item.key">
+          <!-- 🆕 2026-06-10 修复：自动化测试 / AI agent 任务组折叠 -->
+          <!-- 历史：自动化测试一次跑 N 个用例 → 污染 task 列表（用户截图的"浪费屏幕空间"）-->
+          <!-- 修复：连续 ≥2 个 triggeredBy != 'user' 的 task → 折叠成 1 张 group card -->
+          <!--       点 group card 右侧 chevron 展开/折叠详情 -->
+          <ion-item-sliding v-if="item.kind === 'group'">
+            <ion-item button detail @click="toggleTaskGroup(item.groupKey!)">
+              <ion-icon :icon="cogOutline" color="primary" slot="start"></ion-icon>
+              <ion-label>
+                <h2>{{ t('tasks.triggeredBy_automation') }} · {{ item.tasks.length }} {{ t('tasks.tasksCount') }}</h2>
+                <p class="card-meta-row">
+                  <ion-badge v-if="item.summary.passed > 0" color="success" class="status-badge">
+                    ✓ {{ item.summary.passed }}
+                  </ion-badge>
+                  <ion-badge v-if="item.summary.failed > 0" color="danger" class="status-badge">
+                    ✗ {{ item.summary.failed }}
+                  </ion-badge>
+                  <ion-badge v-if="item.summary.running > 0" color="warning" class="status-badge">
+                    ▶ {{ item.summary.running }}
+                  </ion-badge>
+                  <ion-badge v-if="item.summary.pending > 0" color="medium" class="status-badge">
+                    ⋯ {{ item.summary.pending }}
+                  </ion-badge>
+                </p>
+                <p class="task-time-info">
+                  <span class="time-created">{{ formatDateTime(item.summary.latestCreatedAt) }}</span>
+                </p>
+              </ion-label>
+              <ion-button
+                slot="end"
+                fill="clear"
+                size="small"
+                @click.stop="toggleTaskGroup(item.groupKey!)"
+                :title="isTaskGroupExpanded(item.groupKey!) ? t('tasks.collapse') : t('tasks.expand')"
+              >
+                <ion-icon
+                  :icon="isTaskGroupExpanded(item.groupKey!) ? chevronBack : chevronForward"
+                  slot="icon-only"
+                ></ion-icon>
+              </ion-button>
+            </ion-item>
+          </ion-item-sliding>
+
+          <ion-item-sliding v-else>
+            <ion-item @click="openTaskDetail(item.task)" button detail>
+              <ion-icon
+                :icon="getTaskIcon(item.task)"
+                :color="getTaskColor(item.task)"
+                slot="start"
+              ></ion-icon>
+              <ion-label>
+                <h2>{{ getTaskName(item.task) }}</h2>
+                <p class="card-meta-row">
+                  <span class="task-id">#{{ item.task.id.slice(0, 6) }}</span>
+                  <ion-badge :color="getStatusColor(item.task.status)" class="status-badge">
+                    {{ getStatusLabel(item.task.status) }}
+                  </ion-badge>
+                  <span class="task-type">{{ item.task.type === 'encrypt' ? t('tasks.encrypt') : t('tasks.decrypt') }}</span>
+                  <ion-badge v-if="item.task.pluginName" color="primary" class="plugin-badge">
+                    {{ item.task.pluginName }}
+                  </ion-badge>
+                  <ion-badge
+                    v-if="getTriggeredBy(item.task.id) !== 'user'"
+                    :color="getTriggeredByColor(item.task.id)"
+                    class="triggered-by-badge"
+                    :title="t('tasks.triggeredBy') + ': ' + t('tasks.triggeredBy_' + getTriggeredBy(item.task.id))"
+                  >
+                    <ion-icon :icon="getTriggeredByIcon(item.task.id)" class="triggered-by-icon"></ion-icon>
+                    {{ t('tasks.triggeredBy_' + getTriggeredBy(item.task.id)) }}
+                  </ion-badge>
+                </p>
+                <p class="task-time-info">
+                  <span class="time-created">{{ formatDateTime(item.task.createdAt) }}</span>
+                  <span v-if="getTaskDuration(item.task)" class="time-duration">{{ getTaskDuration(item.task) }}</span>
+                </p>
+                <div v-if="item.task.status === 'running' || item.task.status === 'cancelling'" class="progress-section">
+                  <ion-progress-bar
+                    :value="item.task.progress / 100"
+                    :class="['task-progress', { 'progress-cancelling': item.task.status === 'cancelling' }]"
+                  ></ion-progress-bar>
+                  <div class="progress-detail">
+                    <span v-if="item.task.phase" class="phase-label">{{ getPhaseLabel(item.task.phase) }}</span>
+                    <span class="progress-percent">{{ item.task.progress }}%</span>
+                    <span v-if="item.task.speed" class="speed-label">{{ item.task.speed }}</span>
+                    <span v-if="item.task.eta" class="eta-label">{{ t('tasks.eta') }} {{ item.task.eta }}</span>
+                  </div>
                 </div>
-              </div>
-              <div v-if="task.status === 'completed'" class="completed-info">
-                <ion-icon :icon="checkmarkCircle" color="success" class="completed-icon"></ion-icon>
-                <span class="completed-text">{{ t('tasks.phaseCompleted') }}</span>
-                <span v-if="task.containerVersion" class="container-version">V{{ task.containerVersion }}</span>
-              </div>
-              <div v-if="task.warning" class="task-warning" @click="toggleWarningDetail(task)">
-                <ion-icon :icon="warningOutline" class="warning-icon"></ion-icon>
-                <span class="task-warning-text">{{ task.warning }}</span>
-              </div>
-              <div v-if="expandedWarningDetail === task.id && task.warningDetail" class="task-warning-detail">
-                <pre>{{ formatWarningDetail(task.warningDetail) }}</pre>
-              </div>
-              <p v-if="isPasswordError(task)" class="task-error password-error">
-                <ion-icon :icon="lockClosed"></ion-icon>
-                {{ t('tasks.passwordErrorHint') }}
-              </p>
-              <p v-else-if="task.error" class="task-error">{{ task.error }}</p>
-            </ion-label>
-            <ion-button
-              v-if="task.status === 'running'"
-              slot="end"
-              fill="clear"
-              color="warning"
-              size="small"
-              @click="cancelTaskById(task.id)"
-            >
-              <ion-icon :icon="closeCircle" slot="icon-only"></ion-icon>
-            </ion-button>
-            <ion-spinner
-              v-if="task.status === 'cancelling'"
-              slot="end"
-              name="crescent"
-              color="warning"
-              class="cancelling-spinner"
-            ></ion-spinner>
-          </ion-item>
-          <ion-item-options side="end">
-            <ion-item-option
-              v-if="task.status === 'queued'"
-              color="warning"
-              @click="cancelTaskById(task.id)"
-            >
-              {{ t('tasks.cancel') }}
-            </ion-item-option>
-            <ion-item-option
-              v-if="task.status === 'failed'"
-              color="primary"
-              @click="retryTaskById(task.id)"
-            >
-              {{ t('tasks.retry') }}
-            </ion-item-option>
-            <ion-item-option
-              v-if="task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled'"
-              color="danger"
-              @click="removeTaskById(task.id)"
-            >
-              {{ t('tasks.remove') }}
-            </ion-item-option>
-          </ion-item-options>
-        </ion-item-sliding>
+                <div v-if="item.task.status === 'completed'" class="completed-info">
+                  <ion-icon :icon="checkmarkCircle" color="success" class="completed-icon"></ion-icon>
+                  <span class="completed-text">{{ t('tasks.phaseCompleted') }}</span>
+                  <span v-if="item.task.containerVersion" class="container-version">V{{ item.task.containerVersion }}</span>
+                </div>
+                <div v-if="item.task.warning" class="task-warning" @click="toggleWarningDetail(item.task)">
+                  <ion-icon :icon="warningOutline" class="warning-icon"></ion-icon>
+                  <span class="task-warning-text">{{ item.task.warning }}</span>
+                </div>
+                <div v-if="expandedWarningDetail === item.task.id && item.task.warningDetail" class="task-warning-detail">
+                  <pre>{{ formatWarningDetail(item.task.warningDetail) }}</pre>
+                </div>
+                <p v-if="isPasswordError(item.task)" class="task-error password-error">
+                  <ion-icon :icon="lockClosed"></ion-icon>
+                  {{ t('tasks.passwordErrorHint') }}
+                </p>
+                <p v-else-if="item.task.error" class="task-error">{{ item.task.error }}</p>
+              </ion-label>
+              <ion-button
+                v-if="item.task.status === 'running'"
+                slot="end"
+                fill="clear"
+                color="warning"
+                size="small"
+                @click="cancelTaskById(item.task.id)"
+              >
+                <ion-icon :icon="closeCircle" slot="icon-only"></ion-icon>
+              </ion-button>
+              <ion-spinner
+                v-if="item.task.status === 'cancelling'"
+                slot="end"
+                name="crescent"
+                color="warning"
+                class="cancelling-spinner"
+              ></ion-spinner>
+            </ion-item>
+            <ion-item-options side="end">
+              <ion-item-option
+                v-if="item.task.status === 'queued'"
+                color="warning"
+                @click="cancelTaskById(item.task.id)"
+              >
+                {{ t('tasks.cancel') }}
+              </ion-item-option>
+              <ion-item-option
+                v-if="item.task.status === 'failed'"
+                color="primary"
+                @click="retryTaskById(item.task.id)"
+              >
+                {{ t('tasks.retry') }}
+              </ion-item-option>
+              <ion-item-option
+                v-if="item.task.status === 'completed' || item.task.status === 'failed' || item.task.status === 'cancelled'"
+                color="danger"
+                @click="removeTaskById(item.task.id)"
+              >
+                {{ t('tasks.remove') }}
+              </ion-item-option>
+            </ion-item-options>
+          </ion-item-sliding>
+        </template>
       </ion-list>
 
       <ion-fab vertical="bottom" horizontal="end" slot="fixed">
@@ -259,7 +303,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonContent,
   IonRefresher, IonRefresherContent, IonList, IonItem,
@@ -272,7 +316,7 @@ import {
   add, closeCircle, checkmarkCircle, timer, sync,
   warningOutline, lockClosed, search, funnel, trashBin,
   extensionPuzzle, swapVertical, chevronDown,
-  hardwareChipOutline, cogOutline, person,
+  hardwareChipOutline, cogOutline, person, chevronForward, chevronBack,
 } from 'ionicons/icons'
 import { useRoute, useRouter } from 'vue-router'
 import type { EncvTask, TaskType } from '@/api/encv'
@@ -372,6 +416,99 @@ async function handleClearCompleted() {
     ],
   })
   await alert.present()
+}
+
+// 🆕 2026-06-10 修复：自动化测试 / AI agent 任务组折叠
+// 历史：useAutomationTests.runTests() 串行 for 循环逐个调 createTask()，
+//   一次跑 N 个用例 → 后端 task 列表被 N 张 task 卡片污染
+//   （用户截图"浪费屏幕空间"）。
+// 修复思路：纯前端 UI 折叠，**不动后端 API**（后端根本没有 GroupID 概念）。
+//   - 扫描 filteredTasks，连续 ≥2 个 triggeredBy != 'user' 的 task → 折叠成 1 张 group card
+//   - 用户点 chevron 展开/折叠详情（展开时插入 N 张原始 task card）
+//   - 单个非用户 task 不折叠（避免 UI 抖动）
+//   - 用户手动搜/筛不受影响（filteredTasks 是折叠前数据）
+const GROUP_FOLD_THRESHOLD = 2
+
+type DisplayItem =
+  | { kind: 'group'; key: string; groupKey: string; tasks: EncvTask[]; summary: { passed: number; failed: number; running: number; pending: number; latestCreatedAt: string } }
+  | { kind: 'task'; key: string; task: EncvTask }
+
+const expandedGroupKeys = ref<Set<string>>(new Set())
+
+function toggleTaskGroup(key: string) {
+  const next = new Set(expandedGroupKeys.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  expandedGroupKeys.value = next
+}
+
+function isTaskGroupExpanded(key: string): boolean {
+  return expandedGroupKeys.value.has(key)
+}
+
+const displayedItems = computed<DisplayItem[]>(() => {
+  const result: DisplayItem[] = []
+  const tasks = filteredTasks.value
+
+  // 扫描连续非用户 task 区段
+  let i = 0
+  while (i < tasks.length) {
+    const cur = tasks[i]
+    const curBy = getTriggeredBy(cur.id)
+    if (curBy === 'user') {
+      result.push({ kind: 'task', key: cur.id, task: cur })
+      i++
+      continue
+    }
+
+    // 收集连续同 triggeredBy 区段
+    const seg: EncvTask[] = [cur]
+    let j = i + 1
+    while (j < tasks.length && getTriggeredBy(tasks[j].id) === curBy) {
+      seg.push(tasks[j])
+      j++
+    }
+
+    if (seg.length < GROUP_FOLD_THRESHOLD) {
+      // 不足阈值 → 全部展开为普通 task
+      for (const t of seg) result.push({ kind: 'task', key: t.id, task: t })
+    } else {
+      // ≥2 个非用户 task → 折叠成 group card
+      const groupKey = `${curBy}-${seg[0].id}` // 锚定到第一张 task.id
+      const expanded = expandedGroupKeys.value.has(groupKey)
+      if (expanded) {
+        // 展开：插入 group + N 张原始 task
+        result.push(buildGroupItem(groupKey, seg))
+        for (const t of seg) result.push({ kind: 'task', key: t.id, task: t })
+      } else {
+        // 折叠：只插入 group card
+        result.push(buildGroupItem(groupKey, seg))
+      }
+    }
+    i = j
+  }
+  return result
+})
+
+function buildGroupItem(groupKey: string, seg: EncvTask[]): DisplayItem {
+  let passed = 0, failed = 0, running = 0, pending = 0
+  let latest = seg[0]
+  for (const t of seg) {
+    if (t.status === 'completed') passed++
+    else if (t.status === 'failed') failed++
+    else if (t.status === 'running' || t.status === 'cancelling') running++
+    else pending++
+    if (new Date(t.createdAt).getTime() > new Date(latest.createdAt).getTime()) {
+      latest = t
+    }
+  }
+  return {
+    kind: 'group',
+    key: groupKey,
+    groupKey,
+    tasks: seg,
+    summary: { passed, failed, running, pending, latestCreatedAt: latest.createdAt },
+  }
 }
 
 onMounted(() => {
