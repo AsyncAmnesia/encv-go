@@ -10,7 +10,7 @@
     </ion-header>
 
     <ion-content>
-      <!-- Mock 数据管理区 -->
+      <!-- ========== Mock 数据管理区 ========== -->
       <ion-list>
         <ion-list-header>
           <ion-label>{{ t('devtools.mockDataManager') }}</ion-label>
@@ -56,7 +56,7 @@
         </div>
       </ion-list>
 
-      <!-- 自动化测试运行器 -->
+      <!-- ========== 自动化测试运行器 ========== -->
       <ion-list>
         <ion-list-header>
           <ion-label>{{ t('devtools.testRunner') }}</ion-label>
@@ -102,36 +102,51 @@
             <span class="failed">{{ progress.failed }} ✗</span>
           </div>
         </div>
-
-        <ion-list v-if="results.length > 0" class="results-list">
-          <ion-item v-for="(r, idx) in results" :key="idx">
-            <ion-icon :icon="getResultIcon(r)" :color="getResultColor(r)" slot="start"></ion-icon>
-            <ion-label>
-              <h3>{{ r.spec.id }}</h3>
-              <p class="result-meta">
-                <ion-badge :color="getResultColor(r)" size="small">{{ r.status }}</ion-badge>
-                <span v-if="r.durationMs">{{ r.durationMs }}ms</span>
-                <span v-if="r.taskId" class="task-id-ref">#{{ r.taskId.slice(0, 6) }}</span>
-              </p>
-              <p v-if="r.error" class="error-text">{{ r.error }}</p>
-            </ion-label>
-          </ion-item>
-        </ion-list>
       </ion-list>
+
+      <!-- ========== 测试报告 ========== -->
+      <template v-if="results.length > 0">
+        <TestReportHeader
+          :run-id="runId"
+          :opened-at="openedAt"
+          :duration-ms="reportDurationMs"
+          :total="progress.total"
+          :passed="progress.passed"
+          :failed="progress.failed"
+          :skipped="progress.skipped"
+          :platform="platform"
+        />
+
+        <FilterChips
+          :results="results"
+          :active-statuses="activeStatuses"
+          :active-categories="activeCategories"
+          :filtered-count="filteredResults.length"
+          :total-count="results.length"
+          @update:active-statuses="activeStatuses = $event"
+          @update:active-categories="activeCategories = $event"
+        />
+
+        <TestCaseFile
+          v-for="(r, idx) in filteredResults"
+          :key="r.spec.id + '_' + idx"
+          :result="r"
+          :index="originalIndexOf(r)"
+        />
+      </template>
     </ion-content>
   </ion-page>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton,
   IonContent, IonList, IonListHeader, IonItem, IonLabel, IonIcon,
-  IonBadge, IonSpinner, IonProgressBar,
+  IonSpinner, IonProgressBar,
 } from '@ionic/vue'
 import {
   addCircleOutline, trashOutline, syncOutline, playCircleOutline,
-  checkmarkCircleOutline, alertCircleOutline, ellipseOutline,
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
@@ -141,6 +156,9 @@ import {
   type TestCaseResult,
 } from '@/composables/useAutomationTests'
 import { generateMockFilesViaBackend, resetMockFilesViaBackend } from '@/api/mockGenerator'
+import TestReportHeader from '@/components/automation/TestReportHeader.vue'
+import FilterChips from '@/components/automation/FilterChips.vue'
+import TestCaseFile from '@/components/automation/TestCaseFile.vue'
 
 const { t } = useI18n()
 
@@ -157,6 +175,57 @@ const isGenerating = ref(false)
 const isResetting = ref(false)
 const mockStats = ref<{ count: number; totalSize: number } | null>(null)
 const generateProgressText = ref('')
+
+// 报告元数据
+const runId = ref(generateRunId())
+const openedAt = ref(new Date().toISOString())
+const reportStartTs = ref(Date.now())
+const _tickNow = ref(Date.now())
+let tickHandle: ReturnType<typeof setInterval> | null = null
+
+const platform = computed(() => {
+  // Capacitor 提供 platform，但为避免硬依赖，简单从 UA 推断
+  if (typeof navigator === 'undefined') return 'node'
+  const ua = navigator.userAgent || ''
+  if (/android/i.test(ua)) return 'android'
+  if (/iphone|ipad|ipod/i.test(ua)) return 'ios'
+  if (/windows/i.test(ua)) return 'windows'
+  if (/mac/i.test(ua)) return 'mac'
+  return 'web'
+})
+
+const reportDurationMs = computed(() => {
+  if (isRunning.value) {
+    return _tickNow.value - reportStartTs.value
+  }
+  return Date.now() - reportStartTs.value
+})
+
+// 过滤
+const activeStatuses = ref<Set<string>>(new Set())
+const activeCategories = ref<Set<string>>(new Set())
+
+const filteredResults = computed(() => {
+  return results.value.filter((r) => {
+    if (activeStatuses.value.size > 0 && !activeStatuses.value.has(r.status)) return false
+    if (activeCategories.value.size > 0) {
+      if (r.status !== 'failed') return false
+      const cat = r.errorAnalysis?.category ?? 'unknown'
+      if (!activeCategories.value.has(cat)) return false
+    }
+    return true
+  })
+})
+
+function originalIndexOf(r: TestCaseResult): number {
+  return results.value.indexOf(r)
+}
+
+function generateRunId(): string {
+  const d = new Date()
+  const pad = (n: number, w = 2) => String(n).padStart(w, '0')
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
+}
 
 async function handleGenerateMock() {
   if (isGenerating.value) return
@@ -215,6 +284,12 @@ async function handleRunTests() {
     showToast({ message: 'Load plugins first', color: 'warning', duration: 1500 })
     return
   }
+  // 重置报告元数据
+  runId.value = generateRunId()
+  openedAt.value = new Date().toISOString()
+  reportStartTs.value = Date.now()
+  activeStatuses.value = new Set()
+  activeCategories.value = new Set()
   await runTests(testCases.value)
   showToast({
     message: `${progress.value.completed} cases, ${progress.value.passed} ✓ ${progress.value.failed} ✗`,
@@ -229,16 +304,15 @@ function humanSize(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
-function getResultIcon(r: TestCaseResult): string {
-  if (r.status === 'passed' || r.status === 'pending') return checkmarkCircleOutline
-  if (r.status === 'failed') return alertCircleOutline
-  return ellipseOutline
-}
-function getResultColor(r: TestCaseResult): string {
-  if (r.status === 'passed' || r.status === 'pending') return 'success'
-  if (r.status === 'failed') return 'danger'
-  return 'medium'
-}
+onMounted(() => {
+  // 报告运行中时，duration 需要每 1s 刷新一次
+  tickHandle = setInterval(() => {
+    _tickNow.value = Date.now()
+  }, 1000)
+})
+onUnmounted(() => {
+  if (tickHandle) clearInterval(tickHandle)
+})
 </script>
 
 <style scoped>
@@ -295,26 +369,4 @@ function getResultColor(r: TestCaseResult): string {
 }
 .progress-stats .passed { color: var(--ion-color-success); }
 .progress-stats .failed { color: var(--ion-color-danger); }
-.results-list {
-  margin: 8px 0;
-}
-.result-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--ion-color-medium);
-}
-.task-id-ref {
-  font-family: monospace;
-  color: var(--ion-color-primary);
-}
-.error-text {
-  font-size: 12px;
-  color: var(--ion-color-danger);
-  font-family: monospace;
-  word-break: break-all;
-  margin-top: 4px;
-}
 </style>

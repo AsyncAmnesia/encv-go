@@ -27,6 +27,7 @@ import {
 } from '@/api/encv'
 import { usePathResolver } from '@/composables/usePathResolver'
 import { recordTriggeredBy, type TriggeredBy } from '@/composables/useTaskTrigger'
+import { analyzeError, type ErrorAnalysis } from '@/composables/useErrorAnalyzer'
 
 export type { TriggeredBy }
 
@@ -47,6 +48,11 @@ export interface TestCaseResult {
   taskId?: string
   error?: string
   durationMs?: number
+  /** 错误分析（仅 status === 'failed' 时有值） */
+  errorAnalysis?: ErrorAnalysis
+  /** 提交时的快照（sourcePath, version, cipher, compression） */
+  submittedSourcePath?: string
+  submittedAt?: string
 }
 
 export interface TestProgress {
@@ -54,6 +60,8 @@ export interface TestProgress {
   completed: number
   passed: number
   failed: number
+  /** 跳过用例数（暂未启用，未来给 might-fail + 已知不支持的版本使用） */
+  skipped: number
 }
 
 export interface GenerateTestCaseOptions {
@@ -68,7 +76,7 @@ export function useAutomationTests() {
   const plugins = ref<PluginMeta[]>([])
   const isLoadingPlugins = ref(false)
   const isRunning = ref(false)
-  const progress = ref<TestProgress>({ total: 0, completed: 0, passed: 0, failed: 0 })
+  const progress = ref<TestProgress>({ total: 0, completed: 0, passed: 0, failed: 0, skipped: 0 })
   const results = ref<TestCaseResult[]>([])
   const lastError = ref<string | null>(null)
   const testCases = ref<TestCaseSpec[]>([])
@@ -150,17 +158,22 @@ export function useAutomationTests() {
    */
   async function runTests(specs: TestCaseSpec[]): Promise<void> {
     isRunning.value = true
-    progress.value = { total: specs.length, completed: 0, passed: 0, failed: 0 }
+    progress.value = { total: specs.length, completed: 0, passed: 0, failed: 0, skipped: 0 }
     results.value = []
 
     for (const spec of specs) {
-      const result: TestCaseResult = { spec, status: 'running' }
+      const result: TestCaseResult = {
+        spec,
+        status: 'running',
+        submittedAt: new Date().toISOString(),
+      }
       results.value = [...results.value, result]
       const start = Date.now()
 
       try {
         // 真机安全：强制改写到 encv-automation 命名空间
         const safeSource = withSafetyBoundary(spec.sourcePath, { forceAutomation: true })
+        result.submittedSourcePath = safeSource
         const task: EncvTask = await createTask(
           spec.taskType,
           safeSource,
@@ -180,7 +193,10 @@ export function useAutomationTests() {
         progress.value.passed++
       } catch (e) {
         result.status = 'failed'
-        result.error = e instanceof Error ? e.message : String(e)
+        const errMsg = e instanceof Error ? e.message : String(e)
+        result.error = errMsg
+        // 调用错误分析器生成结构化错误链路 + 修复建议
+        result.errorAnalysis = analyzeError(errMsg, { phase: 'submission' })
         result.durationMs = Date.now() - start
         progress.value.failed++
       }
@@ -193,7 +209,7 @@ export function useAutomationTests() {
 
   function reset(): void {
     isRunning.value = false
-    progress.value = { total: 0, completed: 0, passed: 0, failed: 0 }
+    progress.value = { total: 0, completed: 0, passed: 0, failed: 0, skipped: 0 }
     results.value = []
     testCases.value = []
     lastError.value = null
