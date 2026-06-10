@@ -41,6 +41,25 @@
         </ion-item>
       </ion-list>
 
+      <!-- 自动化测试：生产构建也可访问（与沙箱预览的 isDev 限制不同） -->
+      <ion-list>
+        <ion-list-header>
+          <ion-label>{{ t('devtools.automationTests') }}</ion-label>
+          <ion-badge slot="end" color="success" class="scope-badge scope-prod">
+            <ion-icon :icon="rocketOutline" class="scope-badge-icon"></ion-icon>
+            <span class="scope-text">{{ t('devtools.availableInProd') }}</span>
+          </ion-badge>
+        </ion-list-header>
+        <p class="section-hint">{{ t('devtools.automationTestsHint') }}</p>
+        <ion-item button detail @click="goAutomationTests">
+          <ion-icon :icon="flaskOutline" slot="start"></ion-icon>
+          <ion-label>
+            <h3>{{ t('devtools.automationTestsEntry') }}</h3>
+            <p>{{ t('devtools.automationTestsEntryDesc') }}</p>
+          </ion-label>
+        </ion-item>
+      </ion-list>
+
       <!-- 沙箱预览：dev 专属入口，生产构建整段 v-if false 移除 -->
       <ion-list v-if="isDev">
         <ion-list-header>
@@ -155,7 +174,7 @@ import {
   chevronForward, playCircleOutline, musicalNotesOutline,
   colorPaletteOutline, settingsOutline, terminal, documentText,
   cloudOutline, refreshOutline, eyeOutline,
-  extensionPuzzleOutline,
+  extensionPuzzleOutline, flaskOutline, rocketOutline,
 } from 'ionicons/icons'
 import { useRouter } from 'vue-router'
 import { useI18n } from '@/composables/useI18n'
@@ -258,6 +277,10 @@ function openPreviewOpenListPlugin() {
   window.location.assign('/api/preview/plugin-openlist/')
 }
 
+function goAutomationTests() {
+  router.push('/tabs/settings/devtools/automation')
+}
+
 function handleVConsoleToggle(event: CustomEvent) {
   toggleVConsole(event.detail.checked)
 }
@@ -340,6 +363,10 @@ async function handleClearLogs() {
 .scope-dev {
   --background: rgba(var(--ion-color-warning-rgb), 0.18);
   --color: var(--ion-color-warning-shade);
+}
+.scope-prod {
+  --background: rgba(var(--ion-color-success-rgb), 0.16);
+  --color: var(--ion-color-success-shade);
 }
 
 .log-level-card {

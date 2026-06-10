@@ -333,6 +333,9 @@ func (s *Server) Start(version string) (string, error) {
 	r.GET("/api/alist-encrypt/stream", s.handleAlistEncryptStreamGin)
 	r.GET("/api/alist-encrypt/decode-filename", s.handleAlistDecodeFilenameGin)
 	r.POST("/api/logs", s.handleAPILogsGin)
+	// 自动化测试 mock 数据生成/重置（root 白名单校验后写入）
+	r.POST("/api/mock/generate", s.handleMockGenerateGin)
+	r.POST("/api/mock/reset", s.handleMockResetGin)
 	r.GET("/ws", gin.WrapF(s.handleWebSocket))
 
 	// Agent AI 端点（集成到 encv-go 主后端）

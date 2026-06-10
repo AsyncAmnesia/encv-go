@@ -96,6 +96,10 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/DevToolsDetail.vue'),
       },
       {
+        path: 'settings/devtools/automation',
+        component: () => import('@/views/AutomationTestsDetail.vue'),
+      },
+      {
         path: 'settings/devtools/prototype/:id',
         component: () => import('@/views/PrototypeSandbox.vue'),
       },

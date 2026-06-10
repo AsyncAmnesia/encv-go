@@ -160,6 +160,15 @@
                 <ion-badge v-if="task.pluginName" color="primary" class="plugin-badge">
                   {{ task.pluginName }}
                 </ion-badge>
+                <ion-badge
+                  v-if="getTriggeredBy(task.id) !== 'user'"
+                  :color="getTriggeredByColor(task.id)"
+                  class="triggered-by-badge"
+                  :title="t('tasks.triggeredBy') + ': ' + t('tasks.triggeredBy_' + getTriggeredBy(task.id))"
+                >
+                  <ion-icon :icon="getTriggeredByIcon(task.id)" class="triggered-by-icon"></ion-icon>
+                  {{ t('tasks.triggeredBy_' + getTriggeredBy(task.id)) }}
+                </ion-badge>
               </p>
               <p class="task-time-info">
                 <span class="time-created">{{ formatDateTime(task.createdAt) }}</span>
@@ -263,6 +272,7 @@ import {
   add, closeCircle, checkmarkCircle, timer, sync,
   warningOutline, lockClosed, search, funnel, trashBin,
   extensionPuzzle, swapVertical, chevronDown,
+  hardwareChipOutline, cogOutline, person,
 } from 'ionicons/icons'
 import { useRoute, useRouter } from 'vue-router'
 import type { EncvTask, TaskType } from '@/api/encv'
@@ -273,6 +283,7 @@ import { showToast } from '@/composables/useToast'
 import { useNewTaskModal } from '@/composables/useNewTaskModal'
 import { useTasksList } from '@/composables/useTasksList'
 import { useTaskEventBridge } from '@/composables/useTaskEventBridge'
+import { getTriggeredBy } from '@/composables/useTaskTrigger'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -305,6 +316,16 @@ useTaskEventBridge({
   onComplete: applyTaskCompleted,
   onRefresh: fetchTasks,
 })
+
+// 任务触发者标签 helpers — Tasks.vue 直接用 useTaskTrigger（因为这是 task 显示的主视图）
+function getTriggeredByColor(taskId: string): string {
+  const v = getTriggeredBy(taskId)
+  return v === 'automation' ? 'primary' : v === 'ai_agent' ? 'secondary' : 'medium'
+}
+function getTriggeredByIcon(taskId: string): string {
+  const v = getTriggeredBy(taskId)
+  return v === 'automation' ? cogOutline : v === 'ai_agent' ? hardwareChipOutline : person
+}
 
 async function openTaskDetail(task: EncvTask) {
   const { default: TaskDetailModal } = await import('@/components/TaskDetailModal.vue')
@@ -478,6 +499,21 @@ onMounted(() => {
   --padding-top: 2px;
   --padding-bottom: 2px;
   font-weight: 500;
+}
+
+.triggered-by-badge {
+  font-size: 10px;
+  --padding-start: 6px;
+  --padding-end: 6px;
+  --padding-top: 2px;
+  --padding-bottom: 2px;
+  font-weight: 500;
+  margin-left: 4px;
+}
+.triggered-by-icon {
+  font-size: 11px;
+  margin-right: 3px;
+  vertical-align: middle;
 }
 
 .task-time-info {

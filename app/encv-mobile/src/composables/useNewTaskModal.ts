@@ -8,6 +8,7 @@ import { usePathResolver } from '@/composables/usePathResolver'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
 import { eventBus } from '@/composables/useEventBus'
+import { recordTriggeredBy } from '@/composables/useTaskTrigger'
 import NewTaskModal from '@/components/NewTaskModal.vue'
 
 const { normalize } = usePathResolver()
@@ -150,7 +151,7 @@ export function useNewTaskModal() {
             const extraPayload = Object.keys(state.extraValues).length > 0 ? state.extraValues : undefined
             const passwordStrategy = state.taskOptions?.passwordStrategy
             const shouldSendPassword = !passwordStrategy || passwordStrategy === 'global'
-            await createTask(
+            const task = await createTask(
               state.taskType as TaskType,
               state.sourcePath,
               state.targetPath || undefined,
@@ -164,6 +165,8 @@ export function useNewTaskModal() {
               state.taskType === 'encrypt' && Number(state.version) === 4 ? state.cipherMode : undefined,
               state.taskType === 'encrypt' && Number(state.version) === 4 ? state.compressionMode : undefined,
             )
+            // 登记任务触发者标签：用户手动创建 → 'user'
+            if (task?.id) recordTriggeredBy(task.id, 'user')
             await modal.dismiss()
             showToast({ message: t('tasks.taskCreated'), duration: 1500, color: 'success' })
             eventBus.emit('task:refresh', {})

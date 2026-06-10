@@ -27,6 +27,13 @@
         <span class="info-label">{{ t('tasks.containerVersion') }}</span>
         <span class="info-value">V{{ task.containerVersion }}</span>
       </div>
+      <div class="info-item" v-if="triggeredBy !== 'user'">
+        <span class="info-label">{{ t('tasks.triggeredBy') }}</span>
+        <ion-badge :color="triggeredByColor">
+          <ion-icon :icon="triggeredByIcon" class="triggered-by-icon"></ion-icon>
+          {{ t('tasks.triggeredBy_' + triggeredBy) }}
+        </ion-badge>
+      </div>
     </div>
   </div>
 </template>
@@ -34,10 +41,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { IonBadge, IonIcon } from '@ionic/vue'
-import { copyOutline } from 'ionicons/icons'
+import { copyOutline, hardwareChipOutline, cogOutline, person } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
 import type { EncvTask } from '@/api/encv'
+import { getTriggeredBy } from '@/composables/useTaskTrigger'
 
 const props = defineProps<{ task: EncvTask }>()
 const { t } = useI18n()
@@ -54,6 +62,16 @@ async function copyTaskId() {
 const fileName = computed(() => {
   const parts = props.task.sourcePath.split('/')
   return parts[parts.length - 1] || props.task.sourcePath
+})
+
+const triggeredBy = computed(() => getTriggeredBy(props.task.id))
+const triggeredByColor = computed(() => {
+  const v = triggeredBy.value
+  return v === 'automation' ? 'primary' : v === 'ai_agent' ? 'secondary' : 'medium'
+})
+const triggeredByIcon = computed(() => {
+  const v = triggeredBy.value
+  return v === 'automation' ? cogOutline : v === 'ai_agent' ? hardwareChipOutline : person
 })
 </script>
 
@@ -122,5 +140,11 @@ const fileName = computed(() => {
 
 .task-id-value:hover .copy-icon {
   opacity: 1;
+}
+
+.triggered-by-icon {
+  font-size: 11px;
+  margin-right: 3px;
+  vertical-align: middle;
 }
 </style>
