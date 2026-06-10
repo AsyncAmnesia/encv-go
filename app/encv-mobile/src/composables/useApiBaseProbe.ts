@@ -45,7 +45,7 @@
 // 且不依赖任何 agent 状态。
 
 import { ref, type Ref } from 'vue'
-import { DEFAULT_API_BASE_URL, setApiBaseUrl } from '@/api/encv'
+import { DEFAULT_API_BASE_URL, DEV_SANDBOX_ENTRY, setApiBaseUrl } from '@/api/encv'
 
 /** 单次探测结果 */
 export interface ProbeResult {
@@ -272,10 +272,19 @@ function createProbe() {
             return commit(origin, null, 'current-origin', log, t0)
           }
           if (isSandbox && r.err && (/status\s+401/i.test(r.err) || /status\s+403/i.test(r.err) || /non-JSON/i.test(r.err))) {
-            // 🆕 trae 网关可达但拦了 /health：视为"网关命中"，继续走 commit
-            // 让 UI 至少能渲染，调用方自己捕获 401。
-            const note = `[1.5] trae sandbox gateway reachable, accepting despite ${r.err ? r.err.split(' ')[1] : 'non-ok'}`
+            // 🆕 2026-06-10 沙箱 mock 浏览器：trae gateway 拦截时必须 fallback
+            //   trae 网关（如 https://run-agent-*.trae.cn/）对沙箱内 :16666/api/*
+            //   返 403（CORS / 鉴权拦截），但**沙箱内 :16666 入口本身**是 OK 的。
+            //   之前这里 `return commit(origin, ...)` → 把 trae origin 写入 localStorage
+            //   → 之后所有 /api/* 走 trae origin → 全 403 → UI 显示"断联"+ 配置全空。
+            //   修复：sandbox + 401/403/non-JSON 时**不 commit trae origin**，
+            //   继续走 [2] loopback（127.0.0.1:2025 在沙箱内浏览器可达）。
+            //   真机 protocol=file/capacitor → 这步跳过，不影响。
+            const note = `[1.5] trae sandbox gateway blocked /health (${r.err.split(' ')[1] || r.err}); NOT committing ${origin} (would 401 all /api/*); falling through to [2] loopback`
             log.push(note); console.info(`[probe] step ${note}`)
+            // 不 return，让代码继续走 [2] loopback 探测
+          } else {
+            // 非 sandbox 浏览器或非 401/403：按原来逻辑 commit
             return commit(origin, null, 'current-origin', log, t0)
           }
         } else {
@@ -320,13 +329,20 @@ function createProbe() {
       const wrapped = new Error(`all-candidates-failed | trace: ${trace}`)
       console.info(`[probe] FAIL ${wrapped.message}`)
       lastError.value = wrapped.message
-      // 🆕 2026-06-09 沙箱 mock 浏览器：trae sandbox origin 必须 fallback 到 default
-      //   否则 probe throw → [App] onErrorCaptured 触发 → 整个 SPA 渲染错误边界
-      //   fallback 策略：sandbox 浏览器走 current origin，APK/真机保留 throw（让 UI 报错提示）
+      // 🆕 2026-06-10 沙箱 mock 浏览器：trae sandbox origin 必须 fallback 到
+      //   沙箱内 :16666 preview-gateway 入口（**不是** trae origin）。
+      //   旧 fallback 策略 commit trae origin → 所有 /api/* 走 trae origin → 全 403。
+      //   正确：sandbox 浏览器在沙箱内能直接访问 127.0.0.1:16666，OpenPreview
+      //   工具激活的 mock browser 也用 127.0.0.1:16666 当 origin（trae 域名
+      //   只是包装，对沙箱内 backend 不可达）。
+      //   APK/真机不进此分支（isSandbox=false），保留 throw 让 UI 报错。
       if (isSandboxBrowserOrigin(origin)) {
-        const note = `[4] trae sandbox fallback: using current origin ${origin} despite probe failure (UI will see 401 from gateway)`
+        // 🆕 沙箱内 :16666 是 preview-gateway 入口（vite + encv-go 都在它后面）。
+        //   不写 trae origin，写 127.0.0.1:16666 → 之后所有 /api/* 走沙箱内入口。
+        //   getApiBaseUrl() dev fallback 也用同一个值（DEV_SANDBOX_ENTRY）。
+        const note = `[4] trae sandbox fallback: using sandbox-internal entry ${DEV_SANDBOX_ENTRY} (NOT ${origin}, which is trae gateway not proxying /api/*)`
         log.push(note); console.info(`[probe] step ${note}`)
-        return commit(origin, null, 'current-origin', log, t0)
+        return commit(DEV_SANDBOX_ENTRY, null, 'current-origin', log, t0)
       }
       throw wrapped
     } finally {

@@ -219,3 +219,81 @@ describe('useApiBaseProbe — 节流', () => {
     expect(fetchMock).toHaveBeenCalled() // 强制重探
   })
 })
+
+/**
+ * 🆕 2026-06-10 沙箱 mock 浏览器防回归（用户报告"断联+配置全空"）：
+ *  trae sandbox origin 探测 401/403/non-JSON 时**绝对不能** commit trae origin，
+ *  也不应 throw（会让 [App] onErrorCaptured 渲染错误边界），必须继续走后续探测
+ *  或 fallback 到沙箱内 127.0.0.1:16666。
+ */
+describe('useApiBaseProbe — 沙箱 mock 浏览器 trae gateway 拦截（防回归）', () => {
+  function mockWindowOrigin(origin: string): void {
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      writable: true,
+      value: { ...window.location, origin, protocol: 'https:', host: origin.replace(/^https?:\/\//, '') },
+    })
+  }
+
+  it('[1.5] sandbox origin 返 401 → 不 commit trae origin，继续 [2] loopback 命中', async () => {
+    mockWindowOrigin('https://run-agent-test.trae.cn')
+    setupFetchMock([
+      // trae origin 返 401（CORS / 网关拦截）
+      { match: (u) => u.includes('run-agent-test.trae.cn'), respond: () => new Response('', { status: 401 }) },
+      // [2] loopback 通
+      { match: (u) => u.includes('127.0.0.1:2025'), respond: () => okResponse() },
+    ])
+    const probe = freshProbe()
+    const result = await probe.probe({ force: true })
+
+    // ❌ 绝不能 commit trae origin
+    expect(result.baseUrl).not.toContain('run-agent-test.trae.cn')
+    // ✅ 落到 [2] loopback
+    expect(result.baseUrl).toBe('http://127.0.0.1:2025')
+    expect(result.source).toBe('loopback')
+  })
+
+  it('[1.5] sandbox origin 返 403 → 不 commit trae origin，继续 [2] loopback 命中', async () => {
+    mockWindowOrigin('https://run-agent-abc.trae.cn')
+    setupFetchMock([
+      { match: (u) => u.includes('run-agent-abc.trae.cn'), respond: () => new Response('', { status: 403 }) },
+      { match: (u) => u.includes('127.0.0.1:2025'), respond: () => okResponse() },
+    ])
+    const probe = freshProbe()
+    const result = await probe.probe({ force: true })
+
+    expect(result.baseUrl).toBe('http://127.0.0.1:2025')
+    expect(result.source).toBe('loopback')
+  })
+
+  it('[1.5] sandbox origin 返 HTML（non-JSON） → 不 commit trae origin', async () => {
+    mockWindowOrigin('https://run-agent-xyz.trae.cn')
+    setupFetchMock([
+      { match: (u) => u.includes('run-agent-xyz.trae.cn'), respond: () => new Response('<!DOCTYPE html>', { status: 200, headers: { 'content-type': 'text/html' } }) },
+      { match: (u) => u.includes('127.0.0.1:2025'), respond: () => okResponse() },
+    ])
+    const probe = freshProbe()
+    const result = await probe.probe({ force: true })
+
+    // trae origin content-type 不对（HTML）→ 走 sandbox fallback → 命中 [2]
+    expect(result.baseUrl).toBe('http://127.0.0.1:2025')
+  })
+
+  it('[4] sandbox 全失败 fallback → commit 127.0.0.1:16666（沙箱内 preview-gateway 入口），不 commit trae origin', async () => {
+    mockWindowOrigin('https://run-agent-fallback.trae.cn')
+    // cached 空、sandbox origin 全拒、loopback 不通（沙箱内 encv-go 偶尔挂）
+    setupFetchMockWithRejects([
+      { match: (u) => u.includes('run-agent-fallback.trae.cn'), respond: () => new Response('', { status: 401 }) },
+      { match: (u) => u.includes('127.0.0.1:2025'), reject: () => { throw new TypeError('NetworkError') } },
+    ])
+    const probe = freshProbe()
+    const result = await probe.probe({ force: true })
+
+    // ❌ 绝不能 commit trae origin（trae 网关不通）
+    expect(result.baseUrl).not.toContain('trae.cn')
+    // ❌ 绝不能 throw（会触发 [App] onErrorCaptured 渲染错误边界）
+    // ✅ 必须 fallback 到沙箱内 127.0.0.1:16666（preview-gateway 入口）
+    expect(result.baseUrl).toBe('http://127.0.0.1:16666')
+    expect(result.source).toBe('current-origin')
+  })
+})

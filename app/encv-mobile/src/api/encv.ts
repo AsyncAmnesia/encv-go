@@ -1,8 +1,25 @@
 const SERVER_URL_KEY = 'encv-server-url'
 export const DEFAULT_API_BASE_URL = 'http://127.0.0.1:2025'
+// 🆕 2026-06-10 沙箱 dev 专用 entry：preview-gateway :16666 入口（vite + encv-go 都代理）
+//   - dev 模式 sandbox 浏览器期望走 http://127.0.0.1:16666（trae 域名 :16666 网关不通）
+//   - APK 模式不影响：APK 用 capacitor 协议，仍走 loopback :2025 直连 encv-go
+//   - 这是 sandbox 浏览器 fallback commit 的目标，getApiBaseUrl() dev fallback 也用它
+export const DEV_SANDBOX_ENTRY = 'http://127.0.0.1:16666'
 
 export function getApiBaseUrl(): string {
-  if (import.meta.env.DEV) return ''
+  // 🆕 2026-06-10 沙箱 dev 模式：useApiBaseProbe 会 commit `http://127.0.0.1:16666`
+  //   写进 localStorage，dev 模式必须读 localStorage 才生效。
+  //   旧版 dev 返回 `''`（相对路径，依赖 window.location.origin）—— sandbox 浏览器
+  //   origin 是 trae 域名（被网关拦）→ 所有 /api/* 走 trae origin → 403 → 断联。
+  //   新版 dev 流程：
+  //     [1] localStorage 有值（probe 已 commit）→ 用 localStorage
+  //     [2] localStorage 空 → fallback 到 DEV_SANDBOX_ENTRY（沙箱内 :16666）
+  //   APK 模式：probe 不会改 localStorage（[1.5] skip），dev 不影响 APK 行为。
+  if (import.meta.env.DEV) {
+    const stored = localStorage.getItem(SERVER_URL_KEY)
+    if (stored) return stored
+    return DEV_SANDBOX_ENTRY
+  }
   return localStorage.getItem(SERVER_URL_KEY) || DEFAULT_API_BASE_URL
 }
 
