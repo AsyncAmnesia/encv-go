@@ -16,10 +16,10 @@
   },
   "mobile": {
     "output": {
-      "path": "/storage/emulated/0/encv-output"
+      "path": "/storage/emulated/0/encv-automation/encv-output"
     },
     "server": {
-      "dir": "/storage/emulated/0"
+      "dir": "/storage/emulated/0/encv-automation"
     },
     "webdav": {
       "dir": ""

@@ -3,26 +3,20 @@ tmp_dir = "tmp"
 
 [build]
   # ──────────────────────────────────────────────────────────
-  # go run 路径（用户最终选择）
+  # go run 路径（2026-06-10 用户决策 + 沙箱验证）
   #
-  # 沙箱实测问题（2026-06-10）：
-  #   - go run 编译阶段 stdout/stderr 完全沉默 → air 看不到进度
-  #   - 沙箱冷编 5+ 分钟 + pipe 死锁 → 误判进程挂死 → 死循环重启
-  #
-  # 解决：
-  #   - pre_cmd 把编译/运行输出 tee 到 ./tmp/encv-go-run.log
-  #     → 沙箱外可 `tail -f tmp/encv-go-run.log` 看进度
-  #   - delay 拉到 5s + grace_delay 10s 给冷编足够空间
-  #   - cmd 用 go run 整个包（不带 -o，Go 1.20 以下也兼容）
-  #   - bin 字段用 ./tmp/encv-bin（如未来要切回 go build 留个兼容路径）
+  # 关键发现（沙箱）：
+  #   - air 跟踪 cmd 派生的进程组，pipe (`cmd | tee`) 让 air 误判
+  #     父进程退出 → 立即重启 → 永远启不起来
+  #   - 必须用 `bash -c '...'` 包装：air 看到单一 bash 进程
+  #     pipe 在 bash 内部运行，air 跟踪 bash 即可
+  #   - `bin` 字段不能指向不存在的文件（否则重启失败 exit 127）
+  #     → 留空让 air 复用 cmd
   # ──────────────────────────────────────────────────────────
-  # pre_cmd 先编译写 log（tee 解决「编译沉默」问题）
-  # 然后 cmd 跑 go run（也是 tee 出去）
-  pre_cmd = ["mkdir -p tmp && go build -o ./tmp/encv-go-check ./cmd/encv 2>&1 | tee ./tmp/encv-go-build.log; true"]
-  cmd = "go run ./cmd/encv start 2>&1 | tee ./tmp/encv-go-run.log"
-  bin = "./tmp/encv start"
-  delay = 5000
-  grace_delay = 10000
+  cmd = "bash -c 'go run ./cmd/encv start 2>&1 | tee ./tmp/encv-go-run.log'"
+  bin = ""
+  delay = 5000         # 5s 防 pipe 死锁误判
+  grace_delay = 10000  # 10s 冷编空间
   exclude_regex = ["_test\\.go$"]
   exclude_dir = [
     "node_modules",

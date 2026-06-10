@@ -50,6 +50,10 @@ pkill -9 -f "/tmp/go-build" 2>/dev/null || true
 # ── 5. encv 二进制 (encv-go 编译产物) ──
 pkill -9 -x "encv" 2>/dev/null || true
 pkill -9 -f "/workspace/tmp/encv" 2>/dev/null || true
+# go run 编译产物在 ~/.cache/go-build/<hash>/encv（路径不在 /workspace）
+# comm 是 "encv"（精确匹配能杀），但 pkill -9 -f 用全路径更稳
+pkill -9 -f "cache/go-build.*/encv" 2>/dev/null || true
+pkill -9 -f "/root/.cache/go-build" 2>/dev/null || true
 
 # ── 6. vite dev server (encv-mobile :8100 / plugin-openlist :5174) ──
 pkill -9 -f "vite/bin/vite.js" 2>/dev/null || true
