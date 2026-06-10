@@ -28,6 +28,7 @@ import {
 import { usePathResolver } from '@/composables/usePathResolver'
 import { recordTriggeredBy, type TriggeredBy } from '@/composables/useTaskTrigger'
 import { analyzeError, type ErrorAnalysis } from '@/composables/useErrorAnalyzer'
+import { eventBus } from '@/composables/useEventBus'
 
 export type { TriggeredBy }
 
@@ -58,10 +59,14 @@ export interface TestCaseResult {
 export interface TestProgress {
   total: number
   completed: number
+  /** 已完成且通过 */
   passed: number
+  /** 提交失败或执行失败 */
   failed: number
   /** 跳过用例数（暂未启用，未来给 might-fail + 已知不支持的版本使用） */
   skipped: number
+  /** 已提交、等待 WS 回调的 pending 数量 */
+  pending: number
 }
 
 export interface GenerateTestCaseOptions {
@@ -76,10 +81,47 @@ export function useAutomationTests() {
   const plugins = ref<PluginMeta[]>([])
   const isLoadingPlugins = ref(false)
   const isRunning = ref(false)
-  const progress = ref<TestProgress>({ total: 0, completed: 0, passed: 0, failed: 0, skipped: 0 })
+  const progress = ref<TestProgress>({ total: 0, completed: 0, passed: 0, failed: 0, skipped: 0, pending: 0 })
   const results = ref<TestCaseResult[]>([])
   const lastError = ref<string | null>(null)
   const testCases = ref<TestCaseSpec[]>([])
+
+  // WS 回调：task:completed — 将 pending 结果更新为实际状态
+  function onTaskCompleted(data: { id: string; error?: string }) {
+    const idx = results.value.findIndex((r) => r.taskId === data.id && r.status === 'pending')
+    if (idx === -1) return
+
+    const result = results.value[idx]
+    if (data.error) {
+      result.status = 'failed'
+      result.error = data.error
+      result.errorAnalysis = analyzeError(data.error, { phase: 'backend' })
+      result.durationMs = (result.submittedAt ? Date.now() - new Date(result.submittedAt).getTime() : 0)
+      progress.value.failed++
+    } else {
+      result.status = 'passed'
+      result.durationMs = (result.submittedAt ? Date.now() - new Date(result.submittedAt).getTime() : 0)
+      progress.value.passed++
+    }
+    progress.value.pending--
+  }
+
+  // WS 回调：task:update — 更新进度信息（可选）
+  function onTaskUpdate(_data: { id: string; type: string; status: string; progress: number }) {
+    // 暂不处理，未来可用来显示实时进度百分比
+  }
+
+  /** 开始监听 WS 事件（调用方在 onMounted 中调用） */
+  function startListening() {
+    eventBus.on('task:completed', onTaskCompleted)
+    eventBus.on('task:update', onTaskUpdate)
+  }
+
+  /** 停止监听（调用方在 onUnmounted 中调用） */
+  function stopListening() {
+    eventBus.off('task:completed', onTaskCompleted)
+    eventBus.off('task:update', onTaskUpdate)
+  }
 
   async function loadPlugins(): Promise<void> {
     isLoadingPlugins.value = true
@@ -158,7 +200,7 @@ export function useAutomationTests() {
    */
   async function runTests(specs: TestCaseSpec[]): Promise<void> {
     isRunning.value = true
-    progress.value = { total: specs.length, completed: 0, passed: 0, failed: 0, skipped: 0 }
+    progress.value = { total: specs.length, completed: 0, passed: 0, failed: 0, skipped: 0, pending: 0 }
     results.value = []
 
     for (const spec of specs) {
@@ -188,9 +230,9 @@ export function useAutomationTests() {
         )
         recordTriggeredBy(task.id, 'automation')
         result.taskId = task.id
-        result.status = 'pending' // 任务已提交，等 WS 回调
+        result.status = 'pending' // 任务已提交，等 WS 回调（task:completed）决定最终状态
         result.durationMs = Date.now() - start
-        progress.value.passed++
+        progress.value.pending++ // ← 只计为 pending，不计为 passed
       } catch (e) {
         result.status = 'failed'
         const errMsg = e instanceof Error ? e.message : String(e)
@@ -209,7 +251,7 @@ export function useAutomationTests() {
 
   function reset(): void {
     isRunning.value = false
-    progress.value = { total: 0, completed: 0, passed: 0, failed: 0, skipped: 0 }
+    progress.value = { total: 0, completed: 0, passed: 0, failed: 0, skipped: 0, pending: 0 }
     results.value = []
     testCases.value = []
     lastError.value = null
@@ -227,5 +269,7 @@ export function useAutomationTests() {
     generateTestCases,
     runTests,
     reset,
+    startListening,
+    stopListening,
   }
 }

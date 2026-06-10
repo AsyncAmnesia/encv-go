@@ -39,7 +39,7 @@
         <div class="tally__num">{{ total }}</div>
         <div class="tally__label">EXAMINED</div>
       </div>
-      <div class="tally tally--pass">
+      <div class="tally tally--pass" :class="{ 'tally--active': passed > 0 }">
         <div class="tally__num">{{ passed }}</div>
         <div class="tally__label">PASSED</div>
       </div>
@@ -47,7 +47,11 @@
         <div class="tally__num">{{ failed }}</div>
         <div class="tally__label">FAILED</div>
       </div>
-      <div class="tally tally--skip">
+      <div v-if="pending > 0" class="tally tally--pending" :class="{ 'tally--active': true }">
+        <div class="tally__num">{{ pending }}</div>
+        <div class="tally__label">PENDING</div>
+      </div>
+      <div class="tally tally--skip" v-if="skipped > 0">
         <div class="tally__num">{{ skipped }}</div>
         <div class="tally__label">SKIPPED</div>
       </div>
@@ -81,6 +85,7 @@ const props = defineProps<{
   passed: number
   failed: number
   skipped: number
+  pending: number
   platform: string
 }>()
 
@@ -98,12 +103,16 @@ const formattedDuration = computed(() => {
 })
 
 const passRate = computed(() => {
-  if (props.total === 0) return 0
-  return Math.round((props.passed / props.total) * 100)
+  // 只统计已完成的任务（排除 pending）
+  const finished = props.passed + props.failed
+  if (finished === 0) return 0
+  return Math.round((props.passed / finished) * 100)
 })
 
 const verdictClass = computed(() => {
   if (props.total === 0) return ''
+  // 有 pending 时，即使全部通过也显示 partial（因为还没跑完）
+  if (props.pending > 0) return 'verdict-stamp--partial'
   if (props.failed === 0) return 'verdict-stamp--pass'
   if (props.passed === 0) return 'verdict-stamp--fail'
   return 'verdict-stamp--partial'
@@ -111,6 +120,7 @@ const verdictClass = computed(() => {
 
 const verdictText = computed(() => {
   if (props.total === 0) return 'NO DATA'
+  if (props.pending > 0) return 'IN PROGRESS'
   if (props.failed === 0) return 'VERIFIED'
   if (props.passed === 0) return 'REJECTED'
   return 'PARTIAL'
@@ -242,10 +252,15 @@ const verdictSubtitle = computed(() => {
 .tally--total .tally__num { color: #1A1A1A; }
 .tally--pass .tally__num { color: #1B4332; }
 .tally--fail .tally__num { color: #5B0F1F; }
+.tally--pending .tally__num { color: #B8860B; }
 .tally--skip .tally__num { color: #6B5D4C; }
 .tally--active {
   background: #FAEAEC;
   border-color: #8B1E3F;
+}
+.tally--pending.tally--active {
+  background: #FFF8E1;
+  border-color: #B8860B;
 }
 
 .dossier__bar {

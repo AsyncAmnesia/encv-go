@@ -184,7 +184,7 @@ describe('useAutomationTests.runTests 真实行为', () => {
     expect(triggerValues.every((v) => v === 'automation')).toBe(true)
   })
 
-  it('progress 计数正确', async () => {
+  it('progress 计数正确：提交成功 → pending（等 WS 回调）', async () => {
     const t = useAutomationTests()
     t.plugins.value = [makePlugin('p', [4], 4)]
     const cases = t.generateTestCases({ sourceFile: '/foo' })
@@ -195,11 +195,18 @@ describe('useAutomationTests.runTests 真实行为', () => {
     await runPromise
     expect(t.isRunning.value).toBe(false)
     expect(t.progress.value.completed).toBe(cases.length)
-    expect(t.progress.value.passed).toBe(cases.length)
+    // 提交成功后全部为 pending（WS 回调才会改为 passed/failed）
+    expect(t.progress.value.pending).toBe(cases.length)
+    expect(t.progress.value.passed).toBe(0)
     expect(t.progress.value.failed).toBe(0)
+    // 所有 result 的初始状态应为 pending
+    for (const r of t.results.value) {
+      expect(r.status).toBe('pending')
+      expect(r.taskId).toBeTruthy()
+    }
   })
 
-  it('createTask 抛出：单个用例 failed，不影响其他', async () => {
+  it('createTask 抛出：单个用例 failed，其余 pending', async () => {
     let callCount = 0
     createTaskMock.mockImplementation(async () => {
       callCount++
@@ -213,11 +220,19 @@ describe('useAutomationTests.runTests 真实行为', () => {
     await t.runTests(cases)
 
     expect(t.progress.value.completed).toBe(cases.length)
+    // 第 2 个用例 createTask 抛异常 → failed
     expect(t.progress.value.failed).toBe(1)
-    expect(t.progress.value.passed).toBe(cases.length - 1)
+    // 其余提交成功 → pending（不是 passed！）
+    expect(t.progress.value.pending).toBe(cases.length - 1)
+    expect(t.progress.value.passed).toBe(0)
     // results 中第 2 个用例 status='failed'
     expect(t.results.value[1].status).toBe('failed')
     expect(t.results.value[1].error).toBe('boom')
+    // 其余为 pending
+    for (let i = 0; i < cases.length; i++) {
+      if (i === 1) continue
+      expect(t.results.value[i].status).toBe('pending')
+    }
   })
 })
 

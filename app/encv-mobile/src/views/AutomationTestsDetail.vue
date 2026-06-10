@@ -114,6 +114,7 @@
           :passed="progress.passed"
           :failed="progress.failed"
           :skipped="progress.skipped"
+          :pending="progress.pending"
           :platform="platform"
         />
 
@@ -168,6 +169,7 @@ const mockRoot = computed(() => DEFAULT_AUTOMATION_SOURCE.split('/').slice(0, 5)
 const {
   plugins, isLoadingPlugins, isRunning, progress, results, testCases, lastError,
   loadPlugins, generateTestCases, runTests,
+  startListening, stopListening,
 } = useAutomationTests()
 
 // Mock 数据生成 / 重置
@@ -309,9 +311,12 @@ onMounted(() => {
   tickHandle = setInterval(() => {
     _tickNow.value = Date.now()
   }, 1000)
+  // 监听 WS 回调，将 pending 任务更新为实际状态
+  startListening()
 })
 onUnmounted(() => {
   if (tickHandle) clearInterval(tickHandle)
+  stopListening()
 })
 </script>
 
