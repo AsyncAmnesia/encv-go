@@ -2,10 +2,27 @@ root = "."
 tmp_dir = "tmp"
 
 [build]
-  entrypoint = "./.air-run.sh"
-  cmd = "go build -o ./tmp/encv ./cmd/encv"
-  delay = 1000
-  grace_delay = 2000
+  # ──────────────────────────────────────────────────────────
+  # go run 路径（用户最终选择）
+  #
+  # 沙箱实测问题（2026-06-10）：
+  #   - go run 编译阶段 stdout/stderr 完全沉默 → air 看不到进度
+  #   - 沙箱冷编 5+ 分钟 + pipe 死锁 → 误判进程挂死 → 死循环重启
+  #
+  # 解决：
+  #   - pre_cmd 把编译/运行输出 tee 到 ./tmp/encv-go-run.log
+  #     → 沙箱外可 `tail -f tmp/encv-go-run.log` 看进度
+  #   - delay 拉到 5s + grace_delay 10s 给冷编足够空间
+  #   - cmd 用 go run 整个包（不带 -o，Go 1.20 以下也兼容）
+  #   - bin 字段用 ./tmp/encv-bin（如未来要切回 go build 留个兼容路径）
+  # ──────────────────────────────────────────────────────────
+  # pre_cmd 先编译写 log（tee 解决「编译沉默」问题）
+  # 然后 cmd 跑 go run（也是 tee 出去）
+  pre_cmd = ["mkdir -p tmp && go build -o ./tmp/encv-go-check ./cmd/encv 2>&1 | tee ./tmp/encv-go-build.log; true"]
+  cmd = "go run ./cmd/encv start 2>&1 | tee ./tmp/encv-go-run.log"
+  bin = "./tmp/encv start"
+  delay = 5000
+  grace_delay = 10000
   exclude_regex = ["_test\\.go$"]
   exclude_dir = [
     "node_modules",

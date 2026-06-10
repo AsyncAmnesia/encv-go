@@ -375,11 +375,116 @@ curl -s http://localhost:16666/__gateway/health | jq '.children[].name'
 | 文件 | 作用 |
 |------|------|
 | [/workspace/ecosystem.config.cjs](file:///workspace/ecosystem.config.cjs) | pm2 完整配置（4 主 + 3 辅） |
-| [/workspace/.air-run.sh](file:///workspace/.air-run.sh) | air rebuild 时 env 兜底 export |
+| [/workspace/.air.toml](file:///workspace/.air.toml) | air 配置（go run + tee log，沙箱验证通过 2026-06-10） |
 | [/workspace/scripts/previews.sh](file:///workspace/scripts/previews.sh) | pm2 启停包装（start/stop/restart/status/logs/monit/kill） |
+| [/workspace/scripts/kill-orphan-children.sh](file:///workspace/scripts/kill-orphan-children.sh) | 沙箱 zombie 强杀（14 步 + 报告） |
 | [/workspace/scripts/openpreview-stub.js](file:///workspace/scripts/openpreview-stub.js) | OpenPreview web_server command_id 源 |
 | [/workspace/.preview-helper.js](file:///workspace/.preview-helper.js) | 早期占位（被 openpreview-stub 取代） |
 | [/workspace/app/encv-mobile/scripts/start-preview.sh](file:///workspace/app/encv-mobile/scripts/start-preview.sh) | 主预览脚本（mock 生成 + air 启动） |
+
+---
+
+## 八、go run 沙箱路径（2026-06-10 用户决策 + 实战验证）
+
+> **用户原话**：「尝试go run。你说的对，僵尸问题也必须全方位解决，否则沙箱会崩溃」
+>
+> **结论**：go run **完全可行**，关键在 tee 解决「编译沉默」+ zombie killer 全方位。
+
+### 8.1 .air.toml 配置（沙箱 go run 路径）
+
+```toml
+[build]
+  # pre_cmd 先写编译 check log（兼容 Go 1.20 以下，不依赖 go run -o）
+  pre_cmd = ["mkdir -p tmp && go build -o ./tmp/encv-go-check ./cmd/encv 2>&1 | tee ./tmp/encv-go-build.log; true"]
+  # cmd 直接 go run + tee → 沙箱外可 tail -f 看进度
+  cmd = "go run ./cmd/encv start 2>&1 | tee ./tmp/encv-go-run.log"
+  bin = "./tmp/encv start"
+  delay = 5000         # 5s 防 pipe 死锁误判
+  grace_delay = 10000  # 10s 冷编空间
+```
+
+### 8.2 关键认知
+
+| 问题 | 根因 | 解决 |
+|------|------|------|
+| **go run 编译沉默** | Go 编译期 stdout/stderr 被吞，air 看不到进度 | `tee ./tmp/encv-go-run.log` 写文件，沙箱外 `tail -f` 看 |
+| **沙箱冷编 5+ 分钟** | go mod 40+ 模块 + 沙箱 CPU 慢 | `delay=5000` + `grace_delay=10000` + `readyTimeoutMs=600000` |
+| **encv 启动需 start 子命令** | `./tmp/encv` 裸跑 → help 后 exit 0 | cmd 用 `go run ./cmd/encv start`（带 start） |
+| **Zombie 累积** | pm2 SIGKILL preview-gateway → air/go run 子进程 orphan | `kill-orphan-children.sh` 14 步清理（见 §九） |
+
+### 8.3 为什么不再用 go build + full_bin
+
+| 维度 | go build + full_bin | go run + tee |
+|------|--------------------|--------------|
+| 用户本地开发体验 | ❌ 多一步编译产物 | ✅ 一条命令 |
+| 沙箱冷编可见性 | ✅ `go build` 输出明确 | ✅ tee 写 log 文件 |
+| 编译产物 | ✅ `./tmp/encv` fixed binary | ⚠️ 临时 exe，位置不固定 |
+| Air 重启速度 | ✅ 极快（只重启 binary） | ⚠️ 重新编译（但有 cache） |
+| **结论** | 历史方案，Windows 本地也用 go run | **沙箱验证通过，2026-06-10 切换** |
+
+---
+
+## 九、沙箱 Zombie 强杀（14 步 + 报告）
+
+> **沙箱特有**：`init(1)` 不主动 reap orphan 进程 + go build/run 经常卡 Sl 状态（pipe 死锁，0% CPU 永远不醒）。
+
+### 9.1 调用
+
+```bash
+bash /workspace/scripts/kill-orphan-children.sh         # 静默
+bash /workspace/scripts/kill-orphan-children.sh --report # 报告残留
+```
+
+### 9.2 14 步清理流程
+
+| 步骤 | 目标 | 关键命令 |
+|------|------|---------|
+| 1 | pm2 监管 | `pm2 kill` |
+| 2 | air | `pkill -9 -f air` |
+| 3 | go build/run/test | `pkill -9 -f "go build\|go run\|go test"` |
+| 4 | Go compile worker | `pkill -9 -f "go-build\|/tmp/go-build"` |
+| 5 | encv 二进制 | `pkill -9 -x encv` |
+| 6 | vite (8100/5174) | `pkill -9 -f "vite/bin/vite.js"` |
+| 7 | preview-gateway + stub | `pkill -9 -f "preview-gateway\|openpreview-stub"` |
+| 8 | openlist | `pkill -9 -x openlist` |
+| 9 | PPID=1 孤儿兜底 | ps 抓 PPID=1 + 含 air/go/vite/encv 模式 |
+| 10 | Sl+0%CPU 卡死兜底 | ps 抓 stat=Sl + pcpu<1 + comm=go/air/vite |
+| 11 | Go 工具链辅助 | `pkill -9 -x compile\|asm\|cgo\|vet` |
+| 12 | **stat=Z 真 zombie** | 给 PPID 发 SIGCHLD 让 init reap |
+| 13 | pnpm/npx | `pkill -9 -f pnpm\|npx` |
+| 14 | 二次扫描 orphan | sleep 1 后再扫一次（防止新孤儿） |
+
+### 9.3 集成点
+
+| 文件 | 时机 |
+|------|------|
+| [/workspace/scripts/setup-sandbox-env.sh](file:///workspace/scripts/setup-sandbox-env.sh) | 步骤 pre-0（开头清残留）+ 末尾 --report（最终报告前清干净） |
+| [/workspace/scripts/previews.sh](file:///workspace/scripts/previews.sh) | restart / kill 子命令 |
+| 用户手动 debug | 任何时候手动跑 |
+
+### 9.4 验证（2026-06-10 实测）
+
+```
+$ pm2 start /workspace/ecosystem.config.cjs
+$ sleep 30
+$ curl -s http://127.0.0.1:16666/__gateway/health
+{
+  "ok": true,
+  "upstreams": {
+    "encv-go": { "alive": true, "latency_ms": 5 },       # go run 路径
+    "encv-mobile-vite": { "alive": true, "latency_ms": 9 },
+    "plugin-openlist-web": { "alive": false },           # 按需未启
+    "openlist-direct": { "alive": false }                # 按需未启
+  }
+}
+$ bash scripts/kill-orphan-children.sh --report
+[kill-orphan] ✅ 全部清理干净
+```
+
+### 9.5 其他相关 spec / 文件
+
+| 文件 | 作用 |
+|------|------|
 | [/workspace/app/preview-gateway/README.md](file:///workspace/app/preview-gateway/README.md) | 网关 + 路由 + 健康检查文档 |
 | [/workspace/.trae/specs/unify-sandbox-preview-port/spec.md](file:///workspace/.trae/specs/unify-sandbox-preview-port/spec.md) | 端口决策 D1-D9 原始 spec |
 | [/workspace/.trae/documents/plan-fix-sandbox-preview-env-injection.md](file:///workspace/.trae/documents/plan-fix-sandbox-preview-env-injection.md) | 本次 env 注入修复 plan（2026-06-05） |

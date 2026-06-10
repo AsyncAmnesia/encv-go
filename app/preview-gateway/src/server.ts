@@ -423,8 +423,9 @@ function buildChildSpecs(paths: ReturnType<typeof resolvePaths>): ChildSpec[] {
       name: 'encv-go',
       cmd: paths.airBin,
       args: [],
-      // env 注入铁律：ENCV_DEV_PREVIEW=1 / ENCV_MOBILE=1 必须传递（方案 C 移除
-      // start-preview.sh 后，这是唯一注入点；.air-run.sh 的 `:-1` 兜底仍生效）
+      // env 注入铁律：ENCV_DEV_PREVIEW=1 / ENCV_MOBILE=1 必须传递
+      // （go run 路径下 .air-run.sh 兜底已删除，pm2 ecosystem.config.cjs env
+      //  → preview-gateway process.env → air → go run → encv binary 一路继承）
       env: {
         ...process.env,
         ENCV_DEV_PREVIEW: process.env.ENCV_DEV_PREVIEW ?? '1',
