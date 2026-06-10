@@ -57,6 +57,20 @@
       </div>
     </div>
 
+    <!-- 🆕 2026-06-10 增强运行感：总进度条 + IN PROGRESS pulse -->
+    <div class="dossier__progress" :class="{ 'dossier__progress--running': pending > 0 }">
+      <div class="dossier__progress-label">
+        <span class="dossier__progress-text">
+          <span v-if="pending > 0" class="dossier__progress-spinner" aria-hidden="true">◉</span>
+          {{ completedText }}
+        </span>
+        <span class="dossier__progress-pct">{{ totalProgressPct }}%</span>
+      </div>
+      <div class="dossier__progress-track">
+        <div class="dossier__progress-fill" :style="{ width: totalProgressPct + '%' }"></div>
+      </div>
+    </div>
+
     <!-- Pass rate bar -->
     <div class="dossier__bar">
       <div class="dossier__bar-label">
@@ -107,6 +121,19 @@ const passRate = computed(() => {
   const finished = props.passed + props.failed
   if (finished === 0) return 0
   return Math.round((props.passed / finished) * 100)
+})
+
+// 🆕 2026-06-10 增强运行感：总进度条（completed / total）— 用户能看到
+// 整个 run 的推进节奏，而不是只看 pass rate
+const totalProgressPct = computed(() => {
+  if (props.total === 0) return 0
+  const finished = props.passed + props.failed + (props.skipped ?? 0)
+  return Math.round((finished / props.total) * 100)
+})
+const completedText = computed(() => {
+  const finished = props.passed + props.failed + (props.skipped ?? 0)
+  if (props.pending > 0) return `${finished} / ${props.total} EXECUTED`
+  return `${finished} / ${props.total} DONE`
 })
 
 const verdictClass = computed(() => {
@@ -267,6 +294,61 @@ const verdictSubtitle = computed(() => {
   margin-top: 14px;
   padding-top: 14px;
   border-top: 1px dashed #C9BBA1;
+}
+
+/* 🆕 2026-06-10 总进度条 — 增强运行感 */
+.dossier__progress {
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px dashed #C9BBA1;
+}
+.dossier__progress-label {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: #6B5D4C;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.dossier__progress-pct {
+  font-weight: 700;
+  color: #1A1A1A;
+}
+.dossier__progress-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.dossier__progress-spinner {
+  color: #1565C0;
+  font-size: 12px;
+  animation: progress-pulse 1.4s ease-in-out infinite;
+}
+.dossier__progress-track {
+  height: 5px;
+  background: #E5DCC8;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.dossier__progress-fill {
+  height: 100%;
+  background: #1B4332;
+  transition: width 0.4s ease;
+}
+.dossier__progress--running .dossier__progress-fill {
+  background: #1565C0;
+  animation: progress-shimmer 1.6s linear infinite;
+}
+@keyframes progress-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+@keyframes progress-shimmer {
+  0% { box-shadow: inset 0 0 0 0 rgba(255,255,255,0); }
+  50% { box-shadow: inset 0 0 8px 1px rgba(255,255,255,0.35); }
+  100% { box-shadow: inset 0 0 0 0 rgba(255,255,255,0); }
 }
 .dossier__bar-label {
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;

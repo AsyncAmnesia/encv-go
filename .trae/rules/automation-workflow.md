@@ -358,3 +358,153 @@ const groupKey = `${tone}-${anchorTask.id}`  // 🆕 锚定到最早 createdAt
 
 > **任何"DAG 拆 job"必须用 `needs` 字段**。
 > 硬编码串行 → DAG 调度失效。
+
+---
+
+## 十二、4 个新 bug（2026-06-10 同日连修 v3）
+
+### Bug 列表
+
+| # | 症状 | 根因 | 修复 |
+|---|------|------|------|
+| **#1** | 长按菜单删除失败 500 错误，逻辑过于简单没有考虑边界情况与安全防御 | 前端 [encv.ts:240](file:///workspace/app/encv-mobile/src/api/encv.ts) 只 throw `HTTP error! status: 500` 没读 response body；后端 [mobile_service.go:175](file:///workspace/internal/service/mobile_service.go) 没区分 NotFound/Permission/Other；absPath == servingDir 会被一锅端 | **后端**：先 stat、os.IsNotExist/IsPermission 显式分支、log fileCount/size、servingDir 根拒绝；**前端**：读 response body 透传 error 到 toast、文件夹二次确认、根目录拒绝 |
+| **#2** | 任务组显示混乱（前两次修复 v1/v2 都不够） | v1：所有 non-user task 归 1 group → 新 run 抢老 group；v2：按 triggeredBy 粗聚拢 → 跨 run 仍混。根本问题：没按 **workflow run 维度** 分组 | **架构重构**：useTaskTrigger 扩展 runId 字段；useWorkflowEngine.executeJob / scheduleDependentJobs 把 run.id 传给 recordTriggeredBy；Tasks.vue displayedItems 改用 `getRunIdForTask()` 按 runId 索引到 Map<runId, Group>，O(n) 单次扫描；user task 永远单独；无 runId 走 legacy fallback |
+| **#3** | 任务卡片显示已完成的任务一直显示运行中，两种视图模式无脑排列看不到状态更新 | useWorkflowEngine.onTaskCompleted line 154 强校验 `step.status === 'running'` 才更新 → 后端没发 task:update 时 step 永远停留在 'pending'，task:completed 找不到匹配 step | **放宽校验**：接受任何非终态 step（pending / queued / running / cancelling / skipped）都会被推到 success / failure / cancelled；onTaskUpdate 加**终态保护**（已 success/failure 的 step 不被降级到 running） |
+| **#4** | 测试报告文件保存逻辑：是否实时写入？（用户自己看自己发现问题） | useAutomationTests.onTaskCompleted 改 result.status 后**没立即 persistCurrentRun**；runTests 循环也只在末尾调一次 → 200 case 跑 5 分钟期间，用户刷新/关 App 数据全丢 | **实时持久化双保险**：每个 task:completed 收到就 persistCurrentRun 一次；runTests 每个 case 提交完也立即写一次 → 提交阶段 + 运行阶段都不丢；useWorkflowEngine 路径本身已经每个 onTaskCompleted 调 store.updateRun → 实时持久化（OK） |
+
+### 关键代码模式
+
+#### A. 后端 DeleteFile 细化错误 + 安全防御
+
+```go
+// 🆕 2026-06-10：禁止删根 + 详细 stat + permission 区分
+if absPath == s.servingDir {
+    return &ForbiddenError{Err: errors.New("cannot delete the root of the serving directory")}
+}
+
+info, statErr := os.Stat(absPath)
+if statErr != nil {
+    if os.IsNotExist(statErr) { return &NotFoundError{Err: statErr} }
+    if os.IsPermission(statErr) { return &PermissionError{Err: statErr} }
+    return statErr
+}
+
+if info.IsDir() {
+    // 删除前统计 fileCount（详细日志）
+    fileCount := 0
+    filepath.WalkDir(absPath, func(_ string, d os.DirEntry, _ error) error {
+        if !d.IsDir() { fileCount++ }
+        return nil
+    })
+    slog.Warn("removing directory", "fileCount", fileCount)
+    err = os.RemoveAll(absPath)
+} else {
+    slog.Warn("removing file", "size", info.Size())
+    err = os.Remove(absPath)
+}
+```
+
+#### B. 前端 deleteFile 读 response body error
+
+```ts
+// ❌ 旧：丢了后端 error message
+if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`)
+}
+
+// ✅ 新：读 JSON {error: ...} 透传给用户
+let detail = ''
+try {
+    const data = await response.json()
+    detail = data?.error || data?.message || ''
+} catch {
+    detail = (await response.text()).slice(0, 200)
+}
+throw new Error(detail || `HTTP error! status: ${response.status}`)
+```
+
+#### C. onTaskCompleted 放宽 step.status 校验
+
+```ts
+// ❌ 旧：强校验 status === 'running'（WS 时序错乱时 step 永远卡住）
+if (step.taskId !== data.id || step.status !== 'running') continue
+
+// ✅ 新：接受任何非终态 step
+if (step.taskId !== data.id) continue
+if (isTerminalStep(step.status)) continue
+// 推到 success / failure / cancelled
+```
+
+#### D. 任务组按 workflow runId 分组（架构重构）
+
+```ts
+// useTaskTrigger 扩展：{ triggeredBy, runId?, recordedAt }
+export function recordTriggeredBy(
+  taskId: string,
+  triggeredBy: TriggeredBy,
+  runId?: string,  // 🆕
+) { ... }
+
+// useWorkflowEngine.executeJob 接收 runIdOverride
+const _runId = _runIdOverride || jobRun.id
+// ... recordTriggeredBy(task.id, 'automation', _runId)
+
+// Tasks.vue displayedItems O(n) Map 索引
+const groupsByRun = new Map<string, Group>()
+for (const t of tasks) {
+    const by = getTriggeredBy(t.id)
+    if (by === 'user') { userTasks.push(t); continue }
+    const runId = getRunIdForTask(t.id)
+    if (runId) {
+        const g = groupsByRun.get(runId)
+        if (g) g.tasks.push(t)
+        else groupsByRun.set(runId, { runId, tone: ..., tasks: [t] })
+    }
+    // fallback: legacy {triggeredBy 聚拢}
+}
+// group 按最早 createdAt 排序，活跃在前
+// group key = `${tone}-${runId}`（稳定）
+```
+
+#### E. 测试报告实时持久化
+
+```ts
+// useAutomationTests.onTaskCompleted：每收到一个就写
+function onTaskCompleted(data) {
+    // ...改 result.status
+    persistCurrentRun()  // 🆕 实时写
+}
+
+// useAutomationTests.runTests：每个 case 提交完就写
+for (const spec of specs) {
+    // ...createTask 提交
+    persistCurrentRun()  // 🆕 提交阶段也不丢
+}
+```
+
+### 扩展铁律
+
+> **任何"文件删除"API 必须前后端双重防御**：
+> - 后端：`os.IsNotExist` / `os.IsPermission` 显式分支、stat 先于 remove、servingDir 根拒绝
+> - 前端：读 response body error 透传 toast、文件夹二次确认、根目录客户端拦截
+> 
+> 缺一 → 500 黑箱 + 用户不知道为啥删不掉 / 误删根目录
+
+> **任何"WS 事件"消费方必须放宽状态匹配 + 加终态保护**：
+> - onTaskCompleted 接受任何非终态 step（不只 `running`）— 抗 WS 时序错乱
+> - onTaskUpdate 加 isTerminalStep 早返回 — 抗 task:completed 后 task:update 降级
+> 
+> 强校验 `status === 'running'` → 后端漏发 task:update 时 step 永远卡住
+
+> **任何"批量执行"系统必须实时持久化**：
+> - 提交阶段（每个 case 提交完）→ 立即写
+> - 运行阶段（每个 task:completed）→ 立即写
+> - 末尾（runTests 收尾）→ 再写一次
+> 
+> 只在末尾写 → 200 case 跑 5 分钟期间任何崩溃都丢数据
+
+> **任何"任务组"UI 必须按** `workflow run.id` **分组**（不是 triggeredBy）。
+> - triggeredBy 太粗：同一 run 的 task 跟其他 run 的 task 区分不开
+> - runId 精细：每个 workflow run 一个 group card，跨 run 互不干扰
+> 
+> 扩展：useTaskTrigger 必须存 runId 字段；recordTriggeredBy 接受 runId 参数；Tasks.vue 用 getRunIdForTask() 索引

@@ -115,6 +115,12 @@ export function useWorkflowEngine() {
     if (!found) return
     const { step } = found
 
+    // 🆕 2026-06-10 修复 #3：终态保护 — 已完成的 step 不接受 task:update 降级
+    if (isTerminalStep(step.status)) {
+      if (typeof data.progress === 'number') step.progress = data.progress
+      return
+    }
+
     // 状态机升级（pending → queued → running）
     if (data.status === 'running' && (step.status === 'pending' || step.status === 'queued')) {
       step.status = 'running'
@@ -145,13 +151,18 @@ export function useWorkflowEngine() {
   }
 
   function onTaskCompleted(data: { id: string; error?: string }) {
-    if (!currentRun.value || currentRun.value.status !== 'running') return
+    if (!currentRun.value) return
 
     // 在所有 jobs/steps 中查找匹配的 taskId
     let found = false
     for (const job of currentRun.value.jobs) {
       for (const step of job.steps) {
-        if (step.taskId !== data.id || step.status !== 'running') continue
+        if (step.taskId !== data.id) continue
+
+        // 🆕 2026-06-10 修复 #3：放宽校验 — 接受任何非终态 step
+        // 历史 bug：`step.status !== 'running'` 强校验 → 后端没发 task:update 时
+        //   step 永远停留在 'pending'，task:completed 找不到匹配 → 一直显示运行中
+        if (isTerminalStep(step.status)) continue
         found = true
 
         // 更新 step 状态
@@ -178,6 +189,13 @@ export function useWorkflowEngine() {
       checkWorkflowCompletion()
       // 持久化运行状态
       store.updateRun(currentRun.value.id, { ...currentRun.value })
+    } else {
+      // 🆕 调试：找不到匹配 step 时输出（防止"已完成的 task 不在 run 里"被静默吞）
+      console.debug('[useWorkflowEngine] task:completed but no matching step:', {
+        taskId: data.id,
+        runId: currentRun.value.id,
+        totalSteps: currentRun.value.jobs.reduce((sum, j) => sum + j.steps.length, 0),
+      })
     }
   }
 
@@ -256,8 +274,8 @@ export function useWorkflowEngine() {
             steps: [],
           }
           run.jobs.push(jobRun)
-          // 启动执行但不 await → 同层所有 job 真正并行
-          return executeJob(jobDef, def.env ?? {}, jobRun).then(() => jobRun)
+          // 🆕 修复 #2：传 run.id（不是 jobRun.id），让所有 job 共享同一 runId
+          return executeJob(jobDef, def.env ?? {}, jobRun, run.id).then(() => jobRun)
         })
         // 等待当前层所有 job 提交完毕（submit 完成，不等 WS 回调）
         await Promise.all(jobPromises)
@@ -294,6 +312,7 @@ export function useWorkflowEngine() {
     jobDef: JobDefinition,
     env: Record<string, string>,
     jobRun: JobRun,
+    _runIdOverride?: string,  // 🆕 2026-06-10 修复 #2：workflow run 共享 runId（用于 group 分组）
   ): Promise<JobRun> {
     // 构建 continueOnError 映射（用于结论计算）
     const continueOnErrorMap = new Map<string, boolean>()
@@ -359,6 +378,14 @@ export function useWorkflowEngine() {
     // 🆕 修复 #4：按 strategy 限流执行（默认 5 并发）
     const max = (jobDef.strategy && 'max' in jobDef.strategy) ? jobDef.strategy.max : 5
 
+    // 🆕 2026-06-10 修复 #2：捕获 runId，让 recordTriggeredBy 关联到当前 run
+    //   历史 bug：useTaskTrigger 只存 triggeredBy，没有 runId → Tasks.vue 按 triggeredBy 粗聚拢
+    //     多个 run 的 task 会混在一起
+    //   修复：把当前 runId 传给 recordTriggeredBy，让 Tasks.vue 能按 run 精确分组
+    //   注意：优先用外部传入的 _runId（来自 runWorkflow / scheduleDependentJobs），
+    //     否则回退到 jobRun.id（向后兼容）
+    const _runId = _runIdOverride || jobRun.id
+
     // 工具：执行单个 step（提交 + 状态更新）
     const runOneStep = async (ex: ExecutableStep): Promise<void> => {
       const { stepDef, binding, stepRun } = ex
@@ -368,7 +395,7 @@ export function useWorkflowEngine() {
         const task = await submitAction(action)
         stepRun.taskId = task.id
         stepRun.status = 'running'  // 已提交，等 WS 回调
-        recordTriggeredBy(task.id, 'automation')
+        recordTriggeredBy(task.id, 'automation', _runId)
       } catch (e) {
         // 提交失败（网络错误、参数错误等）— 直接标记为 failure
         stepRun.status = 'failure'
@@ -502,7 +529,8 @@ export function useWorkflowEngine() {
         steps: [],
       }
       currentRun.value!.jobs.push(jobRun)
-      executeJob(jobDef, def.env ?? {}, jobRun).then(() => {
+      // 🆕 修复 #2：传 currentRun.value.id（同 run 的所有 job 共享）
+      executeJob(jobDef, def.env ?? {}, jobRun, currentRun.value!.id).then(() => {
         store.updateRun(currentRun.value!.id, currentRun.value!)
       })
     }

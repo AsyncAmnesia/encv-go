@@ -1213,29 +1213,51 @@ async function loadFileTagsForCurrentDir() {
 }
 
 async function handleDeleteFile(file: FileItem) {
-  const alert = await alertController.create({
-    header: t('files.delete'),
-    message: t('files.deleteConfirm', { name: file.name }),
-    buttons: [
-      {
-        text: t('files.cancelSelect'),
-        role: 'cancel',
-      },
-      {
-        text: t('files.delete'),
-        role: 'destructive',
-        handler: async () => {
-          try {
-            await deleteFile(file.path)
-            await loadFiles()
-          } catch {
-            showToast({ message: t('files.deleteFailed'), duration: 2000, color: 'danger' })
-          }
-        },
-      },
-    ],
-  })
-  await alert.present()
+  // 🆕 2026-06-10 修复 #1：删除安全防御
+  //   1) 文件夹二次确认（防误删整目录）
+  //   2) 详细错误 toast（把后端 error 透传给用户）
+  //   3) 不可删 servingDir 根目录
+  if (file.path === '/' || file.path === '') {
+    showToast({ message: '不能删除根目录', duration: 2000, color: 'danger' })
+    return
+  }
+  if (file.isDirectory) {
+    // 文件夹删除用 prompt + 二次确认（防误删整目录）
+    const dirAlert = await alertController.create({
+      header: t('files.delete'),
+      subHeader: `📁 ${file.name}`,
+      message: `确认删除文件夹 "${file.name}" 及其所有内容？此操作不可撤销。`,
+      buttons: [
+        { text: t('files.cancelSelect'), role: 'cancel' },
+        { text: t('files.delete'), role: 'destructive', handler: () => doDelete(file) },
+      ],
+    })
+    await dirAlert.present()
+  } else {
+    // 文件删除用普通 alert
+    const alert = await alertController.create({
+      header: t('files.delete'),
+      message: t('files.deleteConfirm', { name: file.name }),
+      buttons: [
+        { text: t('files.cancelSelect'), role: 'cancel' },
+        { text: t('files.delete'), role: 'destructive', handler: () => doDelete(file) },
+      ],
+    })
+    await alert.present()
+  }
+}
+
+async function doDelete(file: FileItem) {
+  try {
+    await deleteFile(file.path)
+    await loadFiles()
+    showToast({ message: `已删除 ${file.name}`, duration: 1500, color: 'success' })
+  } catch (e) {
+    // 🆕 把后端 error message 完整透传给用户（不只说"删除失败"）
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error('[Files] deleteFile failed:', file.path, msg)
+    showToast({ message: `${t('files.deleteFailed')}: ${msg}`, duration: 3500, color: 'danger' })
+  }
 }
 
 function onFileChange() {

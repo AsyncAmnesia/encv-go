@@ -307,14 +307,29 @@ export async function checkServerStatus(): Promise<{ online: boolean; error?: st
 }
 
 export async function deleteFile(path: string): Promise<void> {
+  // 🆕 2026-06-10 修复 #1：deleteFile 500 错误没有可读 message
+  // 历史 bug：只 throw "HTTP error! status: 500" → 用户看到红色 toast 不知道为啥
+  // 修复：把 response body 的 error 字段也读出来，throw 带详细 message
   console.debug('[API] deleteFile:', path)
   const baseUrl = getApiBaseUrl()
   const response = await fetch(`${baseUrl}/api/files?path=${proxySafeEncode(path)}`, {
     method: 'DELETE',
   })
   if (!response.ok) {
-    console.error('[API] deleteFile failed:', response.status)
-    throw new Error(`HTTP error! status: ${response.status}`)
+    // 4xx/5xx 都尝试读 JSON body（后端 writeServiceErrorGin 总是返回 {error: ...}）
+    let detail = ''
+    try {
+      const data = await response.json()
+      detail = data?.error || data?.message || ''
+    } catch {
+      // body 不是 JSON — 读 raw text
+      try { detail = (await response.text()).slice(0, 200) } catch { /* noop */ }
+    }
+    const fullMsg = detail
+      ? `[API] deleteFile failed: ${response.status} ${response.statusText} — ${detail}`
+      : `[API] deleteFile failed: ${response.status} ${response.statusText}`
+    console.error(fullMsg, { path, status: response.status })
+    throw new Error(detail || `HTTP error! status: ${response.status}`)
   }
 }
 

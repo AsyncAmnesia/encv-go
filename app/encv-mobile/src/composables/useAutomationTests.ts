@@ -87,6 +87,10 @@ export function useAutomationTests() {
   const testCases = ref<TestCaseSpec[]>([])
 
   // WS 回调：task:completed — 将 pending 结果更新为实际状态
+  // 🆕 2026-06-10 修复 #4：实时持久化 — 每收到一个 task:completed 就写一次 localStorage
+  //   历史 bug：persistCurrentRun 只在 runTests 末尾调一次 → 200 个 case 跑 5 分钟期间
+  //     用户刷新 / 关 App 全部丢失
+  //   修复：每收到 task:completed 就 persistCurrentRun()（防 200 case 期间崩溃）
   function onTaskCompleted(data: { id: string; error?: string }) {
     const idx = results.value.findIndex((r) => r.taskId === data.id && r.status === 'pending')
     if (idx === -1) return
@@ -104,6 +108,9 @@ export function useAutomationTests() {
       progress.value.passed++
     }
     progress.value.pending--
+
+    // 🆕 实时持久化（debounce 由 localStorage 写入抖动处理）
+    persistCurrentRun()
   }
 
   // WS 回调：task:update — 更新进度信息（可选）
@@ -278,6 +285,12 @@ export function useAutomationTests() {
   /**
    * 顺序执行所有测试用例，逐个提交任务。
    * 每个用例独立错误隔离：一个失败不影响其他。
+   *
+   * 🆕 2026-06-10 修复 #4：每个 case 提交后立即 persistCurrentRun
+   *   历史 bug：仅在 runTests 末尾 persistCurrentRun → 200 case 跑 5 分钟期间
+   *     用户刷新 / 关 App 全部丢失
+   *   修复：每提交一个 case 立即写一次（保证"提交阶段"数据不丢）
+   *   配合 onTaskCompleted 中的实时持久化（运行结果阶段数据不丢）→ 全流程实时
    */
   async function runTests(specs: TestCaseSpec[]): Promise<void> {
     isRunning.value = true
@@ -313,7 +326,7 @@ export function useAutomationTests() {
           spec.cipherMode,
           spec.compressionMode,
         )
-        recordTriggeredBy(task.id, 'automation')
+        recordTriggeredBy(task.id, 'automation', `at-${Date.now().toString(36)}-${spec.id}`)
         result.taskId = task.id
         result.status = 'pending' // 任务已提交，等 WS 回调（task:completed）决定最终状态
         result.durationMs = Date.now() - start
@@ -329,10 +342,12 @@ export function useAutomationTests() {
       }
 
       progress.value.completed++
+
+      // 🆕 实时持久化：每个 case 提交完就写一次（让"提交阶段"的数据不丢）
+      persistCurrentRun()
     }
 
-    // 🆕 2026-06-10：所有 case 提交完后立即持久化当前 run 到 localStorage
-    // 即使用户中途关 App，下次也能在 "历史运行" 看到完整结果
+    // 末尾再写一次（确保收尾完整）
     persistCurrentRun()
 
     isRunning.value = false
