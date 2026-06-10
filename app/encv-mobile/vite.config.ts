@@ -3,6 +3,65 @@ import vue from '@vitejs/plugin-vue'
 import path from 'node:path'
 
 // =============================================================================
+// ⚠️ 防御机制：禁止直接 vite 启动（必须通过 PM2 → preview-gateway）
+// =============================================================================
+//
+// 本项目架构：preview-gateway(:16666) spawn vite(:8100) 作为子进程。
+// 直接运行 vite 会导致：
+//   ① ENCV_DEV_PREVIEW / ENCV_MOBILE 等 env 未注入
+//   ② Vite 自动扫描 plugin-openlist/web/index.html → 找不到 src/views/ 下文件报错
+//   ③ HMR 在沙箱环境无法工作（缺 gateway 的 dynamicHmrHostPlugin Host 头透传）
+//
+// 合法启动链路：
+//   pm2 start ecosystem.config.cjs
+//     → preview-gateway (spawn vite with SPAWN_VITE=1 env)
+//       → vite 正常启动
+//
+// 非法启动方式会被此插件拦截并抛出异常 + 给出正确用法。
+
+function devStartGuard(): Plugin {
+  return {
+    name: 'dev-start-guard',
+    config() {
+      // SPAWN_VITE=1 表示由 preview-gateway spawn，合法
+      if (process.env.SPAWN_VITE === '1') return
+
+      // 检测是否在 PM2 管理下
+      const isPm2 = !!process.env.PM2_HOME
+
+      // 如果既不是 PM2 spawn 也不是 gateway 子进程 → 非法直接启动
+      if (!isPm2 && !process.env.PPA_SPAWNED) {
+        throw new Error(`
+╔══════════════════════════════════════════════════════════╗
+║  [dev-start-guard] 检测到非法启动方式！立即终止。        ║
+╠══════════════════════════════════════════════════════════╣
+║                                                          ║
+║  ❌ 你正在直接运行 vite / npm run dev                    ║
+║     这在本项目中是非法的。                               ║
+║                                                          ║
+║  原因：                                                   ║
+║    ① preview-gateway(:16666) 是唯一对外入口               ║
+║       内部管理子进程(vite:8100, air:2025 等)             ║
+║    ② 直接 vite 不注入 ENCV_DEV_PREVIEW / ENCV_MOBILE env ║
+║    ③ Vite 扫描 plugin-openlist/index.html → 文件找不到  ║
+║    ④ HMR 缺 gateway dynamicHmrHostPlugin Host 头透传      ║
+║                                                          ║
+║  ✅ 正确启动方式：                                        ║
+║    pm2 start /workspace/ecosystem.config.cjs              ║
+║                                                          ║
+║  或重启：                                                 ║
+║    pm2 restart preview-gateway                           ║
+║    pm2 logs preview-gateway --lines 20                   ║
+║                                                          ║
+║  预览地址：http://localhost:16666/                        ║
+╚══════════════════════════════════════════════════════════╝
+`.trim())
+      }
+    },
+  }
+}
+
+// =============================================================================
 // ENCV Mobile Vite Config
 // =============================================================================
 // D9 决策（spec/unify-sandbox-preview-port §3.1）: vite 是纯净 SPA dev server，
@@ -210,6 +269,7 @@ function dynamicHmrHostPlugin(): Plugin {
 
 export default defineConfig({
   plugins: [
+    devStartGuard(),  // ⚠️ 防御：禁止直接 vite 启动，必须通过 PM2 → preview-gateway
     vue(),
     dynamicHmrHostPlugin(),
     // ────────────────────────────────────────────────────────────────────────
