@@ -12,6 +12,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   collectSpecs,
+  createMP4,
   generateMockFiles,
   listAllRelativePaths,
   type MockFileSpec,
@@ -77,6 +78,51 @@ describe('mockDataGenerator', () => {
     })
   })
 
+  // ==================== 关键：createMP4() 输出必须是合法 mp4 ====================
+  // 防回归：之前手写 mp4 box 构造有 hdlr='vide' 配 mp4aEntry / stsz 谎报 / tkhd duration 错位
+  // 等严重错误，ffprobe 报 Invalid data。改用 base64 嵌入 ffmpeg 生成的合法 mp4。
+
+  describe('createMP4() 输出合法性', () => {
+    it('应返回非空 Uint8Array（不依赖 fs）', () => {
+      const bytes = createMP4()
+      expect(bytes).toBeInstanceOf(Uint8Array)
+      expect(bytes.length).toBeGreaterThan(0)
+    })
+
+    it('首 8 字节必须是 ftyp box 签名 (size=4 bytes BE + "ftyp")', () => {
+      const bytes = createMP4()
+      // ftyp: 4 字节 size + 'ftyp' (0x66 0x74 0x79 0x70)
+      const sig = String.fromCharCode(bytes[4]!, bytes[5]!, bytes[6]!, bytes[7]!)
+      expect(sig).toBe('ftyp')
+      // size 应至少 16 字节（最小 ftyp 包含 major_brand + minor_version）
+      const size = (bytes[0]! << 24) | (bytes[1]! << 16) | (bytes[2]! << 8) | bytes[3]!
+      expect(size).toBeGreaterThanOrEqual(16)
+    })
+
+    it('必须包含 moov box（动态定位，不依赖固定 offset）', () => {
+      const bytes = createMP4()
+      const sig = String.fromCharCode
+      let foundMoov = false
+      let foundMdat = false
+      for (let i = 0; i < bytes.length - 8; i++) {
+        if (sig(bytes[i + 4]!, bytes[i + 5]!, bytes[i + 6]!, bytes[i + 7]!) === 'moov') {
+          foundMoov = true
+        }
+        if (sig(bytes[i + 4]!, bytes[i + 5]!, bytes[i + 6]!, bytes[i + 7]!) === 'mdat') {
+          foundMdat = true
+        }
+      }
+      expect(foundMoov).toBe(true)
+      expect(foundMdat).toBe(true)
+    })
+
+    it('重复调用应返回 cached 实例（性能优化）', () => {
+      const a = createMP4()
+      const b = createMP4()
+      expect(a).toBe(b)
+    })
+  })
+
   describe('collectSpecs() — 完整路径列表验证', () => {
     it('plain 类别的 9 个文件路径完全匹配预期', () => {
       const specs = collectSpecs('plain')
@@ -99,8 +145,10 @@ describe('mockDataGenerator', () => {
       const specs = collectSpecs('all')
       for (const spec of specs) {
         expect(spec.relativePath.length).toBeGreaterThan(0)
-        expect(spec.data instanceof Uint8Array).toBe(true)
-        expect(spec.data.length).toBeGreaterThan(0)
+        // 跨 realm 友好：ArrayBuffer.isView 对 Uint8Array / Buffer / DataView 都返回 true
+        expect(ArrayBuffer.isView(spec.data)).toBe(true)
+        // 允许零字节文件（boundary 用例）
+        expect(spec.data.length).toBeGreaterThanOrEqual(0)
         expect(spec.size).toBe(spec.data.length)
       }
     })

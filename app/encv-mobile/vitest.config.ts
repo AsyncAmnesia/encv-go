@@ -33,6 +33,8 @@ export default defineConfig({
       'src/views/**/*.test.ts',
       // 🆕 2026-06-10：src/api 下的单测（getApiBaseUrl 等纯 API 测试）
       'src/api/**/*.test.ts',
+      // 🆕 2026-06-10：src/lib 下的单测（mockDataGenerator、dev-start-guard 等纯函数模块）
+      'src/lib/**/*.test.ts',
     ],
   },
 })

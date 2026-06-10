@@ -44,11 +44,13 @@ export function useWorkflowStore() {
 
   // ==================== Definition CRUD ====================
 
-  function createDefinition(partial: Omit<WorkflowDefinition, 'id' | 'createdAt' | 'updatedAt'>): WorkflowDefinition {
+  function createDefinition(partial: Omit<WorkflowDefinition, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }): WorkflowDefinition {
     const now = new Date().toISOString()
+    // 尊重 partial.id（AutomationTestsDetail.vue 的 dynamic-auto-test 硬编码 id 场景）
+    // 已有调用方都不传 id，所以只在指定时才使用 partial.id，行为与原版 100% 兼容。
     const def: WorkflowDefinition = {
       ...partial,
-      id: generateId(),
+      id: partial.id ?? generateId(),
       createdAt: now,
       updatedAt: now,
     }

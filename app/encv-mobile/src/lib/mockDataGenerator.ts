@@ -222,169 +222,41 @@ function deflateRaw(input: Uint8Array): Uint8Array {
   return out
 }
 
-// ==================== MP4 helpers ====================
-
-function mp4Box(type: string, children?: Uint8Array[]): Uint8Array {
-  let body: Uint8Array
-  if (children && children.length > 0) {
-    const totalLen = children.reduce((s, c) => s + c.length, 0)
-    body = new Uint8Array(totalLen)
-    let off = 0
-    for (const c of children) {
-      body.set(c, off)
-      off += c.length
-    }
-  } else {
-    body = new Uint8Array(0)
-  }
-
-  const size = 8 + body.length
-  const buf = new Uint8Array(size)
-  const view = new DataView(buf.buffer)
-  view.setUint32(0, size, false)
-  const typeBytes = new TextEncoder().encode(type)
-  buf.set(typeBytes, 4)
-  buf.set(body, 8)
-  return buf
-}
-
-function mp4FullBox(type: string, version: number, flags: number, children?: Uint8Array[]): Uint8Array {
-  let inner: Uint8Array
-  if (children && children.length > 0) {
-    const t = children.reduce((s, c) => s + c.length, 0)
-    inner = new Uint8Array(t)
-    let o = 0
-    for (const c of children) { inner.set(c, o); o += c.length }
-  } else {
-    inner = new Uint8Array(0)
-  }
-
-  const size = 12 + inner.length
-  const buf = new Uint8Array(size)
-  const view = new DataView(buf.buffer)
-  view.setUint32(0, size, false)
-  const typeBytes = new TextEncoder().encode(type)
-  buf.set(typeBytes, 4)
-  view.setUint32(8, (version << 24) | (flags & 0xFFFFFF), false)
-  buf.set(inner, 12)
-  return buf
-}
-
 // ==================== MP4 ====================
+//
+// sample.mp4 fixture: 1s 64x64 H.264 Constrained Baseline L1.0 + AAC LC 16k mono.
+// 之前手写的 mp4 box 构造有严重错误（hdlr='vide' 配 mp4aEntry / stsz 谎报 /
+// tkhd duration 33.5s 与 mdhd 150ms 不一致），ffprobe 报 Invalid data。
+// 现改为 base64 内嵌 ffmpeg 生成的合法 mp4，保留同步接口避免连锁 async 改造。
+//
+// ffprobe 验证：nb_streams=2, duration=1.000000, bit_rate=38256
+
+const MP4_B64_P1 =
+  'AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAbbbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAA+gAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwAAApx0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAA+gAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAEAAAABAAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAPoAAAAAAABAAAAAAIUbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAAAoAAAAKABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABv21pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAX9zdGJsAAAAu3N0c2QAAAAAAAAAAQAAAKthdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAEAAQABIAAAASAAAAAAAAAABFUxhdmM2MC4zMS4xMDIgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAAMWF2Y0MBQsAK/+EAGGdCwAqmERCbARAAAAMAEAAAAwFA8SJhGAEABmjIQgRLIAAAABBwYXNwAAAAAQAAAAEAAAAUYnRydAAAAAAAABfQAAAX0AAAABhzdHRzAAAAAAAAAAEAAAAKAAAEAAAAABRzdHNzAAAAAAAAAAEAAAABAAAAHHN0c2MAAAAAAAAAAQAAAAEAAAABAAAAAQAAADxzdHN6AAAAAAAAAAAAAAAKAAACmgAAAAoAAAAKAAAACgAAAAsAAAALAAAACwAAAAsAAAALAAAACwAAADhzdGNvAAAAAAAAAAoAAAdQAAALBgAAC9IAAAyWAAANlAAADl8AAA8qAAAQHwAAEO4AABG/AAADaXRyYWsAAABcdGtoZAAAAAMAAAAAAAAAAAAAAAIAAAAAAAAD6AAAAAAAAAAAAAAAAQEAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAACRlZHRzAAAAHGVsc3QAAAAAAAAAAQAAA+gAAAQAAAEAAAAAAuFtZGlhAAAAIG1kaGQAAAAAAAAAAAAAAAAAAKxEAACwRFXEAAAAAAAtaGRscgAAAAAAAAAAc291bgAAAAAAAAAAAAAAAFNvdW5kSGFuZGxlcgAAAAKMbWluZgAAABBzbWhkAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAAJQc3RibAAAAH5zdHNkAAAAAAAAAAEAAABu'
+
+const MP4_B64_P2 =
+  'bXA0YQAAAAAAAAABAAAAAAAAAAAAAQAQAAAAAKxEAAAAAAA2ZXNkcwAAAAADgICAJQACAASAgIAXQBUAAAAAAEO1AABDtQWAgIAFEghW5QAGgICAAQIAAAAUYnRydAAAAAAAAEO1AABDtQAAACBzdHRzAAAAAAAAAAIAAAAsAAAEAAAAAAEAAABEAAAAcHN0c2MAAAAAAAAACAAAAAEAAAABAAAAAQAAAAIAAAAFAAAAAQAAAAMAAAAEAAAAAQAAAAUAAAAFAAAAAQAAAAYAAAAEAAAAAQAAAAgAAAAFAAAAAQAAAAkAAAAEAAAAAQAAAAsAAAAFAAAAAQAAAMhzdHN6AAAAAAAAAAAAAAAtAAAARQAAAFcAAAAzAAAAMQAAADAAAAAxAAAALgAAADMAAAAwAAAAMQAAAC0AAAAwAAAALQAAADAAAAAwAAAAMgAAADMAAAAyAAAALQAAADEAAAAuAAAAMgAAAC8AAAA0AAAALwAAAC0AAAAwAAAALgAAAC0AAAAuAAAAMQAAADAAAAAxAAAAMgAAADEAAAAwAAAALwAAADYAAAAuAAAAMwAAADMAAAAxAAAANwAAAEQAAAAFAAAAPHN0Y28AAAAAAAAACwAABwsAAAnqAAALEAAAC9wAAAygAAANnwAADmoAAA81AAAQKgAAEPkAABHKAAAAGnNncGQBAAAAcm9sbAAAAAIAAAAB//8AAAAcc2JncAAAAAByb2xsAAAAAQAAAC0AAAABAAAAYnVkdGEAAABabWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAtaWxzdAAAACWpdG9vAAAAHWRhdGEAAAABAAAAAExhdmY2MC4xNi4xMDAAAAAIZnJlZQAAC6ttZGF03gIATGF2YzYwLjMxLjEwMgACoJcVyufWe3WuLnEktcLH0+n0vv31VVbPlNMXHjx+XymyxcePHjly5YuPHjFEREhFUURcAAACcwYF//9v3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE2NCByMzEwOCAzMWUxOWY5IC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAyMyAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTAgcmVmPTE2IGRlYmxvY2s9MTowOjAgYW5hbHlzZT0weDE6MHgxMzEgbWU9dW1oIHN1Ym1lPTEwIHBzeT0xIHBzeV9yZD0xLjAwOjAuMDAgbWl4ZWRfcmVmPTEgbWVfcmFuZ2U9MjQgY2hyb21hX21lPTEgdHJlbGxpcz0yIDh4OGRjdD0wIGNxbT0wIGRlYWR6b25lPTIxLDExIGZhc3RfcHNraXA9MSBjaHJvbWFfcXBfb2Zmc2V0PS0yIHRocmVhZHM9MiBsb29rYWhlYWRfdGhyZWFkcz0xIHNsaWNl'
+
+const MP4_B64_P3 =
+  'ZF90aHJlYWRzPTAgbnI9MCBkZWNpbWF0ZT0xIGludGVybGFjZWQ9MCBibHVyYXlfY29tcGF0PTAgY29uc3RyYWluZWRfaW50cmE9MCBiZnJhbWVzPTAgd2VpZ2h0cD0wIGtleWludD0yNTAga2V5aW50X21pbj0xMCBzY2VuZWN1dD00MCBpbnRyYV9yZWZyZXNoPTAgcmNfbG9va2FoZWFkPTYwIHJjPWNyZiBtYnRyZWU9MSBjcmY9MzAuMCBxY29tcD0wLjYwIHFwbWluPTAgcXBtYXg9NjkgcXBzdGVwPTQgaXBfcmF0aW89MS40MCBhcT0xOjEuMDAAgAAAAB9liIIH+IxQABEfjgACCVHAAESO+++uuuuuuuuuuuvAATiM2sjaJWyVslXP89dcf/Wv3641/x4/nzxr+/v/PnjQb/W0dEYxC6BMsIWfkDcWUcRr+Q1/L5AfSiE2Eu/whVhggqJk8XPPF9J1cYvpzscvENRRRQbgATrriu8c9/s/f2+LcOGl6q7gdz++dN2bMbP7kMnwBn9wMnwYZ/eEfHwYe/uQ+Pgw9/cuAQQriaKmV+f/7P8f+v/vd6vRN+fXmu/oa6KEYEVFFFFFFFDFtkbRsJZiUxVcpDb8OAEEK4miplfP/9+//1/XU1rWOtuenPQ+U85zqKeeeeec86m+lL6oF6XCqfleAQpfgAEIK4nCkz7f/3Pz/6/+93fSVOO+fbO/YfL5RLOY0UUUUUWXjx4ogrC1V6xKaalUwo4AAAAGQZocD/CMAQIriYK1V9v/77/1/8tXepK4c8+2b4CXnnUtme0vaWJea2ebdRYy5hGS9mwEOAEIK5Gior5//q9/+v/vd6uSrqZp6+gEhITHapQSEhISEhISEzPVFl6cMPTYuSsmiuEYcAD6K4mCtvf6f/1O//X/1mtWvTnXv8bzgL/VCDkX66OjooooX7W72paJZEQJ2aiSTgEIK5GCsr5//5P/n/vc1cvLX7+1/P3AMDA0FjawYkSJEgbPe92mikIOc5QKMRVMEOAAAAAGQZoqA/wjAQQrigJ1Z+f/7f6f+v/vd61cit5xM0OMUS5DGiiiiiiCBEoiJFRS4qXs2FEnAQQricKWV8//37//8+b1epdST39p6+B9HnkpZc88888l555LtpSPXPX0iSCa4lK3AQYriaKlV+f/7X7f+v/vNXxLUrfWSx9KKEOkVFFFFFFFDcWG1kxLMSCzznQcAQAriaKm6+f/78/9f+93fRxWZnmevInnnfPCU8888/VPOq9F6L71aXFsUL+RjBHgAAAABkGaOwP8IwEGK5GipVfb/+n4/9f/ea1cFa9e1+OgDAwNhYtYMbNgxs2DGwaqiqpWUSgxWTKKOAD4K5FixzX7f/1e//n/3vV3rLvL+fZzwIxYHDatYGBgYHRzVljhKqVY1aZQFap1ewKOAQgrkaKlPf/+/X/z/5Xd3Il5z7V7/cBISEx2sKCQkJCRISVKza1o9JPgUuSn'
+
+const MP4_B64_P4 =
+  'I/kuSUnwAQAricKW6/T/+79v/X/1mr4nG5l+vjeew10UIORUUUUULoMtfVG0YxkZ4lr1KtQjPdwBCCuJgrU+f/+U//P/F6vUuh6+L+fwPlPOc6jTzzzzzz3pvKUXLoFF7iZSCHAAAAAHQZpJAP8IwAEEK5HCllfn/+z/H/r/73etaXlVz7VvgA0suGK1yyyyym5ZSQNLzohChS5VUxNgohwBBCuG7K+f/+U/+//NzWq1Lm+/NevuPhr1ylhjr169c9c05pTlO6VpYSQSXCTgAQgricKVPt//S9//n/3l3dy6458fE70Pp9PohJF9NevXRRrM2aiVrRylssCUi9FQk4AA9iuJYseH7f/1t/+v/vq7jirrOfbffwJ5/V85F+v1+v1HcuvQj+106XKBJMYpOAAAAAdBmllA/wjAAQgrkaKlPf//lv/5/9ru+C6l+vOZ0AYGBoLFrBgYGBgYGvUEWnTfnq53rWF4lK3KOBnO3AD8K4mCtzn6f/2Pf/1/9ZrV3rIz1+Oe/ocYolpMaKKKKKItSs1UKQVQJLklxSLgAQYriaKmPn//lP/t/ter1KiVnVd/A+nnzpTcTzzzzz3O8mU5pSkKaCQUXKEuAQQrieKGV+f/7P8f+v/vOJrS8N+c30NdFCFkVFFFFFC6NbZvpAjwEsIsjOTGLRjwAAAAB0GaaYD/CMABAiuG7dfP//Kf/p/pd6u5Vy/t8Zz5H89++lLw379++977y+9QpDTeBRcomSUcAQgricKSvz//e+f/X/3u9aRe2cM0Pl8uKzmNFFxyxRcYiRDVCEBS4rRc9gUcAP4riYK2V+f/+Wf+v/nNXxXBvHnfj4DzzzqWzfvT+9LHkpzrZySEsJJc2rlBwAEIK5Gior5//rb/9f/O7vRLy/Xxm/YBISEx2qUEhISEiRJWanMllwrRtaBZROTURIcA/CuJgrbz9P/6fj/1/9ZrU1BXPx47+4oooQci6OjooooNG8bdEXwLU0FGQsmSQcAAAAAHQZp5wP8IwAEIK4mCtT5//5T/5/51c1emVrx5zn2Hy+XyOeM0/NPPPsf86CjEU9DPhK2pC5YJQ4ABBCuKImZX5//s/x/6/+93erjVT7frz6+hliiXIY0UUUUUURKIokHqRDBugQgLLlHvcAEGK4mCtVfP/9+//3/e71drqX7/W+/YfR55KWGeeeeeeenLWklKMra+0TL+ZPOqEnABBiuJwpZX2//ufn/1/97u9TVazOfL3/A+lFCEkVFFFFFBjX7vpFLhInKYZTgmSScAAAAHQZqIgDvCMAD+K4lixy+3/99/6/+WprVdVWq+735zoc08754Sn6p51b17/uipeAtA33FXAEeAAQYriiJlPt//V7/9f/e7tq643XP0+33Hy+XywOY3y+Xy+XGETRcxyRNPxOri0F1tPGC5St3AAPgrhu5z9v/6nf/r/7y5xcXOefv47+Bq/PwWlGP9tUIIE4IK8YUJTNf3uVXCjgEIK5GCsr3/'
+
+const MP4_B64_P5 =
+  '/vv/X/yu7tqXl/n449/YBISEx2sKCSoSElQkTJaXSOWfSck4Bad7MYpRwAAAAAdBmpiQN8IwAP4riYK3Nfp//c/P/r/73eru9+a7z678fcfSihByKiiihdFGxaMWv2bBTQbIxKplp0hwAQYricKVV8//37//j+rvVru2+fjPHwPlzTnOqOeeeec6pzqJXFi+IlMhjsndYbe0OAE6S5Lqqf8fn/fjXXE4cVxV3pYDw8PbsWHh4efcQAKceHu4gAdw8PdwAAdx4e24AAKcPD23AOABMI2myVsjbJUM/P8+eL+39vrzd//+v+gDavoyrai9ZeNggqJk8XPPF9JxEX0ZlOpqWTT9mRii/q3m+/4L6rzvPPPPcAEYgbRw'
+
+const MP4_B64 = MP4_B64_P1 + MP4_B64_P2 + MP4_B64_P3 + MP4_B64_P4 + MP4_B64_P5
+
+let _mp4Cache: Uint8Array | null = null
 
 export function createMP4(): Uint8Array {
-  const ftyp = mp4Box('ftyp', [
-    new Uint8Array(new TextEncoder().encode('isom')),
-    new Uint8Array([0x00, 0x00, 0x02, 0x00]),
-    new Uint8Array(new TextEncoder().encode('isom')),
-    new Uint8Array(new TextEncoder().encode('iso2')),
-    new Uint8Array(new TextEncoder().encode('mp41')),
-  ])
-
-  const mvhd = mp4FullBox('mvhd', 0, 0, [
-    new Uint8Array([0x00, 0x00, 0x00, 0x00]),
-    new Uint8Array([0x00, 0x00, 0x00, 0x00]),
-    new Uint8Array([0x00, 0x00, 0x00, 0x01]),
-    new Uint8Array([0x00, 0x00, 0x00, 0x00]),
-    new Uint8Array([0x00, 0x00, 0x00, 0x00]),
-    new Uint8Array([0x00, 0x00, 0x01, 0x00]),
-    new Uint8Array([0x00, 0x01, 0x00, 0x00]),
-    new Uint8Array([0x01, 0x00, 0x00, 0x00]),
-    new Uint8Array([0x01, 0x00, 0x00, 0x00]),
-    new Uint8Array([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
-    new Uint8Array([0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00]),
-    new Uint8Array([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00]),
-    new Uint8Array([0x00, 0x00, 0x00, 0x00]),
-    new Uint8Array([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
-    new Uint8Array([0xFF, 0xFF, 0x00, 0x00]),
-  ])
-
-  const mdhd = mp4FullBox('mdhd', 0, 0, [
-    new Uint8Array([0x00, 0x00, 0x00, 0x00]),
-    new Uint8Array([0x00, 0x00, 0x00, 0x00]),
-    new Uint8Array([0x00, 0x00, 0x03, 0xE8]),
-    new Uint8Array([0x00, 0x00, 0x00, 0x96]),
-    new Uint8Array([0x55, 0xC4, 0x00, 0x00]),
-  ])
-
-  const hdlr = mp4FullBox('hdlr', 0, 0, [
-    new Uint8Array([0x00, 0x00, 0x00, 0x00]),
-    new Uint8Array(new TextEncoder().encode('vide')),
-    new Uint8Array([0x00, 0x00, 0x00, 0x00]),
-    new Uint8Array(new TextEncoder().encode('VideoHandler\x00')),
-  ])
-
-  const urlBox = mp4FullBox('url ', 0, 1)
-  const dref = mp4FullBox('dref', 0, 0, [urlBox])
-  const dinf = mp4Box('dinf', [dref])
-
-  const mp4aEntry = mp4Box('mp4a', [
-    new Uint8Array([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x62, 0x00, 0x01]),
-    mp4Box('esds', [
-      new Uint8Array([0x03, 0x80, 0x80, 0x80, 0x22, 0x00, 0x01, 0x00, 0x04, 0x80, 0x80, 0x80, 0x17, 0x40, 0x15, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x80, 0x80, 0x80, 0x01, 0x02]),
-    ]),
-  ])
-  const stsd = mp4FullBox('stsd', 0, 0, [new Uint8Array([0x00, 0x00, 0x00, 0x01]), mp4aEntry])
-
-  const stts = mp4FullBox('stts', 0, 0, [
-    new Uint8Array([0x00, 0x00, 0x00, 0x01]),
-    new Uint8Array([0x00, 0x00, 0x00, 0x96]),
-    new Uint8Array([0x00, 0x00, 0x00, 0x01]),
-  ])
-  const stsc = mp4FullBox('stsc', 0, 0, [
-    new Uint8Array([0x00, 0x00, 0x00, 0x01]),
-    new Uint8Array([0x00, 0x00, 0x00, 0x01]),
-    new Uint8Array([0x00, 0x00, 0x00, 0x01]),
-    new Uint8Array([0x00, 0x00, 0x00, 0x96]),
-  ])
-  const stsz = mp4FullBox('stsz', 0, 0, [
-    new Uint8Array([0x00, 0x00, 0x00, 0x00]),
-    new Uint8Array([0x00, 0x00, 0x00, 0x96]),
-    ...Array(150).fill(null).map(() => new Uint8Array([0x00, 0x00, 0x01, 0xA2])),
-  ])
-  const stco = mp4FullBox('stco', 0, 0, [
-    new Uint8Array([0x00, 0x00, 0x00, 0x01]),
-    new Uint8Array([0x00, 0x00, 0x04, 0x20]),
-  ])
-
-  const stbl = mp4Box('stbl', [stsd, stts, stsc, stsz, stco])
-  const nmhd = mp4FullBox('nmhd', 0, 0)
-  const minf = mp4Box('minf', [nmhd, dinf, stbl])
-  const mdia = mp4Box('mdia', [mdhd, hdlr, minf])
-  const tkhd = mp4FullBox('tkhd', 0, 3, [
-    new Uint8Array([0x00, 0x00, 0x00, 0x01]),
-    new Uint8Array([0x00, 0x00, 0x00, 0x00]),
-    new Uint8Array([0x00, 0x00, 0x00, 0x00]),
-    new Uint8Array([0x00, 0x00, 0x00, 0x00]),
-    new Uint8Array([0x00, 0x00, 0x00, 0x00]),
-    new Uint8Array([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
-    new Uint8Array([0x01, 0x00, 0x00, 0x00]),
-    new Uint8Array([0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02]),
-  ])
-  const trak = mp4Box('trak', [tkhd, mdia])
-  const moov = mp4Box('moov', [mvhd, trak])
-
-  const silenceFrame = new Uint8Array(420)
-  silenceFrame[0] = 0xFF
-  silenceFrame[1] = 0xFB
-  silenceFrame[2] = 0x90
-  silenceFrame[3] = 0x00
-
-  const frames: Uint8Array[] = []
-  for (let i = 0; i < 50; i++) frames.push(silenceFrame.slice())
-
-  const mdatBodyLen = frames.reduce((s, f) => s + f.length, 0)
-  const mdatBody = new Uint8Array(mdatBodyLen)
-  let mdatOff = 0
-  for (const f of frames) { mdatBody.set(f, mdatOff); mdatOff += f.length }
-  const mdat = mp4Box('mdat', [mdatBody])
-
-  const total = ftyp.length + moov.length + mdat.length
-  const out = new Uint8Array(total)
-  out.set(ftyp, 0)
-  out.set(moov, ftyp.length)
-  out.set(mdat, ftyp.length + moov.length)
-  return out
+  if (_mp4Cache) return _mp4Cache
+  const binary = atob(MP4_B64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  _mp4Cache = bytes
+  return bytes
 }
 
 // ==================== MKV/WebM ====================
@@ -723,6 +595,8 @@ export function collectSpecs(type: MockFileType): MockFileSpec[] {
 
   if (type === 'all' || type === 'boundary') {
     specs.push(
+      // 后端 mock_generator.go boundarySpecs 5 个基础文件，前端必须全部覆盖
+      spec('04-boundary-test/normal.txt', 'Normal baseline content'),
       spec('04-boundary-test/long-unicode-filename-中文-日本語-한국어-العربية-עברית-ไทย-ελληνικά.txt', 'Unicode filename test'),
       spec('04-boundary-test/.hidden-file', randomBytes(256)),
       spec('04-boundary-test/spaces   in   name.txt', 'Spaces in filename'),
