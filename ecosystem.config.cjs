@@ -89,7 +89,7 @@ module.exports = {
       },
       // 网关本体轻量；子进程会跑出来几百 MB（Go 编译 + Vite + node_modules）
       max_memory_restart: '256M',
-      listen_timeout: 120_000,  // preflight + air 首次 build + 4 子进程就绪总计
+      listen_timeout: 600_000,  // 沙箱首次冷编 encv-go 需 3-5 分钟（go mod + 全量 build）
       kill_timeout: 10_000,    // stopAll() 给 5s grace + 兜底
       autorestart: true,
       max_restarts: 10,

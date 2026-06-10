@@ -433,8 +433,9 @@ function buildChildSpecs(paths: ReturnType<typeof resolvePaths>): ChildSpec[] {
       },
       cwd: paths.repoRoot,
       readyUrl: 'http://127.0.0.1:2025/api/config',
-      // 首次 go build 可能 60-90s（start-preview.sh 实测），给 90s 留余量
-      readyTimeoutMs: 90_000,
+      // 沙箱首次冷编实测 3-5 分钟（go mod 全量 + 全量 build + 沙箱 CPU 慢）
+      // 给 10 分钟兜底，避免 pm2 死循环重启
+      readyTimeoutMs: 600_000,
     })
   }
 
