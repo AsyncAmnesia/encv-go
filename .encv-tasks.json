@@ -87,5 +87,49 @@
     ],
     "createdAt": "2026-06-09T23:30:29.709248596Z",
     "completedAt": "2026-06-09T23:30:30.621235615Z"
+  },
+  {
+    "id": "52a5c8c5-0202-4795-9195-0379ccea0bdf",
+    "type": "encrypt",
+    "sourcePath": "/01-plain-media/video/sample.mp4",
+    "extraFields": {
+      "encrypt_filename": "false",
+      "fn_charset": "alnum",
+      "fn_deconfuse": "false",
+      "fn_rounds": "8",
+      "fn_structured": "false",
+      "stream_preset": "balanced"
+    },
+    "pluginName": "video",
+    "status": "completed",
+    "progress": 100,
+    "phase": "completed",
+    "containerVersion": 4,
+    "outputPath": "/storage/emulated/0/01-plain-media/video/sample.4pm.sccgv",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-10T00:01:20.782486131Z",
+        "completedAt": "2026-06-10T00:01:20.782527642Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-10T00:01:20.782527642Z",
+        "completedAt": "2026-06-10T00:01:20.782548215Z"
+      },
+      {
+        "phase": "initializing",
+        "startedAt": "2026-06-10T00:01:20.782548215Z",
+        "completedAt": "2026-06-10T00:01:20.78323897Z"
+      },
+      {
+        "phase": "preprocessing",
+        "startedAt": "2026-06-10T00:01:20.78323897Z",
+        "completedAt": "2026-06-10T00:01:21.275455389Z",
+        "detail": "/storage/emulated/0/01-plain-media/video/sample.4pm.sccgv"
+      }
+    ],
+    "createdAt": "2026-06-10T00:01:20.333675453Z",
+    "completedAt": "2026-06-10T00:01:21.275455389Z"
   }
 ]

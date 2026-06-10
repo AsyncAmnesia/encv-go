@@ -12,19 +12,28 @@
  *   - 避开 :5173 (vite 老端口，由 preview-proxy 旧 default 占用)
  *   - 避开 :8100 (vite 新端口，本 spec 改的)
  *
- * Routes (see spec §3.1):
- *   /             → encv-mobile (Vite, :8100)         — default fallthrough
- *   - /openlist-ui/ → plugin-openlist-web (Vite, :5174)
- *   - /openlist/    → encv-go (Go, :2025)               — proxies to OpenList (:5244)
- *   - /agent-api/   → encv-go (Go, :2025)                — AI assistant SSE (in-process)
- *   - /api          → encv-go (Go, :2025)
- *   - /p            → encv-go (Go, :2025)
- *   - /play         → encv-go (Go, :2025)
- *   - /__gateway/health → gateway itself
+ * 路由策略（2026-06-09 黑名单机制大改）
+ * ─────────────────────────────────────────
+ * 历史：白名单（UPSTREAMS 数组逐条添加），添加多 + 漏网之鱼（如 /stream 漏配）。
+ * 现在：黑名单。默认 upstream = encv-go (:2025) 接收**所有**后端请求，新加端点自动
+ * 命中；只有命中 VITE_DENY 的路径才走 Vite。
+ *
+ * 路由表：
+ *   /                  → encv-mobile (Vite, :8100)  ← SPA 根
+ *   /player            → encv-mobile (Vite, :8100)  ← ArtPlayerView SPA
+ *   /tabs/*            → encv-mobile (Vite, :8100)  ← Tabs SPA
+ *   /@vite/...         → encv-mobile (Vite, :8100)  ← Vite dev artifacts
+ *   /@fs/, /@id/, ...  → encv-mobile (Vite, :8100)  ← Vite dev artifacts
+ *   /src/, /node_modules/, /assets/, /public/, /favicon.ico, /sw.js, /manifest → Vite
+ *   /openlist-ui/*     → plugin-openlist-web (:5174)   ← 特殊 upstream（绝对路径子资源走 cookie/referer 兜底）
+ *   /openlist/*        → OpenList 真实 fork (:5244)    ← 特殊 upstream（pathRewrite 剥前缀）
+ *   /__gateway/*       → gateway inline（健康检查 + banner）
+ *   **其他一切**        → encv-go (Go, :2025)            ← 默认：后端 API + stream + ws + ...
  *
  * WebSocket:
- *   Upgrade on /             → ws://:8100 (main app HMR)
- *   Upgrade on /openlist-ui/ → ws://:5174 (plugin HMR)
+ *   Upgrade on /              → ws://:8100 (main app HMR)
+ *   Upgrade on /openlist-ui/  → ws://:5174 (plugin HMR)
+ *   Upgrade on 其他          → ws://:2025 (encv-go WS endpoints)
  */
 
 import http from 'node:http'
@@ -37,168 +46,36 @@ import type { Duplex } from 'node:stream'
 import { ChildrenManager, type ChildSpec, type ChildStatus } from './children.js'
 import { resolvePaths } from './paths.js'
 import { ensureMockData } from './preflight.js'
+import {
+  SPECIAL_UPSTREAMS,
+  VITE_DENY,
+  ENCV_GO_UPSTREAM,
+  VITE_UPSTREAM,
+  pickUpstream,
+  type Upstream,
+  type ViteDenyRule,
+} from './routing.js'
 
 // =============================================================================
-// Config
+// 黑名单路由表（denylist mechanism，2026-06-09 改造）
 // =============================================================================
+//
+// 解决「白名单时代添加路由多 + 漏网之鱼」问题：
+//   - 旧：UPSTREAMS 数组逐条添加，新加后端端点必须改 gateway 代码。
+//   - 新：默认 upstream = encv-go (后端)，未来 encv-go 加任何新端点都自动命中。
+//          只有命中 VITE_DENY 的路径才走 Vite。
+//
+// 三类 upstream（实际定义见 src/routing.ts，便于单测）：
+//   1) SPECIAL_UPSTREAMS — 需要 pathRewrite 的特殊路由（plugin SPA / OpenList direct）
+//   2) VITE_DENY         — 黑名单：命中走 Vite（SPA HTML + Vite dev artifacts + 静态资源）
+//   3) ENCV_GO_UPSTREAM  — 兜底：encv-go（处理所有后端端点）
+//
+// 添加新后端端点：什么都不用做。encv-go 启起来就能访问。
+// 添加新前端路由：在 routing.ts 加一行 VITE_DENY 即可。
 
 const PORT = Number(process.env.PORT ?? 16666)
 const HOST = process.env.HOST ?? '0.0.0.0'
 const LOG_PREFIX = '[gateway]'
-
-interface Upstream {
-  /** URL prefix on the gateway, e.g. '/openlist-ui' */
-  match: string
-  /** HTTP target URL (no trailing slash) */
-  target: string
-  /** WebSocket target URL */
-  wsTarget: string
-  /** Human-readable name for logging */
-  name: string
-  /** Hint shown in 502 error */
-  hint: string
-  /**
-   * 是否为 health 端点"必检"upstream。
-   * - true (default)：down → health 503
-   * - false：按需上游（plugin-openlist-web / openlist），SPAWN_* off 时 down 是预期
-   */
-  required?: boolean
-  /**
-   * Path rewrite function: transform req.url before forwarding to upstream.
-   * Default = identity (path kept as-is). Use this to STRIP a path prefix
-   * (e.g. '/openlist-ui/...' → '/...' for Vite, which serves from its own root).
-   *
-   * Why needed: Vite dev mode HTML outputs absolute paths like `/src/main.ts`
-   * (no base prefix). Without pathRewrite, browser's follow-up requests go to
-   * :16666/src/main.ts → fallthrough to :8100 (encv-mobile) → 404.
-   * With strip prefix, :16666/openlist-ui/src/main.ts → :5174/src/main.ts → OK.
-   */
-  pathRewrite?: (path: string) => string
-}
-
-const UPSTREAMS: Upstream[] = [
-  {
-    // 关键：pathRewrite 必须是 **identity**（不剥前缀），让 vite 收到完整路径。
-    // vite.config.ts 配置了 `base: '/openlist-ui/'`，dev 模式下 vite 会强制校验
-    // 请求 URL 是否匹配 base —— 如果 pathRewrite 剥成 `/`，vite 立刻 302 跳回
-    // `/openlist-ui/`，形成无限重定向循环。
-    // 保留前缀后 vite 收到 `/openlist-ui/` 完整路径，与 base 匹配，零重定向。
-    // 子资源（/openlist-ui/src/main.ts、/openlist-ui/@vite/client 等）同样保留前缀转发。
-    match: '/openlist-ui',
-    target: 'http://127.0.0.1:5174',
-    wsTarget: 'ws://127.0.0.1:5174',
-    name: 'plugin-openlist-web',
-    hint: 'Check pm2 status for plugin-openlist-vite',
-    required: false,  // SPAWN_PLUGIN_VITE=0 时按需
-    // 故意不写 pathRewrite —— 默认 identity（详见上方注释）
-  },
-  {
-    // /openlist 是 OpenList 真实前端入口（:5244），不是 encv-go 端点。
-    // 原配置写的是 :2025（encv-go），但 encv-go 内部没有 `/openlist` 根路径
-    // 的 reverse proxy（只注册了 /openlist/local/status、/openlist/sites 端点），
-    // 直接转发到 :2025 会 404。
-    // 正确做法：preview-gateway 自己把 /openlist/* 透传到 OpenList upstream :5244。
-    // 需要 strip /openlist 前缀：/openlist → /、/openlist/xxx → /xxx
-    //   （OpenList serve 在 :5244 根路径，不是 /openlist 命名空间）
-    match: '/openlist',
-    target: 'http://127.0.0.1:5244',
-    wsTarget: 'ws://127.0.0.1:5244',
-    name: 'openlist',
-    hint: 'Check pm2 status for openlist (:5244)',
-    required: false,  // SPAWN_OPENLIST=0 时按需
-    pathRewrite: (p) => p.replace(/^\/openlist(?=\/|$)/, '') || '/',
-  },
-  {
-    // /agent-api → encv-go (:2025) — AI agent 端点已集成到主后端
-    //   GET  /agent-api/api/models     — 模型列表（从供应商 API 动态获取）
-    //   POST /agent-api/api/encrypt-key — API Key 加密
-    //   GET/POST /agent-api/test       — 测试连接
-    //   POST /agent-api/api/chat      — 发起对话 (SSE)
-    //   POST /agent-api/api/confirm   — 4-决策确认 (SSE)
-    //   POST /agent-api/api/resume    — 断点续传 (SSE)
-    // pathRewrite 把 /agent-api/* 剥成 /* 转发到 encv-go
-    match: '/agent-api',
-    target: 'http://127.0.0.1:2025',
-    wsTarget: 'ws://127.0.0.1:2025',
-    name: 'encv-go-agent',
-    hint: 'Agent routes integrated in encv-go (:2025)',
-    pathRewrite: (p) => p.replace(/^\/agent-api(?=\/|$)/, '') || '/',
-  },
-  {
-    match: '/api',
-    target: 'http://127.0.0.1:2025',
-    wsTarget: 'ws://127.0.0.1:2025',
-    name: 'encv-go',
-    hint: 'Check pm2 status for start-preview (encv-go :2025)',
-  },
-  {
-    // /api/stream/external → encv-go (:2025) — 外部文件流式预览（独立路径避免与 /api 误判）
-    match: '/api/stream/external',
-    target: 'http://127.0.0.1:2025',
-    wsTarget: 'ws://127.0.0.1:2025',
-    name: 'encv-go',
-    hint: 'Check pm2 status for start-preview (encv-go :2025)',
-  },
-  {
-    // /preview/ → encv-go (:2025) — 文本/图片/通用文件预览 SPA
-    // 不能仅靠 '/preview'（不带尾斜杠）匹配；URL 通常为 /preview/text?file=...
-    match: '/preview',
-    target: 'http://127.0.0.1:2025',
-    wsTarget: 'ws://127.0.0.1:2025',
-    name: 'encv-go',
-    hint: 'Check pm2 status for start-preview (encv-go :2025)',
-  },
-  {
-    // /stream 和 /decrypt → encv-go (:2025) — 视频/媒体流式端点
-    // 修复 trae 外网域名下 sample.mp4 播放失败：之前这俩路径未代理，落到 vite 默认 upstream
-    // 返 SPA HTML（text/html 413B），导致 video 元素 networkState=3 readyState=0。
-    // 必须先于 DEFAULT_UPSTREAM 匹配。
-    match: '/stream',
-    target: 'http://127.0.0.1:2025',
-    wsTarget: 'ws://127.0.0.1:2025',
-    name: 'encv-go',
-    hint: 'Check pm2 status for start-preview (encv-go :2025)',
-  },
-  {
-    match: '/decrypt',
-    target: 'http://127.0.0.1:2025',
-    wsTarget: 'ws://127.0.0.1:2025',
-    name: 'encv-go',
-    hint: 'Check pm2 status for start-preview (encv-go :2025)',
-  },
-  {
-    match: '/p/',
-    target: 'http://127.0.0.1:2025',
-    wsTarget: 'ws://127.0.0.1:2025',
-    name: 'encv-go',
-    hint: 'Check pm2 status for start-preview (encv-go :2025)',
-  },
-  {
-    match: '/play',
-    target: 'http://127.0.0.1:2025',
-    wsTarget: 'ws://127.0.0.1:2025',
-    name: 'encv-go',
-    hint: 'Check pm2 status for start-preview (encv-go :2025)',
-  },
-  {
-    // /ws → encv-go (:2025) — WebSocket endpoint for agent chat, DevLogs
-    // MUST be before DEFAULT_UPSTREAM; otherwise /ws falls through to vite (:8100)
-    // which has no /ws handler → WebSocket stuck in CONNECTING forever.
-    match: '/ws',
-    target: 'http://127.0.0.1:2025',
-    wsTarget: 'ws://127.0.0.1:2025',
-    name: 'encv-go',
-    hint: 'Check pm2 status for start-preview (encv-go :2025)',
-  },
-]
-
-const DEFAULT_UPSTREAM: Upstream = {
-  match: '/',
-  target: 'http://127.0.0.1:8100',
-  wsTarget: 'ws://127.0.0.1:8100',
-  name: 'encv-mobile',
-  hint: 'Check pm2 status for start-preview (encv-mobile vite :8100)',
-}
 
 const HEALTH_TIMEOUT_MS = 3000
 
@@ -221,53 +98,11 @@ function logUpstream(req: IncomingMessage, up: Upstream, status: 'OK' | 'FAIL', 
 }
 
 // =============================================================================
-// Route matching
+// Route matching（黑名单机制，核心逻辑在 src/routing.ts）
 // =============================================================================
-
-/**
- * Match an incoming request to an upstream. Order matters — the first match wins.
- * - `/openlist-ui/...`  → plugin-openlist-web
- * - `/openlist/...`     → encv-go (proxies to OpenList)
- * - `/api...`           → encv-go
- * - `/p/...`            → encv-go
- * - `/play...`          → encv-go
- * - Referer contains `/openlist-ui/` (subresources of plugin SPA) → plugin-openlist-web
- * - Cookie `__plugin_spa=1` (set when user visits /openlist-ui/) → plugin-openlist-web
- *   (key for Vite dev mode: main.ts's absolute-root imports like /src/App.vue are
- *   dispatched to /openlist-ui subresources; without cookie they fallthrough to :8100
- *   and 404)
- * - default             → encv-mobile
- *
- * For path-prefix routes that are NOT followed by `/` (e.g. `/api`,
- * `/play`), we still match. The upstream's server is responsible for routing
- * the exact path within its namespace.
- */
-function pickUpstream(url: string | undefined, referer: string | undefined, cookie: string | undefined): Upstream {
-  if (!url) return DEFAULT_UPSTREAM
-  // 关键：req.url 包含 query string。'/stream?path=xxx' 不应误判为「不是 /stream」。
-  // 提早去掉 ? 之后的部分，只看 path。
-  const pathOnly = url.split('?', 1)[0] ?? '/'
-  for (const up of UPSTREAMS) {
-    // 把 '/openlist-ui' 同时匹配 '/openlist-ui' 和 '/openlist-ui/...'
-    // 把 '/openlist'   同时匹配 '/openlist'   和 '/openlist/...'
-    // 把 '/api'        匹配 '/api'  和 '/api/...'
-    // 把 '/stream'     匹配 '/stream' 和 '/stream?...'（query 已被剥）
-    if (pathOnly === up.match) return up
-    if (pathOnly === up.match + '/') return up
-    if (pathOnly.startsWith(up.match + '/')) return up
-  }
-  // Cookie-based fallback: when user has visited /openlist-ui/ in this session,
-  // they've received a Set-Cookie: __plugin_spa=1. Subsequent subresource requests
-  // (Vite's absolute-root paths like /src/App.vue) carry this cookie → route to :5174.
-  if (cookie && /(?:^|;\s*)__plugin_spa=1/.test(cookie)) {
-    return UPSTREAMS.find((u) => u.match === '/openlist-ui') ?? DEFAULT_UPSTREAM
-  }
-  // Referer-based fallback (works in some sandboxes; not in Trae IDE default policy).
-  if (referer && /\/openlist-ui\//.test(referer)) {
-    return UPSTREAMS.find((u) => u.match === '/openlist-ui') ?? DEFAULT_UPSTREAM
-  }
-  return DEFAULT_UPSTREAM
-}
+//
+// pickUpstream / matchesPrefix / matchesViteDeny 已抽出到 src/routing.ts 便于单测。
+// 此处仅 re-export 供 server.ts 内部使用。
 
 // =============================================================================
 // HTTP proxy (per-upstream instance so error handlers are isolated)
@@ -381,8 +216,10 @@ function createProxyFor(up: Upstream): httpProxy {
 }
 
 const proxies = new Map<string, httpProxy>()
-for (const up of UPSTREAMS) proxies.set(up.name, createProxyFor(up))
-proxies.set(DEFAULT_UPSTREAM.name, createProxyFor(DEFAULT_UPSTREAM))
+// 黑名单机制：proxy pool 由 ENCV_GO_UPSTREAM（默认）+ VITE_UPSTREAM（黑名单命中）+ SPECIAL_UPSTREAMS（特殊）组成
+proxies.set(ENCV_GO_UPSTREAM.name, createProxyFor(ENCV_GO_UPSTREAM))
+proxies.set(VITE_UPSTREAM.name, createProxyFor(VITE_UPSTREAM))
+for (const up of SPECIAL_UPSTREAMS) proxies.set(up.name, createProxyFor(up))
 
 // =============================================================================
 // HTTP request handler
@@ -516,8 +353,12 @@ async function pingUpstream(up: Upstream): Promise<UpstreamHealth> {
 }
 
 async function handleHealth(_req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const all = [DEFAULT_UPSTREAM, ...UPSTREAMS]
-  // Deduplicate by name (encv-go appears 4 times)
+  // 黑名单机制下需 health 检查的所有 upstream：
+  //   - ENCV_GO_UPSTREAM (默认)
+  //   - VITE_UPSTREAM (Vite)
+  //   - SPECIAL_UPSTREAMS (plugin-vite, openlist direct)
+  const all = [ENCV_GO_UPSTREAM, VITE_UPSTREAM, ...SPECIAL_UPSTREAMS]
+  // Deduplicate by name
   const unique = new Map<string, Upstream>()
   for (const up of all) unique.set(up.name, up)
   const upstreamList = Array.from(unique.values())
@@ -676,21 +517,25 @@ async function main(): Promise<void> {
     await childrenManager.startAll(specs)
   }
 
-  // ── Step 4: 防御守卫：/ws 必须在 UPSTREAMS 中（2026-06-07 历史踩坑）──
-  const hasWsRoute = UPSTREAMS.some((u) => u.match === '/ws')
-  if (!hasWsRoute) {
-    log('FATAL: /ws route missing from UPSTREAMS! WebSocket will fall through to vite.')
-    log('FATAL: Add { match: "/ws", target: "http://127.0.0.1:2025", wsTarget: "ws://127.0.0.1:2025" } to UPSTREAMS.')
-    process.exit(1)
-  }
+  // ── Step 4: 防御守卫（黑名单机制已无 UPSTREAMS 白名单）──
+  //   历史教训：2026-06-07 曾因 UPSTREAMS 漏配 /ws 导致 WebSocket 卡死
+  //   现已统一走 ENCV_GO_UPSTREAM 默认 upstream，无需手动维护。
+  //   此处保留 hook 以便未来加新防御性检查。
 
   // ── Step 5: 启动 HTTP server ──
   server.listen(PORT, HOST, () => {
     log(`listening on http://${HOST}:${PORT} (D1: 好记，16666)`)
     log(`children spawned: ${specs.length} (${specs.map((s) => s.name).join(', ') || 'none'})`)
-    log(`routes:`)
-    for (const up of [DEFAULT_UPSTREAM, ...UPSTREAMS]) {
-      log(`  ${up.match.padEnd(20)} → ${up.target}  (${up.name})`)
+    log(`routing strategy: DENYLIST (default = encv-go :2025; VITE_DENY → encv-mobile Vite :8100)`)
+    log(`default upstream: ${ENCV_GO_UPSTREAM.name} → ${ENCV_GO_UPSTREAM.target}`)
+    log(`vite denylist (${VITE_DENY.length} rules):`)
+    for (const rule of VITE_DENY) {
+      const prefix = rule.mode === 'exact' ? '   = ' : '  ⊆ '
+      log(`   ${prefix}${rule.match.padEnd(22)} (${rule.why})`)
+    }
+    log(`special upstreams:`)
+    for (const up of SPECIAL_UPSTREAMS) {
+      log(`   ⊆ ${(up.match ?? '').padEnd(22)} → ${up.target}  (${up.name})${up.pathRewrite ? ' [pathRewrite]' : ''}`)
     }
     log(`health:  http://${HOST}:${PORT}/__gateway/health`)
     log(`external: :16000 (OpenPreview) → :${PORT} (this gateway) after agent-browser navigate triggers auto-register`)
