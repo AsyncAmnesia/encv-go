@@ -10,7 +10,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useAutomationTests, DEFAULT_AUTOMATION_SOURCE } from '@/composables/useAutomationTests'
-import { _getAllForTesting } from '@/composables/useTaskTrigger'
+import { _getAllForTesting, _reloadTriggeredByCache } from '@/composables/useTaskTrigger'
 
 // mock createTask 和 fetchPlugins
 let createTaskMock: any
@@ -39,6 +39,7 @@ function makePlugin(name: string, supportedVersions: number[] | null, defaultVer
 
 beforeEach(() => {
   localStorage.clear()
+  _reloadTriggeredByCache()  // 🆕 2026-06-10：reset cacheMap 防 test 间状态泄漏
   createTaskMock = vi.fn().mockImplementation(async (_type, sourcePath) => {
     return { id: `task-${Math.random().toString(36).slice(2, 10)}`, sourcePath }
   })

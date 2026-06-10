@@ -212,15 +212,28 @@ func (s *MobileService) DeleteFile(queryPath string) error {
 
 	// 🆕 文件 / 目录分别处理 + 各自的详细错误
 	if info.IsDir() {
-		// 删除前统计文件数，用于详细日志
+		// 删除前统计文件数 + 子目录数，用于详细日志
 		fileCount := 0
-		_ = filepath.WalkDir(absPath, func(_ string, d os.DirEntry, _ error) error {
-			if d != nil && !d.IsDir() {
+		dirCount := 0
+		_ = filepath.WalkDir(absPath, func(p string, d os.DirEntry, _ error) error {
+			if d == nil {
+				return nil
+			}
+			if d.IsDir() {
+				dirCount++
+			} else {
 				fileCount++
 			}
 			return nil
 		})
-		slog.Warn("DeleteFile: removing directory", "path", queryPath, "absPath", absPath, "fileCount", fileCount)
+		slog.Warn("DeleteFile: removing directory",
+			"path", queryPath,
+			"absPath", absPath,
+			"fileCount", fileCount,
+			"subDirCount", dirCount-1, // 减去自身
+		)
+		// os.RemoveAll 永远不会因为 "directory not empty" 失败（它会递归删子项）
+		// 唯一可能的失败：权限不足 / 文件被占用 / 跨设备 / 路径太长等
 		err = os.RemoveAll(absPath)
 	} else {
 		slog.Warn("DeleteFile: removing file", "path", queryPath, "absPath", absPath, "size", info.Size())

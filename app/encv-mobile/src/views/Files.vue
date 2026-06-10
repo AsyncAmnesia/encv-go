@@ -1214,19 +1214,31 @@ async function loadFileTagsForCurrentDir() {
 
 async function handleDeleteFile(file: FileItem) {
   // 🆕 2026-06-10 修复 #1：删除安全防御
-  //   1) 文件夹二次确认（防误删整目录）
-  //   2) 详细错误 toast（把后端 error 透传给用户）
-  //   3) 不可删 servingDir 根目录
+  //   1) 根目录客户端拦截
+  //   2) 文件夹二次确认（防误删整目录）
+  //   3) 文件夹删除前先 list 一次，让用户看到"包含 N 个文件 + M 个子目录"
+  //   4) 详细错误 toast（把后端 error 透传给用户）
   if (file.path === '/' || file.path === '') {
     showToast({ message: '不能删除根目录', duration: 2000, color: 'danger' })
     return
   }
+
   if (file.isDirectory) {
-    // 文件夹删除用 prompt + 二次确认（防误删整目录）
+    // 🆕 删除文件夹前先 list 一次，让用户在确认前看到包含多少内容
+    let detail = '此操作不可撤销'
+    try {
+      const list = await listFiles(file.path)
+      const filesInDir = list.filter((f: FileItem) => !f.isDirectory).length
+      const subDirs = list.filter((f: FileItem) => f.isDirectory).length
+      detail = `包含 ${filesInDir} 个文件 + ${subDirs} 个子目录，此操作不可撤销。`
+    } catch (e) {
+      // list 失败：仍允许删除（用户可能想强制删一个无法 list 的目录）
+      console.warn('[Files] list directory failed before delete:', file.path, e)
+    }
     const dirAlert = await alertController.create({
       header: t('files.delete'),
       subHeader: `📁 ${file.name}`,
-      message: `确认删除文件夹 "${file.name}" 及其所有内容？此操作不可撤销。`,
+      message: `确认删除文件夹 "${file.name}" 及其所有内容？\n\n${detail}`,
       buttons: [
         { text: t('files.cancelSelect'), role: 'cancel' },
         { text: t('files.delete'), role: 'destructive', handler: () => doDelete(file) },

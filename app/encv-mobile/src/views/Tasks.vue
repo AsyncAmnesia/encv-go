@@ -320,6 +320,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { onIonViewWillEnter } from '@ionic/vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonContent,
   IonRefresher, IonRefresherContent, IonList, IonItem,
@@ -466,58 +467,55 @@ const displayedItems = computed<DisplayItem[]>(() => {
   const tasks = filteredTasks.value
   if (tasks.length === 0) return []
 
-  // 🆕 2026-06-10 修复 #2 v2：group 折叠按 workflow runId 分组
-  // 旧实现（v1）：所有 non-user task 归 1 个 group → 新 run 的 task 也混进老 group，混乱
-  // 旧实现（v2）：按 triggeredBy 粗聚拢 → 跨 run 的 task 还是混在一起
-  // 新实现（v3）：
-  //   1) 每个 task 通过 getRunIdForTask(taskId) 找它的 runId
-  //   2) 同 runId 的 task 归入同一 group（稳定、独立）
-  //   3) 无 runId 的 task（老历史/纯 user）→ fallback 走"按 triggeredBy 聚拢"逻辑
-  //   4) 纯 user task 永远单独展示
-  // 性能：O(n) 单次扫描 + Map 索引；n=200 case 场景下 < 1ms
+  // 🆕 2026-06-10 修复 #2 v3（彻底版）：按 workflow runId 分组，**不再兼容旧版**
+  // 旧实现（v1）：所有 non-user task 归 1 个 group → 跨 run 混乱
+  // 旧实现（v2）：按 triggeredBy 粗聚拢 → 跨 run 仍混
+  // 旧实现（v3 旧）：runId 分组 + legacy fallback（无 runId 走 triggeredBy 聚拢）→ 用户：
+  //   "任务组完全失效了啊，不要想着怎么兼容旧的了" —— legacy fallback 让 group 边界变得不确定
+  // 新实现（v3 终）：
+  //   1) 每个 task 通过 getRunIdForTask(taskId) 找 runId（O(1) 内存索引）
+  //   2) 有 runId 的 → 按 runId 分组（稳定、独立、不会跨 run 干扰）
+  //   3) 没有 runId 的 task → **直接单条展示，不参与 group 折叠**（彻底不兼容旧数据）
+  //   4) 性能：cacheMap 进程级单例（useTaskTrigger 已优化）→ 不再 200× JSON.parse
+  //   5) 同一 runId 内的 task 在 group 内按 filteredTasks 顺序展示（保留原排序）
   interface Group {
     runId: string
     tone: 'automation' | 'ai_agent'
     tasks: EncvTask[]
   }
   const groupsByRun = new Map<string, Group>()
-  const fallbackByBy = new Map<'automation' | 'ai_agent', EncvTask[]>()
-  const userTasks: EncvTask[] = []
+  const singletonTasks: EncvTask[] = []  // 🆕 没有 runId 的单条 task
 
   for (const t of tasks) {
     const by = getTriggeredBy(t.id)
     if (by === 'user') {
-      userTasks.push(t)
+      // user task 永远单条展示，不参与 group
+      singletonTasks.push(t)
       continue
     }
     const runId = getRunIdForTask(t.id)
-    if (runId) {
-      const g = groupsByRun.get(runId)
-      if (g) g.tasks.push(t)
-      else groupsByRun.set(runId, { runId, tone: by === 'ai_agent' ? 'ai_agent' : 'automation', tasks: [t] })
-    } else {
-      // fallback：按 triggeredBy 聚拢（兼容老历史 task）
-      const tone: 'automation' | 'ai_agent' = by === 'ai_agent' ? 'ai_agent' : 'automation'
-      const list = fallbackByBy.get(tone)
-      if (list) list.push(t)
-      else fallbackByBy.set(tone, [t])
+    if (!runId) {
+      // 🆕 终版 v3：没有 runId 的 task 不再 fallback 到 triggeredBy 聚拢 — 直接单条展示
+      singletonTasks.push(t)
+      continue
     }
+    const tone: 'automation' | 'ai_agent' = by === 'ai_agent' ? 'ai_agent' : 'automation'
+    const g = groupsByRun.get(runId)
+    if (g) g.tasks.push(t)
+    else groupsByRun.set(runId, { runId, tone, tasks: [t] })
   }
 
-  // 收集所有 group（按最早 createdAt 排序，活跃的在前面）
-  const allGroups: Group[] = [
-    ...Array.from(groupsByRun.values()),
-    ...Array.from(fallbackByBy.entries()).map(([tone, ts]) => ({ runId: `legacy-${tone}`, tone, tasks: ts })),
-  ]
+  // 把 singletonTasks 按 filteredTasks 顺序插入；group 按最早 createdAt 排序
+  const allGroups: Group[] = Array.from(groupsByRun.values())
   allGroups.sort((a, b) => {
     const aEarliest = Math.min(...a.tasks.map((t) => new Date(t.createdAt).getTime()))
     const bEarliest = Math.min(...b.tasks.map((t) => new Date(t.createdAt).getTime()))
     return bEarliest - aEarliest  // 最新在最前
   })
 
-  // 输出：每个 group（≥ 阈值时折叠）+ user task
+  // 输出：singleton tasks + group cards（每个 group ≥ 阈值时折叠）
   const result: DisplayItem[] = []
-  for (const t of userTasks) {
+  for (const t of singletonTasks) {
     result.push({ kind: 'task', key: t.id, task: t })
   }
   for (const g of allGroups) {
@@ -569,9 +567,16 @@ function buildGroupItem(groupKey: string, seg: EncvTask[]): DisplayItem {
   }
 }
 
-onMounted(() => {
-  fetchTasks()
+// 🆕 2026-06-10 修复：测试报告卡运行中（Tasks 页面卡 running）
+// 根因：Tasks.vue 之前**完全没订阅 WS 事件**。task:update / task:progress / task:completed
+//   推过来时没人调 applyTask*，tasks.value 永远是首次拉取的快照。
+// 修复：useTaskEventBridge 已在 line 374-380 订阅 4 件套 WS 事件（mount 注册，unmount 注销），
+//   **不要在这里再写一份 eventBus.on**，否则同一个事件会被触发 2 次，state 错乱。
+// 修复 v2（2026-06-10 同日）：删除下方手写的 handleTask* + onMounted 重复订阅块。
 
+// 🆕 onMounted：只处理路由 query（长按菜单跳转过来时打开 new task modal）
+// 首次 fetchTasks 由 onIonViewWillEnter 接管（每次切回 tab 智能刷新）。
+onMounted(() => {
   if (route.query.action === 'new') {
     const sourcePath = route.query.source as string
     const taskType = (route.query.type || 'encrypt') as TaskType
@@ -581,6 +586,23 @@ onMounted(() => {
     } else {
       openNewTask()
     }
+  }
+})
+
+// 🆕 onIonViewWillEnter：参考 Files.vue 实现切回 tab 自动刷新
+//   智能条件：如果存在 running/queued task 立即拉一次最新列表；否则只靠 WS 增量更新
+//   避免无谓的 GET /api/tasks 调用
+onIonViewWillEnter(() => {
+  if (tasks.value.length === 0) {
+    fetchTasks()
+    return
+  }
+  // 存在 running/queued → 立即拉一次最新
+  const hasActive = tasks.value.some(
+    (t) => t.status === 'running' || t.status === 'queued' || t.status === 'cancelling',
+  )
+  if (hasActive) {
+    fetchTasks()
   }
 })
 </script>

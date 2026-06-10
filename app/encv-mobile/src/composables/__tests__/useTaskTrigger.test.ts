@@ -14,10 +14,15 @@ import {
   getTriggeredBy,
   clearTriggeredBy,
   _getAllForTesting,
+  _reloadTriggeredByCache,
 } from '@/composables/useTaskTrigger'
 
+// 🆕 2026-06-10 修复：每个 test 都要 reset cacheMap（useTaskTrigger 模块级单例）
+// 历史 bug：cacheMap 在 test 之间持续存在 → 后 test 拿前 test 的 cache，
+//   localStorage.clear() 只清 localStorage，不清 cacheMap
 beforeEach(() => {
   localStorage.clear()
+  _reloadTriggeredByCache()
   vi.restoreAllMocks()
 })
 
@@ -88,7 +93,8 @@ describe('useTaskTrigger — 异常降级', () => {
   })
 
   it('localStorage 损坏 JSON 时降级（readMap 失败返 {}）', () => {
-    localStorage.setItem('encv_task_triggered_by', '{not valid json}')
+    // 🆕 2026-06-10 修复：用 v2 STORAGE_KEY（生产代码 v2 用的 key）
+    localStorage.setItem('encv_task_triggered_by_v2', '{not valid json}')
     expect(getTriggeredBy('foo')).toBe('user')
   })
 

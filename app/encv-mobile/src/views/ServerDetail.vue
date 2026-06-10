@@ -138,7 +138,7 @@ import { useRouter } from 'vue-router'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton,
   IonContent, IonList, IonListHeader, IonItem, IonIcon, IonLabel,
-  IonBadge, IonButton, alertController, IonSpinner, IonNote,
+  IonBadge, IonButton, alertController, IonSpinner,
 } from '@ionic/vue'
 import {
   server as serverIcon, refresh as refreshIcon,
