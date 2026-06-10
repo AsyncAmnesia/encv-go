@@ -24,15 +24,21 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-/** 同步跑子进程 + 等完成 */
+/** 同步跑子进程 + 等完成，**透传 stderr**（防止 tsx 错误被静默吞掉） */
 function runSync(cmd: string, args: string[], cwd: string, env: NodeJS.ProcessEnv): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { cwd, env, stdio: ['ignore', 'inherit', 'inherit'] })
+    const child = spawn(cmd, args, { cwd, env, stdio: ['ignore', 'inherit', 'pipe'] })
+    let stderr = ''
+    // 透传 stderr（stdio=inherit 已自动，但保留 collector 抓取最后 2KB 用于错误信息）
+    const stderrStream = child.stderr as NodeJS.ReadableStream | null
+    if (stderrStream) {
+      stderrStream.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
+    }
     child.on('exit', (code) => {
       if (code === 0) resolve()
-      else reject(new Error(`${cmd} exited with code ${code}`))
+      else reject(new Error(`${cmd} exited with code ${code}\n--- stderr ---\n${stderr.slice(-2000)}`))
     })
-    child.on('error', reject)
+    child.on('error', (err) => reject(new Error(`spawn ${cmd} failed: ${err.message}`)))
   })
 }
 

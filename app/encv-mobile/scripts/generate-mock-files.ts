@@ -34,13 +34,31 @@ function ensureDir(dir: string): void {
   fs.mkdirSync(dir, { recursive: true })
 }
 
+/**
+ * ⚠️ 防御：writeBuffer 必须先确保父目录存在
+ *
+ * 根因复盘：2026-06-10 mock 生成失败 → ENOENT
+ *   ensureDir(root) 只创建了 /storage/emulated/0
+ *   第一个 spec 是 01-plain-media/image/photo.jpg
+ *   writeFileSync 找不到 image/ 父目录 → ENOENT
+ *   整个脚本以 code 1 退出 → gateway FATAL → pm2 不断重启
+ *
+ * 修复：在写盘前自动 mkdirSync dirname，确保父目录链就绪
+ */
+function ensureParentDir(filePath: string): void {
+  const parent = path.dirname(filePath)
+  fs.mkdirSync(parent, { recursive: true })
+}
+
 function writeBuffer(filePath: string, data: Uint8Array): void {
+  ensureParentDir(filePath)  // ⚠️ 防御：递归创建父目录
   fs.writeFileSync(filePath, Buffer.from(data))
   recordFile(filePath, data.length)
 }
 
 function writeString(filePath: string, content: string, encoding: BufferEncoding = 'utf-8'): void {
   const buf = Buffer.from(content, encoding)
+  ensureParentDir(filePath)  // ⚠️ 防御：递归创建父目录
   fs.writeFileSync(filePath, buf)
   recordFile(filePath, buf.length)
 }
