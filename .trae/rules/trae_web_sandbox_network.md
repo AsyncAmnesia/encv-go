@@ -633,14 +633,15 @@ throw new Error(`all-candidates-failed | trace: ${trace}`)
 
 | 环境 | 前端访问地址 | API 地址 | WS 地址 |
 |------|--------------|----------|---------|
-| **沙箱浏览器（OpenPreview）** | `https://run-agent-...trae.cn/` | ✅ `http://localhost:16666/api/*`（2026-06-10 修复：preview-gateway proxyReq 改写 Origin=`:16666`） | ⚠️ `/ws` 不可达（沙箱浏览器不支持 WS 代理） |
+| **沙箱浏览器（OpenPreview）** | `https://run-agent-...trae.cn/` | ✅ 同源 `/api/*`（trae 反代 → :16000 → :16666 → :2025，2026-06-10 修复：preview-gateway proxyReq 改写 Origin=`:16666` + 前端 baseUrl 同源化） | ⚠️ `/ws` 不可达（沙箱浏览器不支持 WS 代理） |
 | **沙箱本地（PM2 启 :16666）** | `http://localhost:16666/` | `http://localhost:16666/api/*` ✅ | `ws://localhost:16666/ws` ✅ |
 | **沙箱 dev 直连 vite** | `http://localhost:8100/` | ❌ vite 不代理 /api（设计决策 D9） | ❌ vite HMR 关 |
 | **APK 真机 + adb reverse** | `capacitor://localhost` | `http://127.0.0.1:2025` ✅ | `ws://127.0.0.1:2025/ws` ✅ |
 
-→ **沙箱 dev 模式下完整端到端调试链路有两档**：
-> 1. **沙箱本地访问 `:16666`**（API + WS 都可达，**完整**功能）
-> 2. **沙箱浏览器（OpenPreview）**（API 2026-06-10 修复后可达 ✅，WS 仍不可达 ⚠️）——**适合**前端 fetch /api/* 的所有功能（Files/Tasks/Settings 等），**不适合**任何依赖 WebSocket 的实时功能（DevLogs 实时流、agent 流式 chat 等）。
+→ **沙箱 dev 模式下完整端到端调试链路有 3 档**（从弱到强）：
+> 1. **沙箱浏览器（OpenPreview）**（API ✅，WS ⚠️）——**适合**所有 fetch /api/* 的功能（Files/Tasks/Settings 等）
+> 2. **沙箱本地访问 `:16666`**（API ✅，WS ✅）——**适合**完整功能调试（含 DevLogs 实时流、agent 流式 chat）
+> 3. **APK 真机 + adb reverse**（API ✅，WS ✅）——**完整** dev 链路，真机性能最真实
 
 ### 9.6 绝对禁止
 

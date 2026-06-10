@@ -1,21 +1,33 @@
 const SERVER_URL_KEY = 'encv-server-url'
 export const DEFAULT_API_BASE_URL = 'http://127.0.0.1:2025'
-// 🆕 2026-06-10 沙箱 dev 专用 entry：preview-gateway :16666 入口（vite + encv-go 都代理）
-//   - dev 模式 sandbox 浏览器期望走 http://127.0.0.1:16666（trae 域名 :16666 网关不通）
-//   - APK 模式不影响：APK 用 capacitor 协议，仍走 loopback :2025 直连 encv-go
-//   - 这是 sandbox 浏览器 fallback commit 的目标，getApiBaseUrl() dev fallback 也用它
+// 🆕 2026-06-10 沙箱 OpenPreview 浏览器专用：必须用**同源** fetch。
+//   - OpenPreview 浏览器在 agent-tool-host 上，访问 127.0.0.1/localhost
+//     解析到 agent-tool-host 自己的端口（不存在 :16666）→ 永远 connect refused
+//   - trae 反代已经把 trae.cn/api/* 完整代理到 :16000 → :16666 → :2025
+//     （curl -s http://127.0.0.1:16000/api/config 直接 200，proxy 链路 OK）
+//   - 所以 sandbox 浏览器下 baseUrl 必须是**同源**（window.location.origin），
+//     fetch 走同源相对 URL，让 trae 反代处理；或者直接返回 '' 让浏览器补 origin
+//   - 沙箱本地（非 OpenPreview）的 loopback 浏览器走原 127.0.0.1:16666 路径
+//   - APK 真机（capacitor://）直连 127.0.0.1:2025
 export const DEV_SANDBOX_ENTRY = 'http://127.0.0.1:16666'
 
+/** 判断当前是否在 OpenPreview 浏览器（agent-tool-host 提供的 trae 域名 mock 浏览器） */
+function isOpenPreviewBrowser(): boolean {
+  if (typeof window === 'undefined' || !window.location) return false
+  const origin = window.location.origin
+  return (
+    /trae\.cn$/i.test(origin) ||
+    /agent-sandbox/i.test(origin) ||
+    /^run-agent-/i.test(origin)
+  )
+}
+
 export function getApiBaseUrl(): string {
-  // 🆕 2026-06-10 沙箱 dev 模式：useApiBaseProbe 会 commit `http://127.0.0.1:16666`
-  //   写进 localStorage，dev 模式必须读 localStorage 才生效。
-  //   旧版 dev 返回 `''`（相对路径，依赖 window.location.origin）—— sandbox 浏览器
-  //   origin 是 trae 域名（被网关拦）→ 所有 /api/* 走 trae origin → 403 → 断联。
-  //   新版 dev 流程：
-  //     [1] localStorage 有值（probe 已 commit）→ 用 localStorage
-  //     [2] localStorage 空 → fallback 到 DEV_SANDBOX_ENTRY（沙箱内 :16666）
-  //   APK 模式：probe 不会改 localStorage（[1.5] skip），dev 不影响 APK 行为。
   if (import.meta.env.DEV) {
+    // OpenPreview 浏览器（trae 域名）→ 必须同源，让 trae 反代处理
+    if (isOpenPreviewBrowser()) {
+      return typeof window !== 'undefined' ? window.location.origin : ''
+    }
     const stored = localStorage.getItem(SERVER_URL_KEY)
     if (stored) return stored
     return DEV_SANDBOX_ENTRY

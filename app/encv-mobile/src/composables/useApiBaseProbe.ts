@@ -337,12 +337,16 @@ function createProbe() {
       //   只是包装，对沙箱内 backend 不可达）。
       //   APK/真机不进此分支（isSandbox=false），保留 throw 让 UI 报错。
       if (isSandboxBrowserOrigin(origin)) {
-        // 🆕 沙箱内 :16666 是 preview-gateway 入口（vite + encv-go 都在它后面）。
-        //   不写 trae origin，写 127.0.0.1:16666 → 之后所有 /api/* 走沙箱内入口。
-        //   getApiBaseUrl() dev fallback 也用同一个值（DEV_SANDBOX_ENTRY）。
-        const note = `[4] trae sandbox fallback: using sandbox-internal entry ${DEV_SANDBOX_ENTRY} (NOT ${origin}, which is trae gateway not proxying /api/*)`
+        // 🆕 2026-06-10 修复：sandbox 浏览器下 commit current origin（trae 域名），
+        //   不是 DEV_SANDBOX_ENTRY (127.0.0.1:16666)。
+        //   - 旧版 commit `http://127.0.0.1:16666` → OpenPreview 浏览器 fetch
+        //     agent-tool-host 自己的 :16666（不存在）→ connect refused → 断联
+        //   - trae 反代已经把 trae.cn/* 完整代理到 :16000 → :16666 → :2025
+        //     （curl -s http://127.0.0.1:16000/api/config 直接 200 验证）
+        //   - sandbox 浏览器下用 current origin (trae 域名) 同源 fetch 即可
+        const note = `[4] trae sandbox fallback: using current origin ${origin} (NOT ${DEV_SANDBOX_ENTRY}, which is unreachable from agent-tool-host)`
         log.push(note); console.info(`[probe] step ${note}`)
-        return commit(DEV_SANDBOX_ENTRY, null, 'current-origin', log, t0)
+        return commit(origin, null, 'current-origin', log, t0)
       }
       throw wrapped
     } finally {
