@@ -220,3 +220,141 @@ interface PersistedRun {
 >
 > **任何动态生成测试用例的代码必须从 plugin 元数据派生**（extraFields + supportedExtensions），禁止硬编码 cipherMode / version / 源文件路径。
 > 硬编码 → 插件升级加新选项时，测试报告永远测不到。
+
+---
+
+## 十一、5 个新 bug（2026-06-10 同日连修 v2）
+
+| # | 症状 | 根因 | 修复 |
+|---|------|------|------|
+| **#1** | 文件夹长按菜单缺少删除操作 | [Files.vue:1041](file:///workspace/app/encv-mobile/src/views/Files.vue#L1040-L1052) `if (!file.isDirectory)` 阻止文件夹删除；后端 [mobile_service.go:186](file:///workspace/internal/service/mobile_service.go#L186-L195) `os.Remove` 只能删文件不能删非空目录 | 1) Files.vue 去掉 `!file.isDirectory` 条件；2) 后端检测是目录用 `os.RemoveAll`，文件继续 `os.Remove` |
+| **#1b** | 重置 mock 数据没有任何效果 | [mock_generator.go:240-269](file:///workspace/internal/server/mock_generator.go#L238-L303) `handleMockResetGin` 只 `os.Remove` `generateMockSpecs("all")` 列出的具体文件；02-test-output 等子目录根本不删 | 改用 `filepath.WalkDir` 递归遍历 5 个已知子目录（01-plain-media / 02-alist-encrypt / 03-encv-containers / 04-boundary-test / **02-test-output**），保留目录结构，删除其中所有文件 |
+| **#2** | 任务组显示混乱 | [Tasks.vue:465-507](file:///workspace/app/encv-mobile/src/views/Tasks.vue) `displayedItems` 用"连续同 triggeredBy 区段"折叠 → 当 user task 穿插在 automation task 中间时区段被切散成多个 group card | 不再依赖区段。扫描所有 task，**所有** triggeredBy != 'user' 的 task 归为 1 个 group；group key 锚定到最早 createdAt 的 task.id（稳定）；user task 永远单独展示 |
+| **#3** | 测试报告不显示运行的 job | [useWorkflowEngine.ts:243-249](file:///workspace/app/encv-mobile/src/composables/useWorkflowEngine.ts) `runWorkflow` layer 内 `for layerJobIds: const jobRun = await executeJob(...)` 串行 → 第一个 job 卡住，下面所有 job 都不显示；`executeJob` 内部 `for-await submitAction` 也串行 → 200 个 case 全排队 | 1) `runWorkflow` 改 `Promise.all(layerJobIds.map(...))` 真正并行；2) `jobRun` 构造后**立即 push** 到 `run.jobs`（UI 立刻可见，不等 await）；3) `executeJob` 内部 N 个 worker 共享 cursor 轮转拉取（按 `jobDef.strategy.max` 限流） |
+| **#4** | 承诺的工作流没有兑现，所有任务全部平铺并行不合理 | [AutomationTestsDetail.vue](file:///workspace/app/encv-mobile/src/views/AutomationTestsDetail.vue) `buildDynamicWorkflow` 只有 1 个 job `'test-all'` parallel max:5，所有 encrypt+decrypt step 平铺，没有 DAG 依赖 | 拆 2 个 job：`encrypt-all` (parallel max:5) + `decrypt-all` (parallel max:5, **needs: ['encrypt-all']**)；`resolveExecutionOrder` 自动排层；`scheduleDependentJobs` 监听 encrypt-all 完成事件启动 decrypt-all |
+| **#5** | 遍历加密选项导致的产物冲突（同一 sourcePath 多次加密覆盖） | [AutomationTestsDetail.vue](file:///workspace/app/encv-mobile/src/views/AutomationTestsDetail.vue) `buildDynamicWorkflow` 所有 encrypt step 共享同一 `sourcePath`，不传 `targetPath` → 加密后 `sample.{ext}.{containerExt}` 多次覆盖 | 1) 每个 (plugin, version, ext, extraFields) 组合 → **唯一 safeId** = `plugin_v{ver}_{ext}_{k1-v1_k2-v2...}`（特殊字符替换为 `_`）；2) encrypt step `targetPath = ${mockRoot}02-test-output/${safeId}/`；3) decrypt step `sourcePath = ${mockRoot}02-test-output/${baseSafeId}/sample.${ext}.${plugin.containerExtension}`（baseSafeId 不含 extraFields，确保 decrypt 读 encrypt 产物） |
+
+### 关键代码模式
+
+#### A. runWorkflow layer 内真正并行 + jobRun 立即 push
+
+```ts
+// ❌ 旧实现（串行）：第一个 job 卡住 → 后续所有 job 都不显示
+for (const layerJobIds of layers) {
+  for (const jobId of layerJobIds) {
+    const jobRun = await executeJob(jobDef, def.env ?? {})  // 串行
+    run.jobs.push(jobRun)  // 延后 push
+  }
+}
+
+// ✅ 新实现：layer 内 Promise.all + 立即 push
+for (const layerJobIds of layers) {
+  const jobPromises = layerJobIds.map((jobId) => {
+    const jobDef = def.jobs.find((j) => j.id === jobId)!
+    const jobRun: JobRun = { id: genId(), jobDefId: jobDef.id, status: 'running', startedAt: new Date().toISOString(), steps: [] }
+    run.jobs.push(jobRun)  // 🆕 立即 push（UI 立刻可见）
+    return executeJob(jobDef, def.env ?? {}, jobRun).then(() => jobRun)
+  })
+  await Promise.all(jobPromises)  // 全部并发启动
+}
+```
+
+#### B. executeJob 内部 worker 池 + 限流
+
+```ts
+// 1. 先构造所有 stepRun → 立即 push（UI 立刻可见）
+const executableSteps: ExecutableStep[] = []
+for (const exec of stepExecutions) {
+  const stepRun: StepRun = { id: genId(), stepDefId: stepDef.id, status: 'pending', startedAt: new Date().toISOString(), matrixVars: binding }
+  jobRun.steps.push(stepRun)  // 立即 push
+  executableSteps.push({ stepDef, binding, stepRun })
+}
+
+// 2. N 个 worker 共享 cursor 限流
+const max = (jobDef.strategy && 'max' in jobDef.strategy) ? jobDef.strategy.max : 5
+let cursor = 0
+const worker = async (): Promise<void> => {
+  while (cursor < executableSteps.length) {
+    const idx = cursor++
+    const ex = executableSteps[idx]
+    if (ex) await runOneStep(ex)  // 提交 action
+  }
+}
+const workerCount = Math.min(max, executableSteps.length)
+await Promise.all(Array.from({ length: workerCount }, () => worker()))
+```
+
+#### C. DAG 拆 2 job + unique subdir
+
+```ts
+// 🆕 safeId = 唯一子目录名
+const makeSafeId = (extraFields: Record<string, string>): string => {
+  const sortedKeys = Object.keys(extraFields).sort()
+  const parts: string[] = [plugin.name, `v${version}`, sourceExt]
+  for (const k of sortedKeys) parts.push(`${k}-${extraFields[k]}`)
+  return parts.join('_').replace(/[^\w.-]/g, '_').replace(/_+/g, '_')
+}
+
+// encrypt: targetPath = 唯一子目录
+encryptSteps.push({
+  action: { type: 'encv_task', taskType: 'encrypt', params: {
+    sourcePath,
+    targetPath: `${mockRoot}02-test-output/${safeId}/`,  // 🆕 唯一
+  }},
+})
+
+// decrypt: sourcePath = encrypt 产物路径
+decryptSteps.push({
+  action: { type: 'encv_task', taskType: 'decrypt', params: {
+    sourcePath: `${mockRoot}02-test-output/${baseSafeId}/sample.${ext}.${plugin.containerExtension}`,
+    targetPath: `${mockRoot}02-test-output/dec_${baseSafeId}/`,
+  }},
+})
+
+// jobs: 拆 2 个 + needs
+jobs: [
+  { id: 'encrypt-all', strategy: { type: 'parallel', max: 5 }, steps: encryptSteps },
+  { id: 'decrypt-all', needs: ['encrypt-all'], strategy: { type: 'parallel', max: 5 }, steps: decryptSteps },
+]
+```
+
+#### D. 任务组不再依赖"连续同 triggeredBy 区段"
+
+```ts
+// ❌ 旧：连续区段折叠（user task 插入会切散）
+while (i < tasks.length) {
+  const seg = [tasks[i]]
+  while (j < tasks.length && getTriggeredBy(tasks[j].id) === curBy) seg.push(tasks[j]), j++
+  if (seg.length >= THRESHOLD) { result.push(buildGroupItem(seg)); }
+  i = j
+}
+
+// ✅ 新：所有 non-user task 归 1 个 group（user task 永远单独）
+const automationTasks: EncvTask[] = []
+const userTasks: EncvTask[] = []
+for (const t of tasks) {
+  if (getTriggeredBy(t.id) === 'user') userTasks.push(t)
+  else automationTasks.push(t)
+}
+let anchorTask = null
+for (const t of automationTasks) {
+  if (!anchorTask || new Date(t.createdAt).getTime() < new Date(anchorTask.createdAt).getTime()) {
+    anchorTask = t
+  }
+}
+const groupKey = `${tone}-${anchorTask.id}`  // 🆕 锚定到最早 createdAt
+```
+
+### 扩展铁律
+
+> **任何"执行"类代码（for-await / .then 链）必须显式并行**：layer 用 `Promise.all`、step 用 worker 池、case 用并发队列。
+> 串行 await → 200 个 case 排队 200× 单步时间，UI 永远不更新。
+
+> **任何"创建 run/job/step"代码必须立即 push 到 reactive 容器**，让 UI 立刻看到。
+> 延后 push（await executeJob 返回）→ 期间 UI 是空白的。
+
+> **任何"文件操作"必须先 `os.Stat` 判断是文件还是目录**。
+> `os.Remove` 不能删非空目录，目录用 `os.RemoveAll`。
+
+> **任何"DAG 拆 job"必须用 `needs` 字段**。
+> 硬编码串行 → DAG 调度失效。

@@ -1038,17 +1038,18 @@ async function handleLongPress(file: FileItem) {
   })
 
   // ===== Section 4: 危险操作 =====
-  if (!file.isDirectory) {
-    buttons.push({
-      text: t('files.delete'),
-      icon: trash,
-      role: 'destructive',
-      cssClass: 'action-section-danger',
-      handler: () => {
-        handleDeleteFile(file)
-      },
-    })
-  }
+  // 🆕 2026-06-10 修复：文件夹长按菜单缺少删除操作
+  // 历史 bug：line 1041 `if (!file.isDirectory)` 阻止文件夹删除
+  // 修复：去掉 !file.isDirectory 条件 — 文件 / 文件夹都能删除
+  buttons.push({
+    text: t('files.delete'),
+    icon: trash,
+    role: 'destructive',
+    cssClass: 'action-section-danger',
+    handler: () => {
+      handleDeleteFile(file)
+    },
+  })
 
   buttons.push({
     text: t('files.cancelSelect'),

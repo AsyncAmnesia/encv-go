@@ -236,7 +236,10 @@ type mockResetRequest struct {
 }
 
 // handleMockResetGin 处理 POST /api/mock/reset
-// 删除 root 下所有 generateMockSpecs 产生的文件（不递归删 root 本体）
+// 🆕 2026-06-10 修复：递归删除 mockRoot 下的 4 个子目录全部内容
+// 历史 bug：只删 generateMockSpecs 列出的具体文件，但 02-test-output 等其他子目录不删
+// 修复：清空 4 个已知子目录（01-plain-media / 02-alist-encrypt / 03-encv-containers / 04-boundary-test）
+//       + 02-test-output（自动化测试运行时生成的产物），保留目录结构
 func (s *Server) handleMockResetGin(c *gin.Context) {
 	var req mockResetRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -254,17 +257,48 @@ func (s *Server) handleMockResetGin(c *gin.Context) {
 		}
 	}
 
-	// 删所有已知 specs（type=all）
-	specs := generateMockSpecs("all")
+	// 已知子目录（保留目录结构，删除其中内容）
+	knownSubdirs := []string{
+		"01-plain-media",
+		"02-alist-encrypt",
+		"03-encv-containers",
+		"04-boundary-test",
+		// 🆕 自动化测试运行产物（buildDynamicWorkflow 用 targetPath 写到这里的子目录）
+		"02-test-output",
+	}
+
 	removed := 0
-	for _, sp := range specs {
+	for _, sub := range knownSubdirs {
+		dir := filepath.Join(root, sub)
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			continue
+		}
+		// 遍历子目录中所有文件并删除
+		err := filepath.WalkDir(dir, func(path string, d os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return nil // 跳过不可访问的文件
+			}
+			if d.IsDir() {
+				return nil
+			}
+			if rmErr := os.Remove(path); rmErr == nil {
+				removed++
+			}
+			return nil
+		})
+		if err != nil {
+			slog.Warn("Mock reset: walk failed", "dir", dir, "error", err)
+		}
+	}
+
+	// 同时尝试删除 generateMockSpecs 中已知的具体文件（防御性，保留对旧版兼容）
+	for _, sp := range generateMockSpecs("all") {
 		fullPath := filepath.Join(root, sp.relativePath)
 		if err := os.Remove(fullPath); err == nil {
 			removed++
-		} else if !os.IsNotExist(err) {
-			slog.Warn("Mock reset: failed to remove", "path", fullPath, "error", err)
 		}
 	}
+
 	c.JSON(http.StatusOK, gin.H{"removed": removed})
 }
 

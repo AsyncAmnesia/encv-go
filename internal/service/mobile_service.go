@@ -183,7 +183,16 @@ func (s *MobileService) DeleteFile(queryPath string) error {
 	}
 
 	slog.Warn("DeleteFile", "path", queryPath)
-	err = os.Remove(absPath)
+	// 🆕 2026-06-10 修复：文件夹长按菜单缺少删除操作
+	// 历史 bug：os.Remove 只能删空文件，文件夹删除会失败
+	// 修复：检测是目录就用 os.RemoveAll，文件继续用 os.Remove
+	// 安全：SafeResolveToAbsPath 已经保证 absPath 不会逃出 servingDir
+	info, statErr := os.Stat(absPath)
+	if statErr == nil && info.IsDir() {
+		err = os.RemoveAll(absPath)
+	} else {
+		err = os.Remove(absPath)
+	}
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &NotFoundError{Err: err}

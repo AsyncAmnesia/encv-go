@@ -466,43 +466,54 @@ const displayedItems = computed<DisplayItem[]>(() => {
   const result: DisplayItem[] = []
   const tasks = filteredTasks.value
 
-  // 扫描连续非用户 task 区段
-  let i = 0
-  while (i < tasks.length) {
-    const cur = tasks[i]
-    const curBy = getTriggeredBy(cur.id)
-    if (curBy === 'user') {
-      result.push({ kind: 'task', key: cur.id, task: cur })
-      i++
-      continue
-    }
+  // 🆕 2026-06-10 修复：group 折叠不再依赖"连续同 triggeredBy 区段"
+  // 历史 bug：当 user task 穿插在 automation task 列表中时（如手动新建任务），
+  //   区段被切散成多个 group card，显示混乱
+  // 修复策略：
+  //   1) 扫描所有 task，收集 triggeredBy != 'user' 的 task → 1 个 group
+  //   2) group 按数量折叠，group key 用首张 task id（稳定）
+  //   3) user task 永远单独展示，不参与 group 折叠
+  const automationTasks: EncvTask[] = []
+  const userTasks: EncvTask[] = []
+  for (const t of tasks) {
+    if (getTriggeredBy(t.id) === 'user') userTasks.push(t)
+    else automationTasks.push(t)
+  }
 
-    // 收集连续同 triggeredBy 区段
-    const seg: EncvTask[] = [cur]
-    let j = i + 1
-    while (j < tasks.length && getTriggeredBy(tasks[j].id) === curBy) {
-      seg.push(tasks[j])
-      j++
+  // group 锚定到最早创建（seg 末尾）的 task.id —— 保证后续 group key 稳定
+  // 用最早 created 的原因：后续 running task 也能命中同一 group key
+  let anchorTask: EncvTask | null = null
+  for (const t of automationTasks) {
+    if (!anchorTask || new Date(t.createdAt).getTime() < new Date(anchorTask.createdAt).getTime()) {
+      anchorTask = t
     }
+  }
+  const automationTone: 'automation' | 'ai_agent' = automationTasks.length > 0
+    ? (getTriggeredBy(automationTasks[0].id) === 'ai_agent' ? 'ai_agent' : 'automation')
+    : 'automation'
 
-    if (seg.length < GROUP_FOLD_THRESHOLD) {
-      // 不足阈值 → 全部展开为普通 task
-      for (const t of seg) result.push({ kind: 'task', key: t.id, task: t })
-    } else {
-      // ≥2 个非用户 task → 折叠成 group card
-      const groupKey = `${curBy}-${seg[0].id}` // 锚定到第一张 task.id
-      const expanded = expandedGroupKeys.value.has(groupKey)
-      if (expanded) {
-        // 展开：插入 group + N 张原始 task
-        result.push(buildGroupItem(groupKey, seg))
-        for (const t of seg) result.push({ kind: 'task', key: t.id, task: t })
-      } else {
-        // 折叠：只插入 group card
-        result.push(buildGroupItem(groupKey, seg))
+  // 输出顺序：先 group card（如果存在），再按 filteredTasks 顺序插 user task 和 group 内 task
+  for (const t of tasks) {
+    if (getTriggeredBy(t.id) === 'user') {
+      result.push({ kind: 'task', key: t.id, task: t })
+    }
+  }
+  if (automationTasks.length >= GROUP_FOLD_THRESHOLD && anchorTask) {
+    const groupKey = `${automationTone}-${anchorTask.id}`
+    const expanded = expandedGroupKeys.value.has(groupKey)
+    result.push(buildGroupItem(groupKey, automationTasks))
+    if (expanded) {
+      for (const t of automationTasks) {
+        result.push({ kind: 'task', key: t.id, task: t })
       }
     }
-    i = j
+  } else {
+    // 不足阈值 → 全部展开为普通 task
+    for (const t of automationTasks) {
+      result.push({ kind: 'task', key: t.id, task: t })
+    }
   }
+
   return result
 })
 

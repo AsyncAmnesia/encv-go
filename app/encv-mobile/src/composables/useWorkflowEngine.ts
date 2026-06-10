@@ -200,12 +200,14 @@ export function useWorkflowEngine() {
   /**
    * 触发一次工作流运行。
    *
-   * 流程：
-   * 1. 创建 WorkflowRun 实例
-   * 2. 解析 DAG → 分层执行计划
-   * 3. 按层依次派发就绪的 Job
-   * 4. 每个 Job 内按 strategy 展开 Steps 并提交到后端
-   * 5. WS 回调驱动后续状态转移
+   * 🆕 2026-06-10 修复 #3 + #4：测试报告不显示 job / 所有任务平铺并行
+   *   历史 bug：
+   *     - runWorkflow for layerJobIds await executeJob 串行 → jobs 推入延后
+   *     - executeJob for-await 串行 submitAction → 200 个 case 全排队
+   *   修复：
+   *     - layer 内 Promise.all（启动后立即返回所有 Promise）
+   *     - jobRun 创建后立即 push 到 run.jobs（UI 立刻可见）
+   *     - executeJob 内部用 stepRunner 队列 + max 并发（按 jobDef.strategy.max）
    */
   async function runWorkflow(defId: string, triggeredBy: TriggeredBy): Promise<WorkflowRun> {
     const def = store.getDefinition(defId)
@@ -232,24 +234,33 @@ export function useWorkflowEngine() {
     try {
       // 2. 解析 DAG
       const layers = resolveExecutionOrder(def.jobs)
+      if (layers.length === 0) {
+        run.status = 'success'
+        run.completedAt = new Date().toISOString()
+        run.durationMs = Date.now() - new Date(run.startedAt!).getTime()
+        store.updateRun(run.id, run)
+        return run
+      }
 
-      // 3. 按 layer 顺序执行
-      const completedJobIds = new Set<string>()
-
+      // 3. 按 layer 顺序执行（layer 内真正并行，job 立即 push）
+      // 第一层所有 job 都是入度 0（无 needs）→ 全部并行启动
       for (const layerJobIds of layers) {
-        // 为当前层的每个 Job 创建 JobRun
-        const layerJobRuns: JobRun[] = []
-
-        for (const jobId of layerJobIds) {
+        const jobPromises = layerJobIds.map((jobId) => {
           const jobDef = def.jobs.find((j) => j.id === jobId)!
-          const jobRun = await executeJob(jobDef, def.env ?? {})
+          // 🆕 修复 #3：jobRun 创建后立即 push 到 run.jobs（UI 立刻可见）
+          const jobRun: JobRun = {
+            id: genId(),
+            jobDefId: jobDef.id,
+            status: 'running',
+            startedAt: new Date().toISOString(),
+            steps: [],
+          }
           run.jobs.push(jobRun)
-          layerJobRuns.push(jobRun)
-          completedJobIds.add(jobId)
-        }
-
-        // 等待当前层所有 Job 完成（非 matrix/sequential 的 job 可能立即完成）
-        // 注意：实际完成依赖 WS 回调，这里只做初始派发
+          // 启动执行但不 await → 同层所有 job 真正并行
+          return executeJob(jobDef, def.env ?? {}, jobRun).then(() => jobRun)
+        })
+        // 等待当前层所有 job 提交完毕（submit 完成，不等 WS 回调）
+        await Promise.all(jobPromises)
       }
 
       // 如果没有 job 有 steps（空 workflow），直接标记完成
@@ -272,20 +283,18 @@ export function useWorkflowEngine() {
   }
 
   /**
-   * 执行单个 Job：展开 Steps 并逐个或并行提交。
+   * 执行单个 Job：展开 Steps 并按 strategy 限流提交。
+   *
+   * 🆕 2026-06-10 修复 #4：内部 stepRunner 队列 + max concurrency
+   *   - 接受外部传入的 jobRun（runWorkflow 已 push 到 run.jobs）
+   *   - 构造所有 stepRun 立即 push 到 jobRun.steps（UI 立刻可见）
+   *   - 用并发限流执行（parallel.max / sequential 串行 / matrix 全展开）
    */
   async function executeJob(
     jobDef: JobDefinition,
     env: Record<string, string>,
+    jobRun: JobRun,
   ): Promise<JobRun> {
-    const jobRun: JobRun = {
-      id: genId(),
-      jobDefId: jobDef.id,
-      status: 'running',
-      startedAt: new Date().toISOString(),
-      steps: [],
-    }
-
     // 构建 continueOnError 映射（用于结论计算）
     const continueOnErrorMap = new Map<string, boolean>()
     for (const step of jobDef.steps) {
@@ -309,7 +318,9 @@ export function useWorkflowEngine() {
       }
     }
 
-    // 评估条件 + 执行每个 step
+    // 评估条件 + 构造 stepRun 列表（同步 push 到 jobRun.steps，UI 立刻可见）
+    type ExecutableStep = { stepDef: StepDefinition; binding?: MatrixBinding; stepRun: StepRun }
+    const executableSteps: ExecutableStep[] = []
     let prevStatus: StepStatus | undefined
 
     for (const exec of stepExecutions) {
@@ -341,7 +352,16 @@ export function useWorkflowEngine() {
         startedAt: new Date().toISOString(),
         matrixVars: binding,
       }
+      jobRun.steps.push(stepRun)
+      executableSteps.push({ stepDef, binding, stepRun })
+    }
 
+    // 🆕 修复 #4：按 strategy 限流执行（默认 5 并发）
+    const max = (jobDef.strategy && 'max' in jobDef.strategy) ? jobDef.strategy.max : 5
+
+    // 工具：执行单个 step（提交 + 状态更新）
+    const runOneStep = async (ex: ExecutableStep): Promise<void> => {
+      const { stepDef, binding, stepRun } = ex
       try {
         // 提交任务到后端
         const action = applyEnvToAction(stepDef.action, env, binding)
@@ -357,12 +377,19 @@ export function useWorkflowEngine() {
         stepRun.completedAt = new Date().toISOString()
         stepRun.durationMs = Date.now() - new Date(stepRun.startedAt!).getTime()
       }
+    }
 
-      jobRun.steps.push(stepRun)
-      if (isTerminalStep(stepRun.status)) {
-        prevStatus = stepRun.status
+    // 限流执行器：N 个 worker 共享 cursor 轮转拉取
+    let cursor = 0
+    const worker = async (): Promise<void> => {
+      while (cursor < executableSteps.length) {
+        const idx = cursor++
+        const ex = executableSteps[idx]
+        if (ex) await runOneStep(ex)
       }
     }
+    const workerCount = Math.min(max, executableSteps.length)
+    await Promise.all(Array.from({ length: workerCount }, () => worker()))
 
     // 检查 Job 是否已经全部完成（没有 running/pending 的 step）
     const allDone = jobRun.steps.every((s) => isTerminalStep(s.status))
@@ -466,8 +493,16 @@ export function useWorkflowEngine() {
 
       // 启动新的 Job
       const jobDef = def.jobs.find((j) => j.id === readyId)!
-      executeJob(jobDef, def.env ?? {}).then((jobRun) => {
-        currentRun.value!.jobs.push(jobRun)
+      // 🆕 修复 #3：先构造 jobRun 立即 push，再调 executeJob
+      const jobRun: JobRun = {
+        id: genId(),
+        jobDefId: jobDef.id,
+        status: 'running',
+        startedAt: new Date().toISOString(),
+        steps: [],
+      }
+      currentRun.value!.jobs.push(jobRun)
+      executeJob(jobDef, def.env ?? {}, jobRun).then(() => {
         store.updateRun(currentRun.value!.id, currentRun.value!)
       })
     }
