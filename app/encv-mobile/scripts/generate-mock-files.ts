@@ -24,7 +24,9 @@ import {
   type MockFileSpec,
 } from '../src/lib/mockDataGenerator'
 
-const MOCK_ROOT = process.env.ENCV_MOCK_ROOT || '/storage/emulated/0'
+// ⚠️ 必须与 ecosystem.config.cjs ENCV_MOCK_ROOT + usePathResolver.encv-automation 命名空间一致
+// 根因复盘：2026-06-10 路径不一致 bug → 三处必须同步
+const MOCK_ROOT = process.env.ENCV_MOCK_ROOT || '/storage/emulated/0/encv-automation'
 let root = MOCK_ROOT
 let genType = 'all' as string
 let fileCount = 0

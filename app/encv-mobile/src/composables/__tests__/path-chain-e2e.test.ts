@@ -90,7 +90,7 @@ describe('端到端路径一致性测试', () => {
 
   // ==================== 阶段 1：常量与计算 ====================
 
-  describe('阶段 1：常量定义', () => {
+  describe('阶段 1：常量定义 + 三处一致性约束', () => {
     it('DEFAULT_AUTOMATION_SOURCE 必须在 encv-automation 命名空间内', () => {
       expect(DEFAULT_AUTOMATION_SOURCE).toContain('/encv-automation/')
       expect(DEFAULT_AUTOMATION_SOURCE).toMatch(/^\/storage\/emulated\/0\/encv-automation\//)
@@ -105,6 +105,59 @@ describe('端到端路径一致性测试', () => {
       expect(mockRoot).toBe('/storage/emulated/0/encv-automation/')
       // mockRoot 是 DEFAULT_AUTOMATION_SOURCE 的父目录前缀
       expect(DEFAULT_AUTOMATION_SOURCE.startsWith(mockRoot.replace(/\/$/, ''))).toBe(true)
+    })
+
+    /**
+     * ⚠️ 关键回归测试：三处 ENCV_MOCK_ROOT 必须完全一致
+     *
+     * 链路：
+     *   A. ecosystem.config.cjs 注入的 env
+     *   B. generate-mock-files.ts 的 fallback 常量
+     *   C. useAutomationTests.ts 的 DEFAULT_AUTOMATION_SOURCE 父目录
+     *
+     * 如果任一处漂移 → Mock 写盘路径 ≠ 任务读盘路径 → source file not found
+     *
+     * 根因复盘：2026-06-10 之前 B/C 不一致（B=/storage/emulated/0，C=/storage/emulated/0/encv-automation）
+     */
+    it('【防回归】ecosystem.config.cjs ENCV_MOCK_ROOT 必须含 encv-automation', () => {
+      // 用 fs 直读配置文件（vitest 不解析 cjs，但文本比对足够）
+      const fs = require('fs')
+      const cfg = fs.readFileSync('/workspace/ecosystem.config.cjs', 'utf-8')
+      // 提取第一个 ENCV_MOCK_ROOT: '...' 值
+      const m = cfg.match(/ENCV_MOCK_ROOT:\s*['"]([^'"]+)['"]/)
+      expect(m, 'ENCV_MOCK_ROOT must be present in ecosystem.config.cjs').toBeTruthy()
+      expect(m![1]).toBe('/storage/emulated/0/encv-automation')
+    })
+
+    it('【防回归】generate-mock-files.ts 的 fallback 必须含 encv-automation', () => {
+      const fs = require('fs')
+      const src = fs.readFileSync(
+        '/workspace/app/encv-mobile/scripts/generate-mock-files.ts',
+        'utf-8',
+      )
+      // 提取 MOCK_ROOT = process.env.ENCV_MOCK_ROOT || '...' 字符串
+      const m = src.match(/MOCK_ROOT\s*=\s*process\.env\.ENCV_MOCK_ROOT\s*\|\|\s*['"]([^'"]+)['"]/)
+      expect(m, 'MOCK_ROOT fallback must be present in generate-mock-files.ts').toBeTruthy()
+      expect(m![1]).toBe('/storage/emulated/0/encv-automation')
+    })
+
+    it('【防回归】三处 ENCV_MOCK_ROOT 必须完全一致', () => {
+      const fs = require('fs')
+      const cfg = fs.readFileSync('/workspace/ecosystem.config.cjs', 'utf-8')
+      const script = fs.readFileSync(
+        '/workspace/app/encv-mobile/scripts/generate-mock-files.ts',
+        'utf-8',
+      )
+
+      const cfgMatch = cfg.match(/ENCV_MOCK_ROOT:\s*['"]([^'"]+)['"]/)
+      const scriptMatch = script.match(/MOCK_ROOT\s*=\s*process\.env\.ENCV_MOCK_ROOT\s*\|\|\s*['"]([^'"]+)['"]/)
+
+      expect(cfgMatch![1]).toBe(scriptMatch![1])
+
+      // 第三处：DEFAULT_AUTOMATION_SOURCE 的父目录
+      const expectedParent = '/storage/emulated/0/encv-automation'
+      expect(cfgMatch![1]).toBe(expectedParent)
+      expect(scriptMatch![1]).toBe(expectedParent)
     })
   })
 
