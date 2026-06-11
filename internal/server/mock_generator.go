@@ -14,6 +14,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,6 +24,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Soltus/encv-go/internal/utils/ffmpeg"
 	"github.com/gin-gonic/gin"
 )
 
@@ -334,16 +336,138 @@ func emitSseEvent(w io.Writer, flusher http.Flusher, event, data string) {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// 最小有效字节模板（go:embed 预编码，零 ffmpeg 运行时调用）
+// 最小有效字节模板（ffmpeg 真输入 → 输出，不用 lavfi）
 // ════════════════════════════════════════════════════════════════════
 //
-// 2026-06-11 改造：参考加密视频任务怎么调用 ffmpeg 的
-//   - 加密视频任务：ffmpeg.Run 调「真输入文件 → 输出文件」（不依赖 lavfi）
-//   - mock 生成：    直接用「真文件字节」= go:embed 进二进制
-//   - 真机/沙箱/dev 行为一致，零 cgo 边界
+// 2026-06-11 v3 改造：恢复调 ffmpeg（用户反馈"辛苦集成你不调"）
+//   v1: ffmpeg + lavfi（真机崩，lavfi 没编）
+//   v2: go:embed 预编码 mp4/mkv/mp3/flac（绕开 ffmpeg，被批）
+//   v3: ffmpeg + 真输入文件（go:embed source.mp4/source.wav → 写 tmp → ffmpeg 读）
 //
-// 详见 [mock_media_embedded.go](mock_media_embedded.go) 的根因分析。
+// 真机 ffmpeg build manifest 限制（[app/encv-mobile/scripts/ffmpeg-feature-manifest.json]）：
+//   encoders: aac, pcm_s16le, pcm_s24le, pcm_s32le, libx264
+//   muxers:   mp4, matroska, flac, mp3, adts, null
+//   demuxers: mov, matroska, aac, mp3, flac, ogg, wav
+//
+// 因此真机能生成的：
+//   mp4  ✅ mov demuxer + mp4 muxer + h264/aac（用 source.mp4 -c copy）
+//   mkv  ✅ mov demuxer + matroska muxer + h264/aac（用 source.mp4 -c copy）
+//   mp3  ❌ 没 libmp3lame encoder
+//   flac ❌ 没 flac encoder
+//
+// 沙箱 ffmpeg 6.1 完整，4 个全 OK。
+// 测试在沙箱跑全部 4 个 subtest，real device 仅 mp4/mkv 有数据。
 // ════════════════════════════════════════════════════════════════════
+
+// ffmpegGenerate 用 ffmpeg + 真输入文件生成目标格式
+//
+// 流程：
+//   1. ffmpeg.Available() 检查（沙箱 exec / 真机 dlopen）
+//   2. 写 source.mp4 / source.wav 到 /tmp（go:embed 字节）
+//   3. ffmpeg 读真文件 → 输出到 /tmp
+//   4. 读回 /tmp 字节
+//
+// 失败返回 nil（**严禁 base64 fallback** —— 那是 171 字节假 MKV 垃圾）
+func ffmpegGenerate(ext string) []byte {
+	// 0. ffmpeg 可用性
+	ffmpegOk, _, errMsg := ffmpeg.Available()
+	if !ffmpegOk {
+		slog.Warn("[mock] ffmpeg not available, returning nil (no base64 fallback)", "ext", ext, "errMsg", errMsg)
+		return nil
+	}
+
+	// 1. 选源文件 + 写 tmp
+	var srcBytes []byte
+	var srcName string
+	var srcArgs []string  // ffmpeg -i src
+	switch ext {
+	case "mp4", "mkv":
+		srcBytes = sourceMP4Bytes
+		srcName = "encv-mock-src-" + fmt.Sprintf("%d", os.Getpid()) + ".mp4"
+		srcArgs = []string{"-i", ""}  // placeholder, set after WriteFile
+	case "mp3", "flac":
+		srcBytes = sourceWAVBytes
+		srcName = "encv-mock-src-" + fmt.Sprintf("%d", os.Getpid()) + ".wav"
+		srcArgs = []string{"-i", ""}
+	default:
+		slog.Warn("[mock] unknown ext, returning nil", "ext", ext)
+		return nil
+	}
+	srcPath := filepath.Join(os.TempDir(), srcName)
+	if err := os.WriteFile(srcPath, srcBytes, 0644); err != nil {
+		slog.Warn("[mock] write source failed", "ext", ext, "err", err)
+		return nil
+	}
+	defer func() { _ = os.Remove(srcPath) }()
+	srcArgs[1] = srcPath
+
+	// 2. 输出 tmp
+	dstPath := filepath.Join(os.TempDir(), "encv-mock-dst-"+fmt.Sprintf("%d", os.Getpid())+"."+ext)
+	defer func() { _ = os.Remove(dstPath) }()
+
+	// 3. ffmpeg args
+	var encodeArgs []string
+	switch ext {
+	case "mp4":
+		// 真机 ffmpeg 没 aac 编码器？manifest 有 aac encoder，OK
+		// 用 source.mp4 直接 -c copy（最快，也是真机最稳路径）
+		encodeArgs = []string{"-c", "copy"}
+	case "mkv":
+		// source.mp4 -c copy → .mkv（h264+aac → matroska container）
+		encodeArgs = []string{"-c", "copy"}
+	case "mp3":
+		// 沙箱有 libmp3lame；真机没编 → 真机返回 nil
+		encodeArgs = []string{"-c:a", "libmp3lame", "-b:a", "128k"}
+	case "flac":
+		// 沙箱有 flac encoder；真机没编 → 真机返回 nil
+		encodeArgs = []string{"-c:a", "flac"}
+	}
+
+	// 4. 组装完整 args
+	args := append([]string{}, srcArgs...)
+	args = append(args, encodeArgs...)
+	args = append(args, "-y", "-loglevel", "error", dstPath)
+
+	// 5. 跑 ffmpeg
+	ctx := context.Background()
+	_, stderr, exitCode, err := ffmpeg.RunWithOutput(ctx, args...)
+	if err != nil || exitCode != 0 {
+		// 典型 stderr："Unknown encoder 'libmp3lame'" / "Encoder not found"
+		slog.Warn("[mock] ffmpeg generate failed", "ext", ext, "args", args, "exitCode", exitCode, "err", err, "stderr", stderr)
+		return nil
+	}
+
+	// 6. 读回
+	data, err := os.ReadFile(dstPath)
+	if err != nil || len(data) == 0 {
+		slog.Warn("[mock] read dst failed", "ext", ext, "err", err, "size", len(data))
+		return nil
+	}
+	slog.Info("[mock] ffmpeg generated media", "ext", ext, "size", len(data), "src", srcName)
+	return data
+}
+
+func minimalMP4() []byte {
+	// 2026-06-11 v3：ffmpeg + source.mp4 (-c copy) → mp4
+	return ffmpegGenerate("mp4")
+}
+
+func minimalMKV() []byte {
+	// 2026-06-11 v3：ffmpeg + source.mp4 (-c copy) → mkv
+	return ffmpegGenerate("mkv")
+}
+
+func minimalMP3() []byte {
+	// 2026-06-11 v3：ffmpeg + source.wav → mp3
+	// 真机没 libmp3lame → 返回 nil（详见 ffmpegGenerate 注释）
+	return ffmpegGenerate("mp3")
+}
+
+func minimalFLAC() []byte {
+	// 2026-06-11 v3：ffmpeg + source.wav → flac
+	// 真机没 flac encoder → 返回 nil
+	return ffmpegGenerate("flac")
+}
 
 func minimalJPEG() []byte {
 	// 来自 scripts/generate-mock-files.ts 1:1 对应
@@ -404,28 +528,6 @@ func pngCrcTable() [256]uint32 {
 		pngCrcCache[i] = c
 	}
 	return pngCrcCache
-}
-
-func minimalMP4() []byte {
-	// 2026-06-11 改造：go:embed 预编码字节（沙箱 ffmpeg 6.1 一次性生成 → 详见 mock_media_embedded.go）
-	// h264 + aac, 2.0s, 320x240, 19801 bytes
-	// 真机/沙箱行为一致，零 ffmpeg 运行时调用，零 cgo 边界
-	return minimalMP4Bytes
-}
-
-func minimalMKV() []byte {
-	// h264 + vorbis, 2.0s, 160x120, 9586 bytes
-	return minimalMKVBytes
-}
-
-func minimalMP3() []byte {
-	// mp3 128k, 2.0s, 33062 bytes
-	return minimalMP3Bytes
-}
-
-func minimalFLAC() []byte {
-	// flac s16, 2.0s, 32987 bytes
-	return minimalFLACBytes
 }
 
 func minimalPDF() []byte {

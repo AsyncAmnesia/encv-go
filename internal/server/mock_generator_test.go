@@ -199,10 +199,12 @@ func TestMinimalMediaMagic(t *testing.T) {
 // 2026-06-11 修复验证（替换 2026-06-10 旧版）
 // 历史 bug：minimalMP4() 返回 36 字节 (ftyp+moov+mdat header)，无视频帧数据。
 // 旧 fix (2026-06-10)：ffmpeg 优先 + base64 内嵌 fallback（4.8KB MP4 / 171B MKV）
-// 新 fix (2026-06-11)：删 base64 fallback，**只**走 ffmpeg
-//   - 沙箱：/usr/bin/ffmpeg 在 → mp4=19801B / mkv=9453B / mp3=33062B / flac=32487B（实测）
-//   - 真机：libffmpeg.so dlopen 调 ffmpeg_run
-//   - CI 容器无 ffmpeg → requireFFmpeg SKIP，不算失败
+// v2 fix (2026-06-11)：go:embed 预编码 mp4/mkv/mp3/flac 字节（被用户否决，绕开 ffmpeg）
+// v3 fix (2026-06-11)：go:embed 嵌「真输入文件」+ ffmpeg 真调用
+//   - 嵌 source.mp4 (h264+aac, 2s, 160x120, 19458B) + source.wav (pcm_s16le, 1s, 8kHz mono, 16078B)
+//   - 写 tmp → ffmpeg.RunWithOutput 读真文件 → 目标格式
+//   - 沙箱（ffmpeg 6.1 完整）：mp4=19458B / mkv=19001B / mp3=10413B / flac=12174B（实测）
+//   - 真机（libffmpeg.so 减编）：mp4/mkv OK（-c copy）；mp3/flac 无 encoder → 返回 nil
 func TestMinimalMediaIsPlayable(t *testing.T) {
 	requireFFmpeg(t)
 	tests := []struct {
@@ -211,10 +213,10 @@ func TestMinimalMediaIsPlayable(t *testing.T) {
 		minBytes int
 		why      string
 	}{
-		{"MP4 (mp4 box + frame data)", minimalMP4(), 2000, "ffmpeg -map 0:a -map 1:v + libx264+aac = ~20KB"},
-		{"MKV (EBML + audio block)", minimalMKV(), 1000, "ffmpeg -map 0:a -map 1:v + libvorbis+libx264 = ~9KB"},
-		{"MP3 (ID3v2 + 108 frames)", minimalMP3(), 30000, "ffmpeg libmp3lame 128kbps 2s = ~33KB"},
-		{"FLAC (fLaC sig + STREAMINFO)", minimalFLAC(), 5000, "ffmpeg flac -sample_fmt s16 2s = ~32KB"},
+		{"MP4 (mp4 box + frame data)", minimalMP4(), 2000, "ffmpeg -c copy source.mp4 → 19458B"},
+		{"MKV (EBML + audio block)", minimalMKV(), 1000, "ffmpeg -c copy source.mp4 → mkv = 19001B"},
+		{"MP3 (ID3v2 + frames)", minimalMP3(), 5000, "ffmpeg libmp3lame 128kbps 1s wav → ~10KB"},
+		{"FLAC (fLaC sig + STREAMINFO)", minimalFLAC(), 5000, "ffmpeg flac 1s wav → ~12KB"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
