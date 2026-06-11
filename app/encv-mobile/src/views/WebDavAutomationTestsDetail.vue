@@ -70,7 +70,7 @@
               :placeholder="t('devtools.webdavAuth.usernamePlaceholder')"
               autocapitalize="off"
               autocorrect="off"
-              spellcheck="false"
+              :spellcheck="false"
             ></ion-input>
           </ion-item>
           <ion-item>

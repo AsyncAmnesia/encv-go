@@ -24,7 +24,7 @@
  * - task 完成后调 clearTriggeredBy 清理（避免污染后续真实 task 的分组）
  */
 import { ref, computed } from 'vue'
-import { setTaskMetadata, getTaskMetadata, type TriggeredBy } from './useTaskTrigger'
+import { setTaskMetadata } from './useTaskTrigger'
 
 // ============= WebDAV Basic Auth =============
 // 🆕 2026-06-11：避免 fetch 收到 401 触发浏览器原生弹窗，统一注入 Authorization header
