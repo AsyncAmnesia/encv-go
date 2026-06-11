@@ -139,6 +139,20 @@ export default {
     'tasks.openOutput': '打开产物',
     'tasks.locateInFiles': '在 Files 中定位',
     'tasks.previewUnsupportedExt': '该扩展名暂不支持直接预览',
+
+    // 🆕 2026-06-11 v5：breadcrumb 层级 + section 维度
+    'tasks.hierarchy': '任务层级',
+    'tasks.runLabel': '运行',
+    'tasks.taskLabel': '任务',
+    'tasks.workflowVersion': '工作流版本',
+    'tasks.workflowRunId': '运行 ID',
+    'tasks.runIdCopied': '运行 ID 已复制',
+    'tasks.runIdCopyFailed': '复制运行 ID 失败',
+    'tasks.dimensionPlugin': '插件',
+    'tasks.dimensionType': '类型',
+    'tasks.dimensionCategory': '分类',
+    'tasks.dimensionNone': '其他',
+    'tasks.sectionOther': '其他任务',
   },
   en: {
     'tasks.title': 'Tasks',
@@ -280,5 +294,19 @@ export default {
     'tasks.openOutput': 'Open Output',
     'tasks.locateInFiles': 'Locate in Files',
     'tasks.previewUnsupportedExt': 'This extension is not directly previewable',
+
+    // 🆕 2026-06-11 v5: breadcrumb hierarchy + section dimension
+    'tasks.hierarchy': 'Task Hierarchy',
+    'tasks.runLabel': 'Run',
+    'tasks.taskLabel': 'Task',
+    'tasks.workflowVersion': 'Workflow Version',
+    'tasks.workflowRunId': 'Run ID',
+    'tasks.runIdCopied': 'Run ID copied',
+    'tasks.runIdCopyFailed': 'Copy run ID failed',
+    'tasks.dimensionPlugin': 'Plugin',
+    'tasks.dimensionType': 'Type',
+    'tasks.dimensionCategory': 'Category',
+    'tasks.dimensionNone': 'Other',
+    'tasks.sectionOther': 'Other Tasks',
   },
 }

@@ -216,10 +216,10 @@
             </ion-item>
           </ion-item-sliding>
 
-          <!-- 🆕 2026-06-10 修复 v2：2 级嵌套的 plugin sub-section 段头 -->
-          <!-- 在 group card 展开后插入，按 pluginName 桶里每个 plugin 1 个段头 -->
-          <!-- 段头下方是该 plugin 的所有 task 卡片（紧随其后的 kind='task' 项） -->
-          <!-- 不折叠、不滑动、不带 chevron — 跟外层 group 同步展开/折叠 -->
+          <!-- 🆕 2026-06-10 修复 v2：2 级嵌套的 sub_section 段头 -->
+          <!-- 在 group card 展开后插入，按 section 维度（v5）桶里每个 section 1 个段头 -->
+          <!-- 段头下方是该 section 的所有 task 卡片（紧随其后的 kind='task' 项） -->
+          <!-- 🆕 2026-06-11 v5：sub_section 可独立折叠 + sticky 滚动冻结 -->
           <!--
             🆕 2026-06-10 修复 v3：改用 <ion-item> 而不是裸 <div>
             历史：<div> 在 <ion-list> 里 → Ionic 把 <div> 当普通子节点，但 <ion-list> 有自己的
@@ -228,20 +228,24 @@
               - 任务卡和段头之间没分隔线
               - "插件没正确识别，任务依旧全部平铺"
             修复：用 <ion-item> + 自定义 class，禁用 button/clickable，让 Ionic 当作「装饰 item」
+            🆕 2026-06-11 v5：恢复 button + clickable（要可折叠），用 sticky CSS 解决冻结
           -->
           <ion-item
-            v-else-if="item.kind === 'plugin_section'"
-            :class="['plugin-sub-section', `plugin-tone-${item.tone}`]"
+            v-else-if="item.kind === 'sub_section_header'"
+            button
+            detail="false"
+            @click="toggleSubSection(item.subKey)"
+            :class="['sub-section-header', `sub-dim-${item.meta.dimension}`, `sub-tone-${item.meta.tone}`, { 'is-sticky': true, 'is-collapsed': item.isCollapsed }]"
             :lines="'none'"
           >
-            <div class="plugin-sub-icon" :class="`plugin-tone-${item.tone}`" slot="start">
-              <ion-icon :icon="extensionPuzzle"></ion-icon>
+            <div class="sub-section-icon-bubble" :class="`sub-tone-${item.meta.tone}`" slot="start">
+              <ion-icon :icon="getSubSectionIcon(item.meta.icon)"></ion-icon>
             </div>
-            <ion-label class="plugin-sub-label">
-              <h3 class="plugin-sub-name">{{ item.pluginName }}</h3>
-              <p class="plugin-sub-count">· {{ item.tasks.length }} {{ t('tasks.tasksCount') }}</p>
+            <ion-label class="sub-section-label">
+              <h3 class="sub-section-name">{{ item.meta.label }}</h3>
+              <p class="sub-section-count">· {{ item.tasks.length }} {{ t('tasks.tasksCount') }}</p>
             </ion-label>
-            <div class="plugin-sub-badges" slot="end">
+            <div class="sub-section-badges" slot="end">
               <ion-badge v-if="item.subSummary.passed > 0" color="success" class="status-badge">
                 <ion-icon :icon="checkmarkCircle" class="badge-icon"></ion-icon>
                 {{ item.subSummary.passed }}
@@ -258,16 +262,34 @@
                 {{ item.subSummary.pending }}
               </ion-badge>
             </div>
-            <div class="plugin-sub-progress-track">
+            <ion-button
+              slot="end"
+              fill="clear"
+              size="small"
+              :title="item.isCollapsed ? t('tasks.expand') : t('tasks.collapse')"
+              class="sub-section-chevron-btn"
+              @click.stop="toggleSubSection(item.subKey)"
+            >
+              <ion-icon
+                :icon="item.isCollapsed ? chevronForward : chevronDown"
+                slot="icon-only"
+              ></ion-icon>
+            </ion-button>
+            <div class="sub-section-progress-track">
               <div
-                class="plugin-sub-progress-fill"
+                class="sub-section-progress-fill"
                 :style="{ width: item.subSummary.percent + '%' }"
               ></div>
             </div>
           </ion-item>
 
           <ion-item-sliding v-else>
-            <ion-item @click="openTaskDetail(item.task)" button detail>
+            <ion-item
+              @click="openTaskDetail(item.task)"
+              button
+              detail
+              v-show="!item.subKey || !isSubSectionCollapsed(item.subKey)"
+            >
               <ion-icon
                 :icon="getTaskIcon(item.task)"
                 :color="getTaskColor(item.task)"
@@ -399,6 +421,7 @@ import {
   warningOutline, lockClosed, search, funnel, trashBin,
   extensionPuzzle, swapVertical, chevronDown,
   hardwareChipOutline, cogOutline, person, chevronForward, chevronBack,
+  folderOutline, ellipsisHorizontalCircleOutline,
 } from 'ionicons/icons'
 import { useRoute, useRouter } from 'vue-router'
 import type { EncvTask, TaskType } from '@/api/encv'
@@ -409,7 +432,7 @@ import { showToast } from '@/composables/useToast'
 import { useNewTaskModal } from '@/composables/useNewTaskModal'
 import { useTasksList } from '@/composables/useTasksList'
 import { useTaskEventBridge } from '@/composables/useTaskEventBridge'
-import { getTriggeredBy, getRunIdForTask } from '@/composables/useTaskTrigger'
+import { getTriggeredBy, getRunIdForTask, clearTriggeredBy } from '@/composables/useTaskTrigger'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -451,6 +474,19 @@ function getTriggeredByColor(taskId: string): string {
 function getTriggeredByIcon(taskId: string): string {
   const v = getTriggeredBy(taskId)
   return v === 'automation' ? cogOutline : v === 'ai_agent' ? hardwareChipOutline : person
+}
+
+// 🆕 2026-06-11 v5：sub_section icon name → ionicon 映射
+// 升级指南：未来加 dimension 在 SECTION_META 加 icon name 字符串，
+//   然后在这个 map 加一条就行，不用动模板
+const SUB_SECTION_ICON_MAP: Record<string, string> = {
+  'extension-puzzle': extensionPuzzle,
+  'swap-vertical': swapVertical,
+  'folder': folderOutline,
+  'ellipsis-horizontal-circle': ellipsisHorizontalCircleOutline,
+}
+function getSubSectionIcon(name: string): string {
+  return SUB_SECTION_ICON_MAP[name] ?? ellipsisHorizontalCircleOutline
 }
 
 async function openTaskDetail(task: EncvTask) {
@@ -520,10 +556,115 @@ const GROUP_FOLD_THRESHOLD = 2
 // 历史：plugin_section key = `plugin-section-${tone}-${pluginName}-${tasks[0]?.id}`
 //   → 第一个 task 变化（如新增 / 排序调整）就触发整段 Vue 重建 → 闪烁/消失
 // 修复：key 改用 `plugin-section-${runId}-${pluginName}`（runId+pluginName 都稳定）
+// 🆕 2026-06-11 修复 v5：section 维度抽象（架构向上兼容）
+// 历史：buildPluginSectionItem 硬编码 pluginName → 未来加「下载 / 同步 / 清理」等
+//   非 plugin 任务时，task.pluginName 为空 → 全部归到 '(unknown plugin)' → 烂成一锅
+// 修复：引入 SubSectionKey 抽象维度（dimension + value），按 task 属性动态派生
+//   - 当前支持 4 种 dimension：plugin / type / category / none
+//   - 未来加新维度：只需要在 SECTION_META 加一行 + deriveSubSection 加一个 case
+//   - task 没 pluginName → fallback 到 'none'（不会丢失，归到「其他任务」section）
+type SectionDimension = 'plugin' | 'type' | 'category' | 'none'
+
+interface SubSectionKey {
+  dimension: SectionDimension
+  value: string  // 'AES-256' / 'encrypt' / 'download' / '__none__'
+}
+
+interface SubSectionMeta {
+  dimension: SectionDimension
+  value: string
+  /** 显示名（默认就是 value，特殊 case 可覆盖） */
+  label: string
+  /** ionicon 名称（用于 sub_section_header 左侧 icon bubble） */
+  icon: string
+  /** CSS tone class（决定颜色/背景） */
+  tone: SectionDimension
+}
+
+const SECTION_META: Record<SectionDimension, { icon: string; toneClass: string }> = {
+  plugin: { icon: 'extension-puzzle', toneClass: 'plugin' },
+  type: { icon: 'swap-vertical', toneClass: 'type' },
+  category: { icon: 'folder', toneClass: 'category' },
+  none: { icon: 'ellipsis-horizontal-circle', toneClass: 'none' },
+}
+
+function sectionKeyToString(k: SubSectionKey): string {
+  return `${k.dimension}:${k.value}`
+}
+
+/**
+ * 🆕 2026-06-11 v5：从 task 派生 SubSection（架构核心）
+ * 当前规则（按优先级）：
+ *   1. task.pluginName 存在 → 'plugin' 维度（按插件分桶）
+ *   2. 未来扩展：task.category / task.subType 等可在中间插入 case
+ *   3. 都没 → 'none' 维度（统一归到「其他任务」section，不会丢失）
+ *
+ * 升级指南：未来加新维度时
+ *   - SECTION_META 加一条（icon + toneClass）
+ *   - deriveSubSection 加一个 if 分支
+ *   - i18n 加 'tasks.dimensionXxx' 文案
+ *   不需要改 displayedItems / 模板 / CSS
+ */
+function deriveSubSection(task: EncvTask): SubSectionKey {
+  if (task.pluginName) {
+    return { dimension: 'plugin', value: task.pluginName }
+  }
+  // 未来扩展预留：
+  // if (task.category) return { dimension: 'category', value: task.category }
+  // if (task.subType) return { dimension: 'type', value: task.subType }
+  return { dimension: 'none', value: '__none__' }
+}
+
+function buildSubSectionMeta(key: SubSectionKey): SubSectionMeta {
+  const meta = SECTION_META[key.dimension]
+  // label 默认用 value 本身，特殊 case 可覆盖
+  let label = key.value
+  if (key.dimension === 'none' && key.value === '__none__') {
+    label = '其他任务'  // fallback section 标签（i18n key 在模板里覆盖）
+  }
+  if (key.dimension === 'type') {
+    label = key.value === 'encrypt' ? '加密任务' : key.value === 'decrypt' ? '解密任务' : key.value
+  }
+  return {
+    dimension: key.dimension,
+    value: key.value,
+    label,
+    icon: meta.icon,
+    tone: key.dimension,
+  }
+}
+
 type DisplayItem =
-  | { kind: 'group'; key: string; groupKey: string; runId: string; tone: 'automation' | 'ai_agent'; tasks: EncvTask[]; summary: { passed: number; failed: number; running: number; pending: number; percent: number; latestCreatedAt: string } }
-  | { kind: 'plugin_section'; key: string; runId: string; pluginName: string; tone: 'automation' | 'ai_agent'; tasks: EncvTask[]; subSummary: { passed: number; failed: number; running: number; pending: number; percent: number } }
-  | { kind: 'task'; key: string; task: EncvTask }
+  | {
+      kind: 'group'
+      key: string
+      groupKey: string
+      runId: string
+      tone: 'automation' | 'ai_agent'
+      tasks: EncvTask[]
+      /** 内部 section 桶（用于 sub_section 展开时按桶渲染） */
+      sections: Array<{ sectionKeyStr: string; meta: SubSectionMeta; tasks: EncvTask[] }>
+      summary: { passed: number; failed: number; running: number; pending: number; percent: number; latestCreatedAt: string }
+    }
+  | {
+      kind: 'sub_section_header'
+      key: string
+      subKey: string
+      runId: string
+      meta: SubSectionMeta
+      tasks: EncvTask[]
+      isCollapsed: boolean
+      subSummary: { passed: number; failed: number; running: number; pending: number; percent: number }
+    }
+  | {
+      kind: 'task'
+      key: string
+      task: EncvTask
+      /** 所属 sub_section key（决定 v-show 是否隐藏） */
+      subKey: string | null
+      /** 所属 group key（决定 v-show 是否隐藏 — group 折叠时整段隐藏） */
+      groupKey: string | null
+    }
 
 // 🆕 2026-06-10 修复 v2：expandedGroupKeys 持久化到 localStorage
 // 历史：ref<Set<string>> 是组件级 state，组件 unmount/remount（如 tab 切换、抽屉开关）会丢
@@ -565,34 +706,59 @@ function isTaskGroupExpanded(key: string): boolean {
   return expandedGroupKeys.value.has(key)
 }
 
+// 🆕 2026-06-11 v5：sub_section 折叠状态（每个 section header 可独立折叠）
+// 持久化 key v2（v1 用 plugin-section 前缀，已废弃）
+const COLLAPSED_SUBSECTIONS_KEY = 'encv_tasks_collapsed_subsections_v1'
+function loadCollapsedSubSections(): Set<string> {
+  try {
+    const raw = localStorage.getItem(COLLAPSED_SUBSECTIONS_KEY)
+    if (!raw) return new Set()
+    const arr = JSON.parse(raw) as string[]
+    return new Set(Array.isArray(arr) ? arr : [])
+  } catch {
+    return new Set()
+  }
+}
+const collapsedSubSectionKeys = ref<Set<string>>(loadCollapsedSubSections())
+watch(
+  collapsedSubSectionKeys,
+  (v) => {
+    try {
+      localStorage.setItem(COLLAPSED_SUBSECTIONS_KEY, JSON.stringify(Array.from(v)))
+    } catch {
+      // silent
+    }
+  },
+  { deep: true },
+)
+function toggleSubSection(key: string) {
+  const next = new Set(collapsedSubSectionKeys.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  collapsedSubSectionKeys.value = next
+}
+function isSubSectionCollapsed(key: string): boolean {
+  return collapsedSubSectionKeys.value.has(key)
+}
+
 const displayedItems = computed<DisplayItem[]>(() => {
   const tasks = filteredTasks.value
   if (tasks.length === 0) return []
 
-  // 🆕 2026-06-10 修复 #2 v3 终版：按 workflow runId 分组，**不再兼容旧版**
-  // 历史：useAutomationTests.runTests() 每个 task 用 Date.now() 生成独立 runId
-  //   → Tasks.vue 永远看不到 group 折叠（已修：1 次 runTests = 1 个共享 runId）
-  //
-  // 🆕 2026-06-10 修复：2 级嵌套 — group 内部按 pluginName 再分桶
-  //   - 同 runId 的 task 归 1 个 group
-  //   - group 展开时按 pluginName 分桶，每个 plugin 渲染 plugin_section 段头
-  //   - plugin_section 下方是该 plugin 的所有 task 卡片
+  // 🆕 2026-06-11 v5：按 SubSection 维度分桶（不再硬编码 pluginName）
+  // 历史：之前 plugins: Map<pluginName, tasks[]> 假设 task.pluginName 必存在
+  // 修复：sections: Map<sectionKeyStr, { meta, tasks }> 通用化，未来加 category 维度
+  //   只需要在 deriveSubSection 加一个 case
   interface Group {
     runId: string
     tone: 'automation' | 'ai_agent'
-    /** plugins[pluginName] = 该 plugin 的 task 列表（按 filteredTasks 顺序插入） */
-    plugins: Map<string, EncvTask[]>
+    sections: Array<{ sectionKeyStr: string; meta: SubSectionMeta; tasks: EncvTask[] }>
   }
   const groupsByRun = new Map<string, Group>()
-  const singletonTasks: EncvTask[] = []  // 🆕 没有 runId / triggeredBy='user' 的单条 task
+  const singletonTasks: EncvTask[] = []
 
   for (const t of tasks) {
     // 🆕 2026-06-10 修复 v4：直接读 task 对象上的 triggeredBy / runId
-    // 历史：必须调 getTriggeredBy / getRunIdForTask 查 localStorage → 跨 session / 清空 localStorage
-    //   → 「任务组只在一开始正确显示，展开后一会就消失，插件没正确识别，任务依旧全部平铺」
-    // 修复：useTaskTrigger.setTaskMetadata 在 submitAction 后立即写进 taskMetadata Map
-    //   useTasksList.applyTaskCreated / fetchTasks 把 metadata merge 进 task 对象本身
-    //   这里直接读 t.triggeredBy / t.runId → O(1) 内存访问，永远可靠
     const by = t.triggeredBy ?? getTriggeredBy(t.id)
     if (by === 'user') {
       singletonTasks.push(t)
@@ -604,14 +770,21 @@ const displayedItems = computed<DisplayItem[]>(() => {
       continue
     }
     const tone: 'automation' | 'ai_agent' = by === 'ai_agent' ? 'ai_agent' : 'automation'
-    const pluginName = t.pluginName || '(unknown plugin)'
+    // 🆕 v5：用 deriveSubSection 动态派生（兼容 task 没 pluginName 的情况）
+    const section = deriveSubSection(t)
+    const sectionKeyStr = sectionKeyToString(section)
+    const meta = buildSubSectionMeta(section)
     const g = groupsByRun.get(runId)
     if (g) {
-      const arr = g.plugins.get(pluginName)
-      if (arr) arr.push(t)
-      else g.plugins.set(pluginName, [t])
+      const sec = g.sections.find((s) => s.sectionKeyStr === sectionKeyStr)
+      if (sec) sec.tasks.push(t)
+      else g.sections.push({ sectionKeyStr, meta, tasks: [t] })
     } else {
-      groupsByRun.set(runId, { runId, tone, plugins: new Map([[pluginName, [t]]]) })
+      groupsByRun.set(runId, {
+        runId,
+        tone,
+        sections: [{ sectionKeyStr, meta, tasks: [t] }],
+      })
     }
   }
 
@@ -619,46 +792,46 @@ const displayedItems = computed<DisplayItem[]>(() => {
   const allGroups: Group[] = Array.from(groupsByRun.values())
   allGroups.sort((a, b) => {
     const aEarliest = Math.min(
-      ...Array.from(a.plugins.values()).flatMap((arr) => arr.map((t) => new Date(t.createdAt).getTime())),
+      ...a.sections.flatMap((s) => s.tasks.map((t) => new Date(t.createdAt).getTime())),
     )
     const bEarliest = Math.min(
-      ...Array.from(b.plugins.values()).flatMap((arr) => arr.map((t) => new Date(t.createdAt).getTime())),
+      ...b.sections.flatMap((s) => s.tasks.map((t) => new Date(t.createdAt).getTime())),
     )
-    return bEarliest - aEarliest  // 最新在最前
+    return bEarliest - aEarliest
   })
 
-  // 输出：singleton tasks + group cards（每个 group ≥ 阈值时折叠）
+  // 输出：singleton tasks + group cards
   const result: DisplayItem[] = []
   for (const t of singletonTasks) {
-    result.push({ kind: 'task', key: t.id, task: t })
+    result.push({ kind: 'task', key: t.id, task: t, subKey: null, groupKey: null })
   }
   for (const g of allGroups) {
-    // 把 group 内的所有 task 拉平成数组（按 plugin 顺序 + plugin 内 filteredTasks 顺序）
-    const allGroupTasks: EncvTask[] = []
-    for (const arr of g.plugins.values()) {
-      allGroupTasks.push(...arr)
-    }
+    // 拉平 group 内所有 task 用于 group summary
+    const allGroupTasks: EncvTask[] = g.sections.flatMap((s) => s.tasks)
     if (allGroupTasks.length >= GROUP_FOLD_THRESHOLD) {
       const groupKey = `${g.tone}-${g.runId}`
-      const expanded = expandedGroupKeys.value.has(groupKey)
+      const groupExpanded = expandedGroupKeys.value.has(groupKey)
       // 始终构造 group card
-      result.push(buildGroupItem(groupKey, g.runId, allGroupTasks, g.tone))
-      if (expanded) {
-        // 🆕 2 级嵌套：group 展开时按 pluginName 插入 plugin_section 段头
-        for (const [pluginName, pluginTasks] of g.plugins.entries()) {
-          result.push(buildPluginSectionItem(g.runId, pluginName, pluginTasks, g.tone))
-          for (const t of pluginTasks) {
-            result.push({ kind: 'task', key: t.id, task: t })
+      result.push(buildGroupItem(groupKey, g.runId, allGroupTasks, g.tone, g.sections))
+      if (groupExpanded) {
+        // 🆕 v5：group 展开时按 section 维度插 sub_section_header（可折叠 + sticky）
+        for (const sec of g.sections) {
+          const subKey = `sub-${groupKey}-${sec.sectionKeyStr}`
+          const isCollapsed = collapsedSubSectionKeys.value.has(subKey)
+          result.push(buildSubSectionHeader(subKey, g.runId, sec.meta, sec.tasks, isCollapsed))
+          // sub_section 内的 task 跟随折叠
+          for (const t of sec.tasks) {
+            result.push({ kind: 'task', key: t.id, task: t, subKey, groupKey })
           }
         }
       }
     } else {
-      // 不足阈值 → 全部展开为普通 task（保留顺序，不打乱列表）
-      // 🆕 仍然按 plugin 插入 sub-section header，让用户看到「这是按 plugin 组织的」
-      for (const [pluginName, pluginTasks] of g.plugins.entries()) {
-        result.push(buildPluginSectionItem(g.runId, pluginName, pluginTasks, g.tone))
-        for (const t of pluginTasks) {
-          result.push({ kind: 'task', key: t.id, task: t })
+      // 不足阈值 → 全部展开为 task（保留顺序 + sub_section header 让用户看到分组）
+      for (const sec of g.sections) {
+        const subKey = `sub-${g.tone}-${g.runId}-${sec.sectionKeyStr}`
+        result.push(buildSubSectionHeader(subKey, g.runId, sec.meta, sec.tasks, false))
+        for (const t of sec.tasks) {
+          result.push({ kind: 'task', key: t.id, task: t, subKey, groupKey: null })
         }
       }
     }
@@ -674,6 +847,7 @@ function buildGroupItem(
   runId: string,  // 🆕 用于上层 buildPluginSectionItem
   seg: EncvTask[],
   tone: 'automation' | 'ai_agent',
+  sections: Array<{ sectionKeyStr: string; meta: SubSectionMeta; tasks: EncvTask[] }>,
 ): DisplayItem {
   let passed = 0, failed = 0, running = 0, pending = 0
   let latest = seg[0]
@@ -696,31 +870,29 @@ function buildGroupItem(
     runId,  // 🆕 携带 runId 给模板 / 子项用
     tone,
     tasks: seg,
+    sections,  // 🆕 v5：携带 sections 给子 sub_section_header
     summary: { passed, failed, running, pending, percent, latestCreatedAt: latest.createdAt },
   }
 }
 
 /**
- * 🆕 2026-06-10 修复 v2：构造 plugin sub-section item
+ * 🆕 2026-06-11 v5：构造 sub_section_header item（取代 v4 buildPluginSectionItem）
  *
- * 2 级嵌套 group 内的「插件段头」（每个 plugin 一个）。
- * 跟 group card 类似但更轻量：
- *   - 不折叠（跟随外层 group 展开）
- *   - 无 chevron 按钮
- *   - 无 sliding
- *   - 但有 icon + name + count + 4 个 status badge + 2px 进度条
+ * 通用 section 段头（不再硬编码 pluginName），按 section 维度（plugin/type/category/none）渲染：
+ *   - 左侧 icon bubble（按 dimension 显示对应 icon）
+ *   - 中间：section 名称 + task 数
+ *   - 右侧：4 个 status badge + 折叠 chevron
+ *   - 整段可点击 → toggle 折叠/展开该 section 内的 task
+ *   - sticky 行为：滚动时冻结在 group card 顶部
  *
- * 用于：group card 展开后，按 pluginName 桶里每个 plugin 渲染一个段头。
- *
- * 🆕 2026-06-10 修复 v3：携带 runId
- *   - key 用 `plugin-section-${runId}-${pluginName}`（稳定，不依赖 tasks[0]?.id）
- *   - 跨 group 重名插件不冲突
+ * 升级：未来加新维度只需要在 SECTION_META + deriveSubSection 加一行
  */
-function buildPluginSectionItem(
+function buildSubSectionHeader(
+  subKey: string,
   runId: string,
-  pluginName: string,
+  meta: SubSectionMeta,
   tasks: EncvTask[],
-  tone: 'automation' | 'ai_agent',
+  isCollapsed: boolean,
 ): DisplayItem {
   let passed = 0, failed = 0, running = 0, pending = 0
   for (const t of tasks) {
@@ -732,12 +904,13 @@ function buildPluginSectionItem(
   const finished = passed + failed
   const percent = tasks.length > 0 ? Math.round((finished / tasks.length) * 100) : 0
   return {
-    kind: 'plugin_section',
-    key: `plugin-section-${runId}-${pluginName}`,  // 🆕 稳定 key（不依赖 tasks[0]?.id）
+    kind: 'sub_section_header',
+    key: subKey,
+    subKey,
     runId,
-    pluginName,
-    tone,
+    meta,
     tasks,
+    isCollapsed,
     subSummary: { passed, failed, running, pending, percent },
   }
 }
@@ -812,6 +985,13 @@ const debugByTriggeredBy = computed(() => {
 async function resetGrouping() {
   const { clearTriggeredBy } = await import('@/composables/useTaskTrigger')
   clearTriggeredBy()
+  // 🆕 2026-06-11 v5：同时清 sub_section 折叠状态
+  try {
+    localStorage.removeItem(COLLAPSED_SUBSECTIONS_KEY)
+  } catch {
+    // silent
+  }
+  collapsedSubSectionKeys.value = new Set()
   showToast({ message: '已清空任务触发者缓存，刷新页面后生效', duration: 2000, color: 'medium' })
   await fetchTasks()
 }
@@ -1066,65 +1246,109 @@ async function resetGrouping() {
 }
 
 /* ============================================================
-   🆕 2026-06-10 修复 v2：plugin sub-section（2 级嵌套 group 内的插件段头）
-   v3：改用 <ion-item> + 自定义 class（不再用裸 <div>），避免 <ion-list> 子节点渲染异常
+   🆕 2026-06-11 v5：sub_section_header（取代 v4 plugin-sub-section）
+   - 4 种 dimension tone：plugin / type / category / none
+   - sticky 滚动冻结（top: 0）
+   - 商业级视觉：subtle shadow + 1px border + backdrop-filter
+   - 可折叠：整段 button + 右侧 chevron
    ============================================================ */
-ion-item.plugin-sub-section {
-  /* 覆盖 ion-item 默认的内边距 / 背景，让它看起来像一段 header 而不是独立卡片 */
-  --padding-start: 56px;  /* 左侧 56px 缩进（对应 group card 4px border + 40px icon + 12px 间距） */
+ion-item.sub-section-header {
+  --padding-start: 56px;       /* 左侧缩进（对应 group card 4px border + 40px icon + 12px 间距） */
   --padding-end: 12px;
-  --padding-top: 8px;
-  --padding-bottom: 10px;
-  --min-height: 44px;
-  --background: rgba(79, 140, 255, 0.05);
-  --background-hover: rgba(79, 140, 255, 0.08);
-  --background-activated: rgba(79, 140, 255, 0.1);
-  --border-color: rgba(79, 140, 255, 0.12);
+  --padding-top: 10px;
+  --padding-bottom: 12px;
+  --min-height: 52px;
+  --background: var(--sub-bg, rgba(79, 140, 255, 0.05));
+  --background-hover: var(--sub-bg-hover, rgba(79, 140, 255, 0.08));
+  --background-activated: var(--sub-bg-activated, rgba(79, 140, 255, 0.12));
+  --border-color: var(--sub-border, rgba(79, 140, 255, 0.12));
   --color: var(--ion-color-dark);
   --inner-padding-end: 0;
-  position: relative;
+  position: sticky;
+  top: 0;
+  z-index: 5;
   font-size: 13px;
-  pointer-events: none;  /* 整个段头不可点击（disable 涟漪 / highlight） */
+  /* 商业级视觉：backdrop-filter 让 sticky 时半透明 */
+  backdrop-filter: blur(10px) saturate(140%);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  background-color: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04), 0 4px 12px -4px rgba(0, 0, 0, 0.06);
+  transition: background 0.18s ease, box-shadow 0.18s ease;
 }
-ion-item.plugin-sub-section.plugin-tone-ai_agent {
-  --background: rgba(139, 92, 246, 0.05);
-  --background-hover: rgba(139, 92, 246, 0.08);
-  --background-activated: rgba(139, 92, 246, 0.1);
-  --border-color: rgba(139, 92, 246, 0.12);
+ion-item.sub-section-header.is-collapsed {
+  /* 折叠时视觉上「轻」一点：subtle hint 让用户知道里面有内容 */
+  background-color: rgba(250, 250, 252, 0.92);
 }
 
-.plugin-sub-icon {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
+/* 4 种 dimension tone：plugin (primary 蓝) / type (warning 黄) / category (success 绿) / none (medium 灰) */
+ion-item.sub-section-header.sub-tone-plugin {
+  --sub-bg: rgba(79, 140, 255, 0.05);
+  --sub-bg-hover: rgba(79, 140, 255, 0.08);
+  --sub-bg-activated: rgba(79, 140, 255, 0.12);
+  --sub-border: rgba(79, 140, 255, 0.14);
+}
+ion-item.sub-section-header.sub-tone-type {
+  --sub-bg: rgba(255, 167, 38, 0.05);
+  --sub-bg-hover: rgba(255, 167, 38, 0.08);
+  --sub-bg-activated: rgba(255, 167, 38, 0.12);
+  --sub-border: rgba(255, 167, 38, 0.14);
+}
+ion-item.sub-section-header.sub-tone-category {
+  --sub-bg: rgba(54, 175, 110, 0.05);
+  --sub-bg-hover: rgba(54, 175, 110, 0.08);
+  --sub-bg-activated: rgba(54, 175, 110, 0.12);
+  --sub-border: rgba(54, 175, 110, 0.14);
+}
+ion-item.sub-section-header.sub-tone-none {
+  --sub-bg: rgba(158, 158, 158, 0.04);
+  --sub-bg-hover: rgba(158, 158, 158, 0.07);
+  --sub-bg-activated: rgba(158, 158, 158, 0.1);
+  --sub-border: rgba(158, 158, 158, 0.12);
+}
+
+.sub-section-icon-bubble {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;          /* 商业级：圆角方形（vs 圆形） */
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: 15px;
   flex-shrink: 0;
-  margin-left: -36px;  /* 让 icon 缩进到 16px 处（ion-item padding-start: 56px, icon 24px） */
+  margin-left: -40px;
+  background: var(--ion-color-primary);
+  color: white;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
-.plugin-sub-icon.plugin-tone-ai_agent {
-  background: rgba(139, 92, 246, 0.18);
-  color: var(--ion-color-secondary);
+.sub-section-icon-bubble.sub-tone-plugin {
+  background: linear-gradient(135deg, #5b9dff, #2f7ce0);
+  color: white;
 }
-.plugin-sub-icon.plugin-tone-automation {
-  background: rgba(79, 140, 255, 0.18);
-  color: var(--ion-color-primary);
+.sub-section-icon-bubble.sub-tone-type {
+  background: linear-gradient(135deg, #ffb74d, #f57c00);
+  color: white;
 }
-.plugin-sub-icon ion-icon {
-  font-size: 14px;
+.sub-section-icon-bubble.sub-tone-category {
+  background: linear-gradient(135deg, #66bb6a, #388e3c);
+  color: white;
+}
+.sub-section-icon-bubble.sub-tone-none {
+  background: linear-gradient(135deg, #bdbdbd, #9e9e9e);
+  color: white;
+}
+.sub-section-icon-bubble ion-icon {
+  font-size: 16px;
 }
 
-.plugin-sub-label {
+.sub-section-label {
   margin: 0 !important;
   display: flex;
   flex-direction: column;
   gap: 0;
   min-width: 0;
 }
-.plugin-sub-label h3.plugin-sub-name {
-  font-size: 13px;
+.sub-section-label h3.sub-section-name {
+  font-size: 14px;
   font-weight: 600;
   color: var(--ion-color-dark);
   margin: 0;
@@ -1132,21 +1356,24 @@ ion-item.plugin-sub-section.plugin-tone-ai_agent {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  letter-spacing: -0.01em;       /* 商业级：tight letter-spacing 提升精致感 */
 }
-.plugin-sub-label p.plugin-sub-count {
+.sub-section-label p.sub-section-count {
   font-size: 11px;
   color: var(--encv-text-secondary);
   margin: 0;
   line-height: 1.3;
+  font-weight: 500;
 }
 
-.plugin-sub-badges {
+.sub-section-badges {
   display: flex;
   gap: 4px;
   flex-shrink: 0;
   align-items: center;
+  margin-right: 4px;
 }
-.plugin-sub-badges .status-badge {
+.sub-section-badges .status-badge {
   font-size: 10px;
   --padding-start: 5px;
   --padding-end: 6px;
@@ -1155,35 +1382,52 @@ ion-item.plugin-sub-section.plugin-tone-ai_agent {
   display: inline-flex;
   align-items: center;
   gap: 2px;
+  font-weight: 600;             /* 商业级：徽章文字加粗 */
 }
-.plugin-sub-badges .badge-icon {
+.sub-section-badges .badge-icon {
   font-size: 10px;
 }
-.plugin-sub-badges .badge-spinner {
+.sub-section-badges .badge-spinner {
   width: 8px;
   height: 8px;
   --color: currentColor;
 }
 
-.plugin-sub-progress-track {
+.sub-section-chevron-btn {
+  --color: var(--ion-color-medium-shade);
+  margin: 0;
+  transition: transform 0.2s ease;   /* 商业级：旋转动画 */
+}
+.sub-section-chevron-btn ion-icon {
+  transition: transform 0.2s ease;
+}
+.is-collapsed .sub-section-chevron-btn ion-icon {
+  transform: rotate(-90deg);
+}
+
+.sub-section-progress-track {
   position: absolute;
   left: 56px;
   right: 12px;
-  bottom: 2px;
+  bottom: 0;
   height: 2px;
   background: rgba(0, 0, 0, 0.05);
-  border-radius: 1px;
   overflow: hidden;
   pointer-events: none;
 }
-.plugin-sub-progress-fill {
+.sub-section-progress-fill {
   height: 100%;
   background: linear-gradient(90deg, var(--ion-color-primary), var(--ion-color-primary-shade));
-  border-radius: 1px;
   transition: width 0.3s ease;
 }
-.plugin-tone-ai_agent .plugin-sub-progress-fill {
-  background: linear-gradient(90deg, var(--ion-color-secondary), var(--ion-color-secondary-shade));
+.sub-tone-type .sub-section-progress-fill {
+  background: linear-gradient(90deg, #ffb74d, #f57c00);
+}
+.sub-tone-category .sub-section-progress-fill {
+  background: linear-gradient(90deg, #66bb6a, #388e3c);
+}
+.sub-tone-none .sub-section-progress-fill {
+  background: linear-gradient(90deg, #bdbdbd, #9e9e9e);
 }
 
 .time-created {
