@@ -384,7 +384,7 @@ func ffmpegGenerate(args []string, ext string) []byte {
 
 	// 2. 跨平台调 ffmpeg（沙箱 exec / 真机 dlopen）
 	ctx := context.Background()
-	_, stderr, exitCode, err := ffmpeg.RunWithOutput(ctx, ffmpegArgs)
+	_, stderr, exitCode, err := ffmpeg.RunWithOutput(ctx, ffmpegArgs...)
 	if err != nil || exitCode != 0 {
 		slog.Warn("[mock] ffmpeg generate failed (no base64 fallback)", "ext", ext, "exitCode", exitCode, "err", err, "stderr", stderr)
 		return nil
