@@ -457,6 +457,14 @@ export interface EncvTask {
   steps?: TaskStep[]
   createdAt: string
   completedAt?: string
+  // 🆕 2026-06-10 修复 v4：triggeredBy + runId 直接放 task 对象上
+  // 历史：分组依赖 localStorage.useTaskTrigger，跨 session / localStorage 清空后全失效
+  //   → 「任务组只在一开始的时候正确显示」+「插件没正确识别，任务依旧全部平铺」
+  // 修复：这两个字段在 submitAction 返回时就写到 task 对象上，不再只存 localStorage
+  //   - 当前 session：直接读 t.triggeredBy / t.runId（O(1) 内存访问）
+  //   - 跨 session：localStorage 作 fallback（旧 task 没有这 2 字段，try useTaskTrigger）
+  triggeredBy?: 'user' | 'automation' | 'ai_agent'
+  runId?: string
 }
 
 export async function getTasks(): Promise<EncvTask[]> {

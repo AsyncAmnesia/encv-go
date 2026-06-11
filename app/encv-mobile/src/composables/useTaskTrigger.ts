@@ -19,79 +19,190 @@
  * 清理 localStorage 后旧任务会显示为 'user'（向后兼容）。
  */
 
+import { reactive } from 'vue'
+
 export type TriggeredBy = 'user' | 'automation' | 'ai_agent'
 
-const STORAGE_KEY = 'encv_task_triggered_by_v2'  // 🆕 v2：加 runId 字段
+// 🆕 2026-06-10 修复 v4：key 升 v3，强制丢弃旧 v2 数据
+// 历史 v2 数据可能跟新 flow 不兼容（v2 的 recordTriggeredBy 旧 runId 格式会让旧 task 分散
+//   到不同 runId → 永远凑不到 1 个 group → 看起来「毫无变化」）
+// 修复：v3 强制清空，强制用户重新跑 workflow 才能用新 group 行为
+const STORAGE_KEY = 'encv_task_triggered_by_v3'
 const MAX_ENTRIES = 500
 
 interface TriggeredByEntry {
   triggeredBy: TriggeredBy
-  /** 🆕 workflow run 关联 ID（同一 run 的 task 共享） */
+  /** workflow run 关联 ID（同一 run 的 task 共享） */
   runId?: string
   recordedAt: string
 }
 
 type TriggeredByMap = Record<string, TriggeredByEntry>
 
-function readMap(): TriggeredByMap {
-  // 🆕 2026-06-10 修复：进程级内存缓存 + lazy load
-  // 历史 bug：getRunIdForTask / getTriggeredBy 每次都同步 localStorage + JSON.parse
-  //   200 个 task × N 次 computed 重算 → 巨量 JSON.parse（卡 UI）
-  // 修复：模块级单例 cacheMap，首次 readMap 时 lazy load，之后纯内存读
-  if (cacheMap) return cacheMap
+// 🆕 2026-06-10 修复 v4：triggeredByMap 用 reactive() 而不是 plain object
+// 历史：plain object → displayedItems 不会因为 recordTriggeredBy 重新计算（Vue 追踪不到
+//   module-level 变量的 mutation）→ 用户「先看到的 group 是旧的，加了新 task 也没聚合」
+// 修复：reactive() → Vue 追踪属性访问 → recordTriggeredBy 触发响应式更新
+const triggeredByMap = reactive<TriggeredByMap>({})
+
+// 🆕 2026-06-10 修复 v4：跨 composable 共享 task 元数据
+// 历史：useWorkflowEngine 创建 task 时只能写 localStorage，task 对象本身没 triggeredBy/runId
+//   → applyTaskCreated 收到 WS 事件时无法知道这些元数据 → tasks.value 里的 task 没这 2 字段
+//   → displayedItems 必须靠 getTriggeredBy / getRunIdForTask 查 localStorage
+//   → 跨 session / localStorage 清空 → 全失效
+// 修复：useTaskTrigger 维护一个 taskMetadata Map，submitAction 后立即 setTaskMetadata
+//   applyTaskCreated 时合并进 task 对象 → tasks.value 里的 task 自带 triggeredBy / runId
+//   displayedItems 直接读 t.triggeredBy / t.runId（O(1) 内存访问）
+const taskMetadata: Map<string, { triggeredBy: TriggeredBy; runId?: string }> = new Map()
+
+let initialized = false
+function ensureLoaded(): void {
+  if (initialized) return
+  initialized = true
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) {
-      cacheMap = {}
-      return cacheMap
-    }
+    if (!raw) return
     const parsed = JSON.parse(raw) as TriggeredByMap
-    if (!parsed || typeof parsed !== 'object') {
-      cacheMap = {}
-      return cacheMap
+    if (!parsed || typeof parsed !== 'object') return
+    // 同步到 reactive 容器（保留 reactive 响应式）
+    for (const [k, v] of Object.entries(parsed)) {
+      triggeredByMap[k] = v
     }
-    cacheMap = parsed
-    return cacheMap
   } catch {
-    cacheMap = {}
-    return cacheMap
+    // silent
   }
 }
 
-let cacheMap: TriggeredByMap | null = null
+function writeMap(): void {
+  const entries = Object.entries(triggeredByMap)
+    .sort((a, b) => b[1].recordedAt.localeCompare(a[1].recordedAt))
+    .slice(0, MAX_ENTRIES)
+  const trimmed: TriggeredByMap = Object.fromEntries(entries)
+  for (const k of Object.keys(triggeredByMap)) delete triggeredByMap[k]
+  Object.assign(triggeredByMap, trimmed)
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed))
+}
+
+function trimMapInPlace(): void {
+  const entries = Object.entries(triggeredByMap)
+    .sort((a, b) => b[1].recordedAt.localeCompare(a[1].recordedAt))
+    .slice(0, MAX_ENTRIES)
+  const trimmed: TriggeredByMap = Object.fromEntries(entries)
+  for (const k of Object.keys(triggeredByMap)) delete triggeredByMap[k]
+  Object.assign(triggeredByMap, trimmed)
+}
+
+/**
+ * 🆕 2026-06-10 修复 v4：记录 task 的触发者 + workflow run 关联
+ *
+ * 同时维护 3 个数据源（保证 displayedItems 一定能拿到数据）：
+ *   1. reactive triggeredByMap（让 Vue 响应式）
+ *   2. module-level taskMetadata Map（让 useTasksList 能 merge 到 task 对象）
+ *   3. localStorage（让跨 session 也能 fallback）
+ */
+export function recordTriggeredBy(
+  taskId: string,
+  triggeredBy: TriggeredBy,
+  runId?: string,
+): void {
+  if (!taskId) return
+  ensureLoaded()
+  const prevEntry = triggeredByMap[taskId]
+  triggeredByMap[taskId] = { triggeredBy, recordedAt: new Date().toISOString(), ...(runId ? { runId } : {}) }
+  // 🆕 同步到 taskMetadata Map（让 useTasksList.applyTaskCreated 能 merge 到 task 对象）
+  taskMetadata.set(taskId, { triggeredBy, runId })
+  trimMapInPlace()
+  try {
+    writeMap()
+  } catch (e) {
+    if (prevEntry === undefined) delete triggeredByMap[taskId]
+    else triggeredByMap[taskId] = prevEntry
+    taskMetadata.delete(taskId)
+    console.debug('[useTaskTrigger] localStorage write failed, rolled back:', e)
+  }
+}
+
+/**
+ * 🆕 2026-06-10 修复 v4：给 task 写元数据
+ * 跟 recordTriggeredBy 等价，但不写 localStorage（仅当前 session 用）
+ * 用法：useWorkflowEngine.executeJob 在 submitAction 后立即调，让 task 对象自带元数据
+ */
+export function setTaskMetadata(
+  taskId: string,
+  triggeredBy: TriggeredBy,
+  runId?: string,
+): void {
+  if (!taskId) return
+  ensureLoaded()
+  taskMetadata.set(taskId, { triggeredBy, runId })
+  // 也写 triggeredByMap 让 reactive 触发
+  triggeredByMap[taskId] = {
+    triggeredBy,
+    recordedAt: new Date().toISOString(),
+    ...(runId ? { runId } : {}),
+  }
+}
+
+/**
+ * 🆕 2026-06-10 修复 v4：取 task 的元数据
+ * useTasksList.applyTaskCreated 在 spread data 后 merge 进来
+ */
+export function getTaskMetadata(
+  taskId: string,
+): { triggeredBy: TriggeredBy; runId?: string } | undefined {
+  if (!taskId) return undefined
+  ensureLoaded()
+  return taskMetadata.get(taskId)
+}
+
+/**
+ * 读 task 的 triggeredBy（带 fallback：先 taskMetadata，再 triggeredByMap，再 'user'）
+ *
+ * 🆕 2026-06-10 修复 v4：reactive 读，displayedItems 追踪依赖
+ */
+export function getTriggeredBy(taskId: string): TriggeredBy {
+  if (!taskId) return 'user'
+  ensureLoaded()
+  // 先读 taskMetadata（O(1) 内存，比 reactive 对象的属性访问更快）
+  const meta = taskMetadata.get(taskId)
+  if (meta) return meta.triggeredBy
+  return triggeredByMap[taskId]?.triggeredBy ?? 'user'
+}
+
+/**
+ * 🆕 2026-06-10 修复 v4：读 task 关联的 workflow run.id
+ */
+export function getRunIdForTask(taskId: string): string | undefined {
+  if (!taskId) return undefined
+  ensureLoaded()
+  const meta = taskMetadata.get(taskId)
+  if (meta) return meta.runId
+  return triggeredByMap[taskId]?.runId
+}
 
 /**
  * 清除进程级缓存（用于测试或手动 localStorage 变更后强制重新加载）
  */
 export function _reloadTriggeredByCache(): void {
-  cacheMap = null
-}
-
-function writeMap(m: TriggeredByMap): void {
-  // 限制最多 MAX_ENTRIES 条：按 recordedAt 倒序排，保留最新
-  const entries = Object.entries(m)
-    .sort((a, b) => b[1].recordedAt.localeCompare(a[1].recordedAt))
-    .slice(0, MAX_ENTRIES)
-  const trimmed: TriggeredByMap = Object.fromEntries(entries)
-  // 🆕 2026-06-10 修复：异常向上抛，让 recordTriggeredBy 的 try-catch 能回滚 cacheMap
-  // 历史 bug：writeMap 内部 try-catch 吞掉 setItem 异常 → recordTriggeredBy 不知道写失败
-  //   → cacheMap 已被 mutate，但 localStorage 没写入 → 状态不一致
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed))
+  initialized = false
+  for (const k of Object.keys(triggeredByMap)) delete triggeredByMap[k]
+  taskMetadata.clear()
 }
 
 /**
- * 按 recordedAt 倒序裁剪到 MAX_ENTRIES 条，**就地修改 m**
- * 用于保持 cacheMap 跟 localStorage 写入的 trimmed 状态一致
+ * 🆕 2026-06-10 修复 v4：用户主动重置所有触发者记录
+ * 用法：Tasks.vue 加个「重置分组」按钮 → 调这个 → 所有 task 重新变 'user'（重新跑 workflow 才会有新 group）
  */
-function trimMapInPlace(m: TriggeredByMap): void {
-  const entries = Object.entries(m)
-    .sort((a, b) => b[1].recordedAt.localeCompare(a[1].recordedAt))
-    .slice(0, MAX_ENTRIES)
-  const trimmed: TriggeredByMap = Object.fromEntries(entries)
-  // 清空 m 的所有 key
-  for (const k of Object.keys(m)) delete m[k]
-  // 写入 trimmed 的 key
-  Object.assign(m, trimmed)
+export function clearTriggeredBy(): void {
+  for (const k of Object.keys(triggeredByMap)) delete triggeredByMap[k]
+  taskMetadata.clear()
+  try {
+    localStorage.removeItem(STORAGE_KEY)
+  } catch {
+    // silent
+  }
+  initialized = false
+  ensureLoaded()  // 重新初始化空的 map
 }
 
 /**
@@ -101,63 +212,4 @@ function trimMapInPlace(m: TriggeredByMap): void {
  * @param triggeredBy 触发者类型
  * @param runId      🆕 可选：workflow run.id（同一 run 的 task 共享）
  */
-export function recordTriggeredBy(
-  taskId: string,
-  triggeredBy: TriggeredBy,
-  runId?: string,
-): void {
-  if (!taskId) return
-  const m = readMap()
-  const prevEntry = m[taskId]
-  m[taskId] = { triggeredBy, recordedAt: new Date().toISOString(), ...(runId ? { runId } : {}) }
-  // 🆕 2026-06-10 修复：写之前先 trim cacheMap（保持跟 localStorage 写入的 trimmed 状态一致）
-  // 历史 bug：cacheMap 保留全部 600 条，但 writeMap 写入 localStorage 时裁剪到 500 条
-  //   → _getAllForTesting() 返 600 条，跟 localStorage 不一致
-  //   → 也违反"500 条上限"约束（cacheMap 一直增长，内存泄漏）
-  trimMapInPlace(m)
-  // 🆕 2026-06-10 修复：写失败时回滚 cacheMap（防止 cacheMap 跟 localStorage 不一致）
-  // 历史 bug：writeMap 抛 QuotaExceededError 后 cacheMap 已被 mutate，但 localStorage 没写入
-  //   → 下次 getTriggeredBy 读 cacheMap 返 'automation'，跟用户期望的 'user' 降级不符
-  try {
-    writeMap(m)
-  } catch (e) {
-    if (prevEntry === undefined) delete m[taskId]
-    else m[taskId] = prevEntry
-    // localStorage 满了或被禁用——静默降级（任务继续走，但触发者 label 永远是 user）
-    console.debug('[useTaskTrigger] localStorage write failed, cacheMap rolled back:', e)
-  }
-}
-
-export function getTriggeredBy(taskId: string): TriggeredBy {
-  if (!taskId) return 'user'
-  const m = readMap()
-  return m[taskId]?.triggeredBy ?? 'user'
-}
-
-/**
- * 🆕 2026-06-10：获取 task 关联的 workflow run.id（没有则返回 undefined）
- */
-export function getRunIdForTask(taskId: string): string | undefined {
-  if (!taskId) return undefined
-  const m = readMap()
-  return m[taskId]?.runId
-}
-
-export function clearTriggeredBy(): void {
-  try {
-    localStorage.removeItem(STORAGE_KEY)
-  } catch {
-    // noop
-  }
-  // 🆕 2026-06-10 修复：清空 cacheMap，强制下次 readMap 重新读 localStorage
-  // 历史 bug：clearTriggeredBy 只删 localStorage，cacheMap 仍有旧数据
-  //   → getTriggeredBy 返旧值（用户期望 'user' 降级）
-  cacheMap = null
-}
-
-/**
- * 测试用：获取所有记录的副本（不导出到生产 API）。
- */
-export function _getAllForTesting(): TriggeredByMap {
-  return readMap()
-}
+// (函数定义在文件顶部 v4 重构区)

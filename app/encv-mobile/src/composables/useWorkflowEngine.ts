@@ -17,7 +17,7 @@ import {
   createTask,
   type EncvTask,
 } from '@/api/encv'
-import { recordTriggeredBy, type TriggeredBy } from '@/composables/useTaskTrigger'
+import { recordTriggeredBy, setTaskMetadata, type TriggeredBy } from '@/composables/useTaskTrigger'
 import { analyzeError } from '@/composables/useErrorAnalyzer'
 import { eventBus } from '@/composables/useEventBus'
 import { useWorkflowStore } from './useWorkflowStore'
@@ -396,6 +396,11 @@ export function useWorkflowEngine() {
         stepRun.taskId = task.id
         stepRun.status = 'running'  // 已提交，等 WS 回调
         recordTriggeredBy(task.id, 'automation', _runId)
+        // 🆕 2026-06-10 修复 v4：setTaskMetadata 让 task 对象本身带 triggeredBy + runId
+        // 用途：useTasksList.applyTaskCreated 收到 WS 事件时能通过 taskId 找到元数据，
+        //   merge 进 tasks.value 里的 task 对象 → displayedItems 直接读 t.triggeredBy / t.runId
+        // 不依赖 localStorage（跨 session / 清空 localStorage 也不影响）
+        setTaskMetadata(task.id, 'automation', _runId)
       } catch (e) {
         // 提交失败（网络错误、参数错误等）— 直接标记为 failure
         stepRun.status = 'failure'

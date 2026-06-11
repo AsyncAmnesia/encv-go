@@ -142,6 +142,20 @@
       </div>
 
       <ion-list v-else>
+        <!-- 🆕 2026-06-10 修复 v4：可见的调试计数（让用户能确认 grouping 是否在工作） -->
+        <div class="grouping-debug-bar">
+          <span>共 <strong>{{ tasks.length }}</strong> 个 task</span>
+          <span class="grouping-debug-sep">·</span>
+          <span><strong>{{ debugGroupCount }}</strong> 个 run 分组</span>
+          <span class="grouping-debug-sep">·</span>
+          <span><strong>{{ debugSingletonCount }}</strong> 个单条</span>
+          <span class="grouping-debug-sep">·</span>
+          <span><strong>{{ debugByTriggeredBy.automation }}</strong> auto / <strong>{{ debugByTriggeredBy.ai_agent }}</strong> ai / <strong>{{ debugByTriggeredBy.user }}</strong> user</span>
+          <ion-button size="small" fill="clear" @click="resetGrouping" class="grouping-reset-btn">
+            <ion-icon :icon="sync" slot="start"></ion-icon>
+            重置分组
+          </ion-button>
+        </div>
         <template v-for="item in displayedItems" :key="item.key">
           <!-- 🆕 2026-06-10 修复：自动化测试 / AI agent 任务组折叠 -->
           <!-- 历史：自动化测试一次跑 N 个用例 → 污染 task 列表（用户截图的"浪费屏幕空间"）-->
@@ -573,15 +587,19 @@ const displayedItems = computed<DisplayItem[]>(() => {
   const singletonTasks: EncvTask[] = []  // 🆕 没有 runId / triggeredBy='user' 的单条 task
 
   for (const t of tasks) {
-    const by = getTriggeredBy(t.id)
+    // 🆕 2026-06-10 修复 v4：直接读 task 对象上的 triggeredBy / runId
+    // 历史：必须调 getTriggeredBy / getRunIdForTask 查 localStorage → 跨 session / 清空 localStorage
+    //   → 「任务组只在一开始正确显示，展开后一会就消失，插件没正确识别，任务依旧全部平铺」
+    // 修复：useTaskTrigger.setTaskMetadata 在 submitAction 后立即写进 taskMetadata Map
+    //   useTasksList.applyTaskCreated / fetchTasks 把 metadata merge 进 task 对象本身
+    //   这里直接读 t.triggeredBy / t.runId → O(1) 内存访问，永远可靠
+    const by = t.triggeredBy ?? getTriggeredBy(t.id)
     if (by === 'user') {
-      // user task 永远单条展示，不参与 group
       singletonTasks.push(t)
       continue
     }
-    const runId = getRunIdForTask(t.id)
+    const runId = t.runId ?? getRunIdForTask(t.id)
     if (!runId) {
-      // 🆕 终版 v3：没有 runId 的 task 不再 fallback 到 triggeredBy 聚拢 — 直接单条展示
       singletonTasks.push(t)
       continue
     }
@@ -762,6 +780,41 @@ onIonViewWillEnter(() => {
     fetchTasks()
   }
 })
+
+// 🆕 2026-06-10 修复 v4：可见的调试计数（让用户能直接看到 grouping 是否在工作）
+// 历史：用户报「毫无变化，我非常失望」—— HMR 没生效 / localStorage v2 数据 stale / 用户没刷新页面
+// 修复：在 task 列表顶部显示 group / singleton / by triggeredBy 计数，让用户一眼看出问题在哪
+const debugGroupCount = computed(() => {
+  // 统计当前 displayedItems 里 group card 数量
+  return displayedItems.value.filter((i) => i.kind === 'group').length
+})
+const debugSingletonCount = computed(() => {
+  return displayedItems.value.filter((i) => i.kind === 'task').length
+})
+const debugByTriggeredBy = computed(() => {
+  const acc: { automation: number; ai_agent: number; user: number } = {
+    automation: 0,
+    ai_agent: 0,
+    user: 0,
+  }
+  for (const t of tasks.value) {
+    const by = t.triggeredBy ?? getTriggeredBy(t.id)
+    if (by === 'automation') acc.automation++
+    else if (by === 'ai_agent') acc.ai_agent++
+    else acc.user++
+  }
+  return acc
+})
+
+// 🆕 2026-06-10 修复 v4：手动重置分组（强制清空 localStorage + 重新拉取）
+// 用法：调试栏右上「重置分组」按钮 → 调这个 → 所有 task 变 'user' → 重新跑 workflow
+//   强制丢弃 stale localStorage（v2 数据残留让 task 分散到不同 runId，永远凑不到 1 个 group）
+async function resetGrouping() {
+  const { clearTriggeredBy } = await import('@/composables/useTaskTrigger')
+  clearTriggeredBy()
+  showToast({ message: '已清空任务触发者缓存，刷新页面后生效', duration: 2000, color: 'medium' })
+  await fetchTasks()
+}
 </script>
 
 <style scoped>
@@ -1304,5 +1357,45 @@ ion-item.plugin-sub-section.plugin-tone-ai_agent {
   padding: 12px 16px;
   font-size: 13px;
   color: var(--encv-text-secondary);
+}
+
+/* ============================================================
+   🆕 2026-06-10 修复 v4：可见的调试计数栏
+   用途：让用户能直接看到 grouping 是否在工作
+   历史：用户报「毫无变化，我非常失望」时排查卡住 — HMR 没生效 / localStorage v2 stale
+        都没法让用户自查。修这个栏 → 任何时候用户都能看到 group / singleton / by 计数。
+   ============================================================ */
+.grouping-debug-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 8px 14px;
+  margin: 8px 12px 4px;
+  background: linear-gradient(135deg, rgba(79, 140, 255, 0.06), rgba(139, 92, 246, 0.06));
+  border: 1px dashed rgba(79, 140, 255, 0.3);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--encv-text-secondary);
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  line-height: 1.4;
+}
+.grouping-debug-bar strong {
+  color: var(--ion-color-dark);
+  font-weight: 700;
+  font-family: inherit;
+  margin: 0 2px;
+}
+.grouping-debug-sep {
+  color: var(--ion-color-medium-shade);
+  opacity: 0.5;
+  font-weight: 300;
+}
+.grouping-reset-btn {
+  margin-left: auto;
+  --padding-start: 8px;
+  --padding-end: 8px;
+  font-size: 11px;
+  height: 28px;
 }
 </style>

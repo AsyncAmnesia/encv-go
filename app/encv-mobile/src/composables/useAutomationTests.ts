@@ -26,7 +26,7 @@ import {
   type EncvTask,
 } from '@/api/encv'
 import { usePathResolver } from '@/composables/usePathResolver'
-import { recordTriggeredBy, type TriggeredBy } from '@/composables/useTaskTrigger'
+import { recordTriggeredBy, setTaskMetadata, type TriggeredBy } from '@/composables/useTaskTrigger'
 import { analyzeError, type ErrorAnalysis } from '@/composables/useErrorAnalyzer'
 import { eventBus } from '@/composables/useEventBus'
 
@@ -346,6 +346,7 @@ export function useAutomationTests() {
           spec.compressionMode,
         )
         recordTriggeredBy(task.id, 'automation', sharedRunId)
+        setTaskMetadata(task.id, 'automation', sharedRunId)  // 🆕 v4：merge 到 task 对象
         result.taskId = task.id
         result.status = 'pending' // 任务已提交，等 WS 回调（task:completed）决定最终状态
         result.durationMs = Date.now() - start

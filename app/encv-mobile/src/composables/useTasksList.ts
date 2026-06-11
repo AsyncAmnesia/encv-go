@@ -16,6 +16,7 @@ import type { EncvTask, TaskType, TaskStatus } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
 import { formatDuration } from '@/composables/useDateFormat'
 import { showToast } from '@/composables/useToast'
+import { getTaskMetadata } from './useTaskTrigger'
 
 export type SortBy = 'activity' | 'created'
 
@@ -168,10 +169,20 @@ export function useTasksList() {
     sortBy.value = sort
   }
 
+  // 🆕 2026-06-10 修复 v4：fetchTasks 后批量补回元数据
+  // 历史：fetchTasks 用后端数据替换 tasks.value，丢失所有 triggeredBy/runId（后端不存）
+  //   → 重新跑也没用，因为新数据一覆盖就没了
+  // 修复：替换后遍历新数组，对每个 taskId 查 taskMetadata，merge 回去
   async function fetchTasks() {
     loading.value = true
     try {
-      tasks.value = await getTasks()
+      const data = await getTasks()
+      const enriched = data.map((t) => {
+        const meta = getTaskMetadata(t.id)
+        if (!meta) return t
+        return { ...t, triggeredBy: meta.triggeredBy, runId: meta.runId }
+      })
+      tasks.value = enriched
     } catch {
       tasks.value = []
     }
@@ -180,7 +191,14 @@ export function useTasksList() {
 
   async function refresh() {
     try {
-      tasks.value = await getTasks()
+      // 🆕 v4：refresh 也补回元数据
+      const data = await getTasks()
+      const enriched = data.map((t) => {
+        const meta = getTaskMetadata(t.id)
+        if (!meta) return t
+        return { ...t, triggeredBy: meta.triggeredBy, runId: meta.runId }
+      })
+      tasks.value = enriched
     } catch {
       // silent
     }
@@ -235,8 +253,15 @@ export function useTasksList() {
   }) {
     const exists = tasks.value.some((t) => t.id === data.id)
     if (!exists) {
+      // 🆕 2026-06-10 修复 v4：从 useTaskTrigger.taskMetadata 合并 triggeredBy + runId
+      // 历史 bug：WS task:created payload 没有这 2 字段（后端不知道），tasks.value 里的 task 也跟着没有
+      //   → displayedItems 必须靠 getTriggeredBy / getRunIdForTask 查 localStorage
+      //   → 跨 session / localStorage 清空 → 分组完全失效 → 「任务组只在一开始正确，插件没正确识别」
+      // 修复：useWorkflowEngine 在 submitAction 后立即 setTaskMetadata(task.id, ...)，
+      //   applyTaskCreated 收到 WS 事件时通过 taskId 取回 → spread 进 task 对象
+      const meta = getTaskMetadata(data.id)
       tasks.value.unshift({
-        ...data,  // 🆕 spread 完整 payload（pluginName/version/targetPath/createdAt 等保留）
+        ...data,  // spread 完整 payload（pluginName/version/targetPath/createdAt 等保留）
         id: data.id,
         type: data.type as TaskType,
         sourcePath: data.sourcePath,
@@ -247,6 +272,9 @@ export function useTasksList() {
         progress: data.progress ?? 0,
         phase: data.phase,
         createdAt: data.createdAt ?? new Date().toISOString(),
+        // 🆕 v4：把元数据写进 task 对象本身（displayedItems 直接读，不再依赖 localStorage）
+        triggeredBy: meta?.triggeredBy,
+        runId: meta?.runId,
       })
     }
   }
