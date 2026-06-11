@@ -153,7 +153,14 @@ class EncvGoService : Service() {
                 environment()["ENCV_CONFIG_PATH"] = configPath
                 environment()["ENCV_MOBILE"] = "1"
                 environment()["HOME"] = filesDir.absolutePath
+                // 🆕 2026-06-11 Phase 2: 跟 ENCV_LIB_DIR 同源
+                // - ENCV_LIB_DIR 给 cgo CallFFmpegNative 用（dlopen libffmpeg.so）
+                // - ENCV_FFMPEG_WORKER 给 ffmpeg-worker 路径用（workerClient.locateWorker 优先选这个）
+                //   改用 subprocess worker 调 ffmpeg 后，父进程 ctx cancel 时可以 SIGKILL worker
+                //   解锁（之前 in-process cgo 阻塞 OS thread 没法 cancel，hang spinner forever）
                 environment()["ENCV_LIB_DIR"] = applicationInfo.nativeLibraryDir
+                environment()["ENCV_FFMPEG_WORKER"] =
+                    File(applicationInfo.nativeLibraryDir, "libffmpeg-worker.so").absolutePath
                 redirectErrorStream(true)
                 directory(filesDir)
             }.start()

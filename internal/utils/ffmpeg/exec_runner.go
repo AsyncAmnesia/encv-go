@@ -118,10 +118,13 @@ func init() {
 	//   1) WorkerRunner（subprocess 隔离，最安全，沙箱 dev 默认）
 	//   2) ExecRunner（直接 os/exec，无隔离，fallback）
 	//
-	// 真机（gomobile bind → libffmpeg.so）走 native_runner.go 的 init()
-	// （build tag 隔离），不会进入这个 init()
+	// 真机（独立 Go binary cmd/encv-mobile，cgo dlopen libffmpeg.so）
+	// 走 native_runner.go 的 init()（//go:build android 隔离），
+	// 不会进入这个 init()。
 	//
-	// 选 WorkerRunner 的条件：worker 二进制存在 + 系统有 ffmpeg
+	// Phase 2（2026-06-11）也修了 WorkerRunner.Available() — worker binary
+	// 存在即视为可用，ffmpeg 怎么调（系统 binary / lib_dir cgo）由 worker
+	// 内部决定。选 WorkerRunner 的条件：worker binary 在。
 	if wr := NewWorkerRunner(); wr != nil {
 		if ok, _, _ := wr.Available(); ok {
 			SetRunner(wr)

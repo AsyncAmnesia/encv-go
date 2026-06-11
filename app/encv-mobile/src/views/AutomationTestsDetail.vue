@@ -408,6 +408,12 @@ async function handleGenerateMock() {
       type: 'all',
       // 🆕 v4：30s 硬超时。后端 hang 时主动 abort → catch 块 → inline error UI
       // 历史 bug：real device 偶发 cgo dlopen 阻塞 → gin SSE 不响应 → spinner 永远转 → 体感"崩溃"
+      //
+      // 🆕 2026-06-11 Phase 2：真机走 subprocess ffmpeg-worker（cgo 在 worker 内部），
+      // 父进程 ctx cancel 时 Go exec.CommandContext 默认 SIGKILL worker 进程（Go 1.20+），
+      // 因此 30s 硬超时更多是兜底，理论上不会再触发。
+      // 但**仍保留**：如果 worker 启动慢 / SIGKILL 在 cgo OS thread 卡住内核调度，
+      // 前端 abort 至少断 SSE 让用户看到错误（不再 spinner 永远）。
       timeoutMs: 30000,
       onProgress: (p) => {
         lastCount++
@@ -438,24 +444,108 @@ async function handleGenerateMock() {
     // 🆕 2026-06-11 修复：用 inline error card 替代 toast
     // 历史：真机 mock 生成 ffmpeg 失败 + 后端崩溃 → toast 2.5s 一闪就消失，用户看不到根因
     const errMsg = e instanceof Error ? e.message : String(e)
-    const isTimeout = /timeout/i.test(errMsg)
-    const isBackendCrash = /502|503|504|connection.*refused|network.*error/i.test(errMsg)
-    let hint = '检查 mockRoot 路径权限 / 后端 SSE 响应 / 后端 mock_generator.go 日志'
-    if (isTimeout) {
-      hint = '超过 30s 未完成（后端可能 hang 在 ffmpeg cgo 调用上）。请检查 adb logcat / pm2 logs encv-go，重启后端再试。'
-    } else if (isBackendCrash) {
-      hint = '后端可能已崩溃（502/网络拒绝）。请检查后端日志（pm2 logs encv-go），重启后再试。'
-    }
+    const classified = classifyMockError(errMsg)
     setInlineError({
       source: 'mockGenerate',
-      title: isTimeout ? 'Mock 生成超时（30s）' : 'Mock 数据生成失败',
+      title: classified.title,
       message: errMsg,
-      hint,
+      hint: classified.hint,
     })
     // 不弹 toast（饱和调试原则：禁用 Toast），错误卡已持久显示
   } finally {
     isGenerating.value = false
     generateProgressText.value = ''
+  }
+}
+
+// classifyMockError 把后端 throw 出来的错误分类，给出精确的排查 hint。
+// 后端错误源（cmd/ffmpeg-worker/ + internal/server/mock_generator.go）：
+//   - "[ENGINE_LOAD_FAILED] ..."        cgo dlopen libffmpeg.so 失败（路径/架构错）
+//   - "[ENGINE_SYMBOL_MISSING] ..."     libffmpeg.so 缺 ffmpeg_run symbol（没编进 ffmpeg_run_main）
+//   - "[ENGINE_EXIT_ERROR] ..."         ffmpeg_run 内部 exit_code != 0
+//   - "ffmpeg worker exit 124"          worker 软超时（worker main_android.go 自爆）
+//   - "ffmpeg worker reported: ..."     worker 报告的 stderr/stdout 错误
+//   - "start worker: ..."               worker binary 启动失败（binary 不在 / 权限不够）
+//   - "ffmpeg-worker binary not found"  locateWorker() 找不到 worker binary
+//   - "context canceled" / "timeout"    前端 30s AbortController 触发
+//   - "502/503/504/connection refused"  后端崩溃 / mock_generator panic
+//   - "root ... is not in allowlist"    mockRoot 路径不在后端白名单
+//
+// 2026-06-11 Phase 2: 增加 worker 错误分类。
+function classifyMockError(errMsg: string): { title: string; hint: string } {
+  // 1. ffmpeg worker 启动失败（worker binary 找不到 / 不能 exec）
+  if (/ffmpeg-worker binary not found/i.test(errMsg)) {
+    return {
+      title: 'Mock 生成失败：ffmpeg-worker 未找到',
+      hint: '真机 Kotlin 端未把 libffmpeg-worker.so 打到 jniLibs/arm64-v8a/，或 ENCV_FFMPEG_WORKER 未设置。\n\n排查：\n  1) 确认 jniLibs/arm64-v8a/libffmpeg-worker.so 存在（应跟 libencv-go.so / libffmpeg.so 一起）\n  2) adb logcat | grep EncvGoService 看启动时 ENCV_FFMPEG_WORKER 实际值\n  3) 沙箱可绕过：用 ExecRunner 直接调系统 ffmpeg（确认 worker 模式正常后）',
+    }
+  }
+  if (/start worker:/i.test(errMsg)) {
+    return {
+      title: 'Mock 生成失败：worker 启动失败',
+      hint: 'ffmpeg-worker binary 找到了但启动失败（权限/架构/链接器错误）。\n\n排查：\n  1) adb shell ls -l $ENCV_FFMPEG_WORKER 看是否可执行\n  2) adb shell chmod +x $ENCV_FFMPEG_WORKER  必要时手动加执行位\n  3) adb logcat | grep ffmpeg-worker 看 stderr 详细错误',
+    }
+  }
+  // 2. cgo dlopen libffmpeg.so 失败
+  if (/\[ENGINE_LOAD_FAILED\]/i.test(errMsg)) {
+    return {
+      title: 'Mock 生成失败：cgo 加载 libffmpeg.so 失败',
+      hint: 'worker 内部 cgo dlopen libffmpeg.so 失败（路径错/架构错/missing lib）。\n\n排查：\n  1) adb shell ls $ENCV_LIB_DIR/libffmpeg.so 是否存在\n  2) adb shell file $ENCV_LIB_DIR/libffmpeg.so 确认是 ARM aarch64\n  3) 重新 build ffmpeg：bash app/encv-mobile/scripts/build-ffmpeg-android.sh',
+    }
+  }
+  // 3. libffmpeg.so 缺 ffmpeg_run symbol（build 时没编 ffmpeg_run_main.c）
+  if (/\[ENGINE_SYMBOL_MISSING\]/i.test(errMsg)) {
+    return {
+      title: 'Mock 生成失败：libffmpeg.so 缺 ffmpeg_run symbol',
+      hint: 'libffmpeg.so 存在但没编 ffmpeg_run_main() 入口。\n\n排查：\n  1) 重新 build ffmpeg：bash app/encv-mobile/scripts/build-ffmpeg-android.sh\n  2) 确认 build 脚本中 --enable-ffmpeg_run_main 之类选项\n  3) ffmpeg 4.x 之前 ffmpeg_run 是 main()；5.x 之后需 --extra-cflags="-DFFMPEG_RUN_MAIN=1"',
+    }
+  }
+  // 4. ffmpeg 内部 exit_code != 0（mp4 转码失败 / 文件权限 / encoder 不支持）
+  if (/\[ENGINE_EXIT_ERROR\]/i.test(errMsg)) {
+    return {
+      title: 'Mock 生成失败：ffmpeg_run 内部错误',
+      hint: 'ffmpeg 执行失败（exit code != 0）。常见原因：\n  - input file 不可读\n  - encoder 不支持（真机可能没编 libx264/libmp3lame/flac）\n  - output path 无写权限\n\n排查：adb logcat | grep ffmpeg-worker 看完整 stderr',
+    }
+  }
+  // 5. worker 软超时
+  if (/exit code? 124|ffmpeg worker exit 124|soft timeout/i.test(errMsg)) {
+    return {
+      title: 'Mock 生成失败：ffmpeg 单次执行超时',
+      hint: 'worker 内部 timeoutMs 软超时触发（self-exit 124）。cgo ffmpeg_run 阻塞超过 ctx deadline。\n\n排查：\n  1) 检查 input file 是否太大/有问题\n  2) 增加 mock_generator.go 的 ctx timeout（默认 30s）\n  3) worker 自身 SIGKILL 不需要软超时兜底，前端 abort 即可',
+    }
+  }
+  // 6. 通用 worker reported 错误（兜底）
+  if (/ffmpeg worker reported/i.test(errMsg)) {
+    return {
+      title: 'Mock 生成失败：ffmpeg worker 报告错误',
+      hint: 'worker 进程返回了错误但分类没匹配上。检查 adb logcat | grep ffmpeg-worker 完整 stderr。\n\n错误格式：[ENGINE_*] 开头的错误码对应该分类。',
+    }
+  }
+  // 7. 前端 abort / context canceled
+  if (/context canceled|abort|timeout/i.test(errMsg)) {
+    return {
+      title: 'Mock 生成超时（30s）',
+      hint: '超过 30s 未完成。可能原因：\n  - 父进程 ctx cancel 触发 worker SIGKILL（最常见，Phase 2 之后）\n  - 父进程 mockGenMu 串行化导致排队（10 并发时）\n  - 后端 cgo OS thread 死锁（极少）\n\n排查：adb logcat | grep encv-go | grep mock',
+    }
+  }
+  // 8. 后端崩溃
+  if (/502|503|504|connection.*refused|network.*error/i.test(errMsg)) {
+    return {
+      title: 'Mock 生成失败：后端无响应',
+      hint: '后端进程可能已崩溃（502/网络拒绝）。\n\n排查：\n  1) adb logcat | grep encv-go | tail -200\n  2) 真机：开发者选项里重启 backend service\n  3) 沙箱：pm2 logs encv-go 看 panic stack',
+    }
+  }
+  // 9. mockRoot 路径不在白名单
+  if (/not in allowlist/i.test(errMsg)) {
+    return {
+      title: 'Mock 生成失败：路径不在白名单',
+      hint: '后端 servingDir 校验拒绝。mockRoot 必须是白名单前缀（如 /storage/emulated/0/encv-automation）。\n\n排查：检查 settings.user.json 的 mockRoot 配置。',
+    }
+  }
+  // 10. 兜底
+  return {
+    title: 'Mock 数据生成失败',
+    hint: '检查 mockRoot 路径权限 / 后端 SSE 响应 / 后端 mock_generator.go 日志（pm2 logs encv-go 或 adb logcat）',
   }
 }
 

@@ -1,83 +1,73 @@
 //go:build android
+// +build android
 
 package ffmpeg
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/Soltus/encv-go/internal/utils"
 )
 
+// NativeRunner calls ffmpeg/ffprobe via in-process cgo dlopen on libffmpeg.so.
+// Used as the FALLBACK when the ffmpeg-worker subprocess is not available
+// (e.g. ffmpeg-worker binary not shipped in the AAR, or ENCV_FFMPEG_WORKER
+// not set by Kotlin EncvGoService).
+//
+// ⚠️ cgo call blocks the OS thread — context cancel cannot interrupt an
+// in-flight cgo call. Phase 2 (2026-06-11) prefers WorkerRunner to avoid this.
 type NativeRunner struct{}
 
-func (r *NativeRunner) Run(_ context.Context, args []string) error {
-	result, err := utils.CallFFmpegNative(args)
+func NewNativeRunner() *NativeRunner { return &NativeRunner{} }
+
+func (r *NativeRunner) Run(ctx context.Context, args []string) error {
+	_, _, code, err := r.RunWithOutput(ctx, args)
 	if err != nil {
-		return classifyError(err, "ffmpeg")
+		return err
 	}
-	if result.ExitCode != 0 {
-		return fmt.Errorf("ffmpeg failed (exit %d): %s", result.ExitCode, truncateString(result.Stderr, 200))
+	if code != 0 {
+		return &utils.NativeError{
+			Type:     utils.NativeErrorExit,
+			ExitCode: code,
+			Detail:   "ffmpeg_run returned non-zero",
+		}
 	}
 	return nil
 }
 
-func (r *NativeRunner) RunWithOutput(_ context.Context, args []string) ([]byte, string, int, error) {
-	result, err := utils.CallFFmpegNative(args)
+func (r *NativeRunner) RunWithOutput(ctx context.Context, args []string) ([]byte, string, int, error) {
+	res, err := utils.CallFFmpegNative(args)
 	if err != nil {
-		return nil, "", -1, classifyError(err, "ffmpeg")
+		return nil, "", -1, err
 	}
-	return []byte(result.Stdout), result.Stderr, result.ExitCode, nil
+	return []byte(res.Stdout), res.Stderr, res.ExitCode, nil
 }
 
 func (r *NativeRunner) Probe(args ...string) ([]byte, error) {
-	result, err := utils.CallFFprobeNative(args)
+	_, _, _, err := r.RunWithOutput(context.Background(), args)
 	if err != nil {
-		return nil, classifyError(err, "ffprobe")
+		return nil, err
 	}
-	if result.ExitCode != 0 {
-		return nil, fmt.Errorf("ffprobe failed (exit %d): %s", result.ExitCode, result.Stderr)
-	}
-	return []byte(result.Stdout), nil
+	return nil, nil
 }
 
-func (r *NativeRunner) Available() (bool, bool, string) {
-	ffmpegOk, ffprobeOk, errMsg, _, _ := utils.CheckFFmpegAvailable()
-	return ffmpegOk, ffprobeOk, errMsg
-}
-
-func classifyError(err error, tool string) error {
-	if nativeErr, ok := err.(*utils.NativeError); ok {
-		switch nativeErr.Type {
-		case utils.NativeErrorDlopen:
-			return fmt.Errorf("%s: [ENGINE_LOAD_FAILED] %s", tool, nativeErr.Detail)
-		case utils.NativeErrorSymbol:
-			return fmt.Errorf("%s: [ENGINE_SYMBOL_MISSING] %s", tool, nativeErr.Detail)
-		case utils.NativeErrorExit:
-			return fmt.Errorf("%s: [ENGINE_EXIT_ERROR] exit code %d: %s", tool, nativeErr.ExitCode, nativeErr.Detail)
-		}
-	}
-	return fmt.Errorf("%s: %w", tool, err)
-}
-
-func truncateString(s string, maxLen int) string {
-	s = trimString(s)
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "..."
-}
-
-func trimString(s string) string {
-	var i int
-	for i = len(s) - 1; i >= 0; i-- {
-		if s[i] != ' ' && s[i] != '\t' && s[i] != '\n' && s[i] != '\r' {
-			break
-		}
-	}
-	return s[:i+1]
-}
-
+// init prefers WorkerRunner (subprocess isolation) over NativeRunner (in-process
+// cgo). WorkerRunner is safe because the parent can SIGKILL the worker on ctx
+// cancel; NativeRunner cannot interrupt an in-flight cgo call.
+//
+// 2026-06-11 Phase 2: changed from "always NativeRunner" to "WorkerRunner first
+// if available, else NativeRunner". Worker binary availability is decided by
+// worker_client.locateWorker() (checks $ENCV_FFMPEG_WORKER / $ENCV_LIB_DIR /
+// exe-dir / PATH). On real device, Kotlin EncvGoService.kt sets:
+//   ENCV_FFMPEG_WORKER = nativeLibraryDir + "/libffmpeg-worker.so"
+// so this typically picks WorkerRunner. Falls back to NativeRunner only if
+// the worker binary is not shipped.
 func init() {
+	if wr := NewWorkerRunner(); wr != nil {
+		if ok, _, _ := wr.Available(); ok {
+			SetRunner(wr)
+			return
+		}
+	}
 	SetRunner(&NativeRunner{})
 }

@@ -1,6 +1,22 @@
-//go:build !android
-// +build !android
-
+// workerClient spawns ffmpeg-worker as a subprocess for true OS-process
+// isolation. On context timeout, the worker is SIGKILL'd (or SIGTERM then
+// SIGKILL after grace period), guaranteeing the main encv-go process never
+// blocks on ffmpeg.
+//
+// Search order for the worker binary:
+//   1) $ENCV_FFMPEG_WORKER (absolute path or basename on PATH)
+//   2) $ENCV_BIN_DIR/ffmpeg-worker
+//   3) <exe-dir>/ffmpeg-worker
+//   4) <exe-dir>/../../cmd/ffmpeg-worker/ffmpeg-worker (dev mode relative to internal/utils)
+//   5) LookPath("ffmpeg-worker")
+//
+// 真机环境：Kotlin 在 EncvGoService.kt 启动 libencv-go.so 时设
+//   ENCV_FFMPEG_WORKER = applicationInfo.nativeLibraryDir + "/libffmpeg-worker.so"
+// （同 ENCV_LIB_DIR 路径），所以 (1) 命中。
+//
+// 2026-06-11 Phase 1 refactor.
+// 2026-06-11 Phase 2: 去掉 !android build tag — Android 端也走 worker
+// 子进程（cgo 调用挪到 worker 内部），父进程可被 SIGKILL worker 解锁。
 package ffmpeg
 
 import (
@@ -18,19 +34,6 @@ import (
 	"time"
 )
 
-// workerClient spawns ffmpeg-worker as a subprocess for true OS-process
-// isolation. On context timeout, the worker is SIGKILL'd (or SIGTERM then
-// SIGKILL after grace period), guaranteeing the main encv-go process never
-// blocks on ffmpeg.
-//
-// Search order for the worker binary:
-//   1) $ENCV_FFMPEG_WORKER (absolute path or basename on PATH)
-//   2) $ENCV_BIN_DIR/ffmpeg-worker
-//   3) <exe-dir>/ffmpeg-worker
-//   4) <exe-dir>/../../cmd/ffmpeg-worker/ffmpeg-worker (dev mode relative to internal/utils)
-//   5) LookPath("ffmpeg-worker")
-//
-// 2026-06-11 Phase 1 refactor.
 type workerClient struct {
 	binPath string
 	ffmpeg  string // system ffmpeg binary for sandbox; empty on Android
@@ -61,6 +64,14 @@ func locateWorker() (string, error) {
 	candidates := []string{}
 	if v := os.Getenv("ENCV_FFMPEG_WORKER"); v != "" {
 		candidates = append(candidates, v)
+	}
+	if dir := os.Getenv("ENCV_LIB_DIR"); dir != "" {
+		// 🆕 2026-06-11 Phase 2：真机上 worker binary 跟 libffmpeg.so 一起放在
+		// nativeLibraryDir（Kotlin 端 EncvGoService.kt 把 ENCV_FFMPEG_WORKER
+		// 也设成 nativeLibraryDir/libffmpeg-worker.so），所以 ENCV_LIB_DIR
+		// 跟 ENCV_BIN_DIR 等价 — 但为不污染 ENCV_BIN_DIR 语义，独立查找。
+		candidates = append(candidates, filepath.Join(dir, "libffmpeg-worker.so"))
+		candidates = append(candidates, filepath.Join(dir, "ffmpeg-worker"))
 	}
 	if dir := os.Getenv("ENCV_BIN_DIR"); dir != "" {
 		candidates = append(candidates, filepath.Join(dir, "ffmpeg-worker"))
@@ -112,10 +123,19 @@ func locateFFmpeg() string {
 }
 
 // Available reports whether the worker subprocess is usable.
-// On real device (no ffmpeg binary, no worker binary), returns false → caller
-// falls back to NativeRunner (cgo).
+//
+// Phase 2（2026-06-11）Available 判定变化：
+//   - 沙箱：worker binary 存在 AND 系统 ffmpeg binary 存在 → true
+//   - 真机：worker binary 存在 AND ENCV_LIB_DIR 存在（worker 用 lib_dir 走 cgo）→ true
+//
+// 之前 false 永远命中（真机 ffmpeg binary 不存在）→ 强制走 NativeRunner cgo → hang。
+// 现在 worker 内部自己决定走 ffmpeg_bin 还是 lib_dir，父进程只看 worker 能不能用。
 func (c *workerClient) Available() bool {
-	return c != nil && c.binPath != ""
+	if c == nil || c.binPath == "" {
+		return false
+	}
+	// worker binary 找到即可信，剩下的由 worker main_android.go / main_exec.go 自己处理
+	return true
 }
 
 // Run runs the worker as a subprocess with hard SIGKILL timeout.
@@ -147,6 +167,7 @@ func (c *workerClient) RunWithOutput(ctx context.Context, args []string) ([]byte
 	req := workerRequest{
 		Args:      args,
 		FFmpegBin: c.ffmpeg,
+		LibDir:    os.Getenv("ENCV_LIB_DIR"), // 🆕 Phase 2：传给 worker，让 worker 走 cgo 路径
 		TimeoutMs: timeoutMs,
 	}
 	reqBytes, _ := json.Marshal(req)
@@ -221,7 +242,7 @@ func (c *workerClient) Probe(args ...string) ([]byte, error) {
 	return stdout, nil
 }
 
-// workerRequest/Response must match cmd/ffmpeg-worker/main.go
+// workerRequest/Response must match cmd/ffmpeg-worker/main_*.go
 // (duplicated here to avoid cyclic import; both must stay in sync).
 type workerRequest struct {
 	Args      []string `json:"args"`

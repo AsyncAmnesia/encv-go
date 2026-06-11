@@ -1,3 +1,6 @@
+//go:build !android
+// +build !android
+
 // ffmpeg-worker is a standalone subprocess that runs ONE ffmpeg invocation
 // in an isolated OS process. The main encv-go process spawns it via os.Exec
 // and can SIGKILL it on context timeout, which is impossible for an in-process
@@ -22,10 +25,17 @@
 //     "error": ""                                                 // non-empty on ffmpeg error
 //   }
 //
+// Build tags:
+//   main_exec.go   !android → sandbox/dev: os.Exec(ffmpeg_bin)
+//   main_android.go android  → real device: cgo dlopen libffmpeg.so via utils.CallFFmpegNative
+//
 // History:
 //   2026-06-11 Phase 1 refactor: created to solve "real device cgo call
 //   hangs the gin handler, frontend spinner forever".
-//   Phase 2 (deferred): ship this binary in AAR for real device usage.
+//   2026-06-11 Phase 2: split by build tag — Android now uses worker subprocess
+//   wrapping cgo dlopen, so the main encv-go process can SIGKILL the worker
+//   on ctx cancel (the cgo call inside worker is then torn down with the
+//   worker process, instead of blocking the main gin handler).
 package main
 
 import (
