@@ -311,6 +311,11 @@ export function useAutomationTests() {
     progress.value = { total: specs.length, completed: 0, passed: 0, failed: 0, skipped: 0, pending: 0 }
     results.value = []
 
+    // 🆕 2026-06-10 修复：1 次 runTests = 1 个共享 runId，所有 task 归到同一 group
+    // 历史 bug：循环内 Date.now() → 每个 task 独立 runId → Tasks.vue 永远看不到 group 聚合
+    // 跟 useWorkflowEngine.runWorkflow 保持一致（共享 run.id）
+    const sharedRunId = `at-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
+
     for (const spec of specs) {
       const result: TestCaseResult = {
         spec,
@@ -340,7 +345,7 @@ export function useAutomationTests() {
           spec.cipherMode,
           spec.compressionMode,
         )
-        recordTriggeredBy(task.id, 'automation', `at-${Date.now().toString(36)}-${spec.id}`)
+        recordTriggeredBy(task.id, 'automation', sharedRunId)
         result.taskId = task.id
         result.status = 'pending' // 任务已提交，等 WS 回调（task:completed）决定最终状态
         result.durationMs = Date.now() - start

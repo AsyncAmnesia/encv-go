@@ -147,6 +147,7 @@
           <!-- 历史：自动化测试一次跑 N 个用例 → 污染 task 列表（用户截图的"浪费屏幕空间"）-->
           <!-- 修复：连续 ≥2 个 triggeredBy != 'user' 的 task → 折叠成 1 张 group card -->
           <!--       点 group card 右侧 chevron 展开/折叠详情 -->
+          <!-- 🆕 2026-06-10 修复 v2：2 级嵌套 — group 展开时按 pluginName 插 plugin_section 段头 -->
           <ion-item-sliding v-if="item.kind === 'group'">
             <ion-item button detail @click="toggleTaskGroup(item.groupKey!)" :class="['task-group-card', `group-tone-${item.tone}`]">
               <div class="group-icon-bubble" :class="`group-tone-${item.tone}`" slot="start">
@@ -200,6 +201,46 @@
               </ion-button>
             </ion-item>
           </ion-item-sliding>
+
+          <!-- 🆕 2026-06-10 修复：2 级嵌套的 plugin sub-section 段头 -->
+          <!-- 在 group card 展开后插入，按 pluginName 桶里每个 plugin 1 个段头 -->
+          <!-- 段头下方是该 plugin 的所有 task 卡片（紧随其后的 kind='task' 项） -->
+          <!-- 不折叠、不滑动、不带 chevron — 跟外层 group 同步展开/折叠 -->
+          <div
+            v-else-if="item.kind === 'plugin_section'"
+            :class="['plugin-sub-section', `plugin-tone-${item.tone}`]"
+          >
+            <div class="plugin-sub-icon" :class="`plugin-tone-${item.tone}`">
+              <ion-icon :icon="extensionPuzzle"></ion-icon>
+            </div>
+            <div class="plugin-sub-info">
+              <span class="plugin-sub-name">{{ item.pluginName }}</span>
+              <span class="plugin-sub-count">· {{ item.tasks.length }} {{ t('tasks.tasksCount') }}</span>
+            </div>
+            <div class="plugin-sub-badges">
+              <ion-badge v-if="item.subSummary.passed > 0" color="success" class="status-badge">
+                <ion-icon :icon="checkmarkCircle" class="badge-icon"></ion-icon>
+                {{ item.subSummary.passed }}
+              </ion-badge>
+              <ion-badge v-if="item.subSummary.failed > 0" color="danger" class="status-badge">
+                <ion-icon :icon="closeCircle" class="badge-icon"></ion-icon>
+                {{ item.subSummary.failed }}
+              </ion-badge>
+              <ion-badge v-if="item.subSummary.running > 0" color="warning" class="status-badge">
+                <ion-spinner name="dots" class="badge-spinner"></ion-spinner>
+                {{ item.subSummary.running }}
+              </ion-badge>
+              <ion-badge v-if="item.subSummary.pending > 0" color="medium" class="status-badge">
+                {{ item.subSummary.pending }}
+              </ion-badge>
+            </div>
+            <div class="plugin-sub-progress-track">
+              <div
+                class="plugin-sub-progress-fill"
+                :style="{ width: item.subSummary.percent + '%' }"
+              ></div>
+            </div>
+          </div>
 
           <ion-item-sliding v-else>
             <ion-item @click="openTaskDetail(item.task)" button detail>
@@ -446,8 +487,13 @@ async function handleClearCompleted() {
 //   - 用户手动搜/筛不受影响（filteredTasks 是折叠前数据）
 const GROUP_FOLD_THRESHOLD = 2
 
+// 🆕 2026-06-10 修复：2 级嵌套（Run group card → plugin sub-section → N 张 task 卡片）
+// 历史：group 内部只展示扁平 task 列表 → 用户：「单个插件任务下面聚合子任务的显示」
+// 修复：group 展开时按 pluginName 再分桶，每个 plugin 渲染一个 plugin_section 段头
+//       段头下方是该 plugin 的所有 task 卡片
 type DisplayItem =
   | { kind: 'group'; key: string; groupKey: string; tone: 'automation' | 'ai_agent'; tasks: EncvTask[]; summary: { passed: number; failed: number; running: number; pending: number; percent: number; latestCreatedAt: string } }
+  | { kind: 'plugin_section'; key: string; pluginName: string; tone: 'automation' | 'ai_agent'; tasks: EncvTask[]; subSummary: { passed: number; failed: number; running: number; pending: number; percent: number } }
   | { kind: 'task'; key: string; task: EncvTask }
 
 const expandedGroupKeys = ref<Set<string>>(new Set())
@@ -467,24 +513,22 @@ const displayedItems = computed<DisplayItem[]>(() => {
   const tasks = filteredTasks.value
   if (tasks.length === 0) return []
 
-  // 🆕 2026-06-10 修复 #2 v3（彻底版）：按 workflow runId 分组，**不再兼容旧版**
-  // 旧实现（v1）：所有 non-user task 归 1 个 group → 跨 run 混乱
-  // 旧实现（v2）：按 triggeredBy 粗聚拢 → 跨 run 仍混
-  // 旧实现（v3 旧）：runId 分组 + legacy fallback（无 runId 走 triggeredBy 聚拢）→ 用户：
-  //   "任务组完全失效了啊，不要想着怎么兼容旧的了" —— legacy fallback 让 group 边界变得不确定
-  // 新实现（v3 终）：
-  //   1) 每个 task 通过 getRunIdForTask(taskId) 找 runId（O(1) 内存索引）
-  //   2) 有 runId 的 → 按 runId 分组（稳定、独立、不会跨 run 干扰）
-  //   3) 没有 runId 的 task → **直接单条展示，不参与 group 折叠**（彻底不兼容旧数据）
-  //   4) 性能：cacheMap 进程级单例（useTaskTrigger 已优化）→ 不再 200× JSON.parse
-  //   5) 同一 runId 内的 task 在 group 内按 filteredTasks 顺序展示（保留原排序）
+  // 🆕 2026-06-10 修复 #2 v3 终版：按 workflow runId 分组，**不再兼容旧版**
+  // 历史：useAutomationTests.runTests() 每个 task 用 Date.now() 生成独立 runId
+  //   → Tasks.vue 永远看不到 group 折叠（已修：1 次 runTests = 1 个共享 runId）
+  //
+  // 🆕 2026-06-10 修复：2 级嵌套 — group 内部按 pluginName 再分桶
+  //   - 同 runId 的 task 归 1 个 group
+  //   - group 展开时按 pluginName 分桶，每个 plugin 渲染 plugin_section 段头
+  //   - plugin_section 下方是该 plugin 的所有 task 卡片
   interface Group {
     runId: string
     tone: 'automation' | 'ai_agent'
-    tasks: EncvTask[]
+    /** plugins[pluginName] = 该 plugin 的 task 列表（按 filteredTasks 顺序插入） */
+    plugins: Map<string, EncvTask[]>
   }
   const groupsByRun = new Map<string, Group>()
-  const singletonTasks: EncvTask[] = []  // 🆕 没有 runId 的单条 task
+  const singletonTasks: EncvTask[] = []  // 🆕 没有 runId / triggeredBy='user' 的单条 task
 
   for (const t of tasks) {
     const by = getTriggeredBy(t.id)
@@ -500,16 +544,26 @@ const displayedItems = computed<DisplayItem[]>(() => {
       continue
     }
     const tone: 'automation' | 'ai_agent' = by === 'ai_agent' ? 'ai_agent' : 'automation'
+    const pluginName = t.pluginName || '(unknown plugin)'
     const g = groupsByRun.get(runId)
-    if (g) g.tasks.push(t)
-    else groupsByRun.set(runId, { runId, tone, tasks: [t] })
+    if (g) {
+      const arr = g.plugins.get(pluginName)
+      if (arr) arr.push(t)
+      else g.plugins.set(pluginName, [t])
+    } else {
+      groupsByRun.set(runId, { runId, tone, plugins: new Map([[pluginName, [t]]]) })
+    }
   }
 
   // 把 singletonTasks 按 filteredTasks 顺序插入；group 按最早 createdAt 排序
   const allGroups: Group[] = Array.from(groupsByRun.values())
   allGroups.sort((a, b) => {
-    const aEarliest = Math.min(...a.tasks.map((t) => new Date(t.createdAt).getTime()))
-    const bEarliest = Math.min(...b.tasks.map((t) => new Date(t.createdAt).getTime()))
+    const aEarliest = Math.min(
+      ...Array.from(a.plugins.values()).flatMap((arr) => arr.map((t) => new Date(t.createdAt).getTime())),
+    )
+    const bEarliest = Math.min(
+      ...Array.from(b.plugins.values()).flatMap((arr) => arr.map((t) => new Date(t.createdAt).getTime())),
+    )
     return bEarliest - aEarliest  // 最新在最前
   })
 
@@ -519,19 +573,33 @@ const displayedItems = computed<DisplayItem[]>(() => {
     result.push({ kind: 'task', key: t.id, task: t })
   }
   for (const g of allGroups) {
-    if (g.tasks.length >= GROUP_FOLD_THRESHOLD) {
+    // 把 group 内的所有 task 拉平成数组（按 plugin 顺序 + plugin 内 filteredTasks 顺序）
+    const allGroupTasks: EncvTask[] = []
+    for (const arr of g.plugins.values()) {
+      allGroupTasks.push(...arr)
+    }
+    if (allGroupTasks.length >= GROUP_FOLD_THRESHOLD) {
       const groupKey = `${g.tone}-${g.runId}`
       const expanded = expandedGroupKeys.value.has(groupKey)
-      result.push(buildGroupItem(groupKey, g.tasks))
+      // 始终构造 group card
+      result.push(buildGroupItem(groupKey, allGroupTasks))
       if (expanded) {
-        for (const t of g.tasks) {
-          result.push({ kind: 'task', key: t.id, task: t })
+        // 🆕 2 级嵌套：group 展开时按 pluginName 插入 plugin_section 段头
+        for (const [pluginName, pluginTasks] of g.plugins.entries()) {
+          result.push(buildPluginSectionItem(pluginName, pluginTasks, g.tone))
+          for (const t of pluginTasks) {
+            result.push({ kind: 'task', key: t.id, task: t })
+          }
         }
       }
     } else {
       // 不足阈值 → 全部展开为普通 task（保留顺序，不打乱列表）
-      for (const t of g.tasks) {
-        result.push({ kind: 'task', key: t.id, task: t })
+      // 🆕 仍然按 plugin 插入 sub-section header，让用户看到「这是按 plugin 组织的」
+      for (const [pluginName, pluginTasks] of g.plugins.entries()) {
+        result.push(buildPluginSectionItem(pluginName, pluginTasks, g.tone))
+        for (const t of pluginTasks) {
+          result.push({ kind: 'task', key: t.id, task: t })
+        }
       }
     }
   }
@@ -564,6 +632,42 @@ function buildGroupItem(groupKey: string, seg: EncvTask[]): DisplayItem {
     tone,
     tasks: seg,
     summary: { passed, failed, running, pending, percent, latestCreatedAt: latest.createdAt },
+  }
+}
+
+/**
+ * 🆕 2026-06-10 修复：构造 plugin sub-section item
+ *
+ * 2 级嵌套 group 内的「插件段头」（每个 plugin 一个）。
+ * 跟 group card 类似但更轻量：
+ *   - 不折叠（跟随外层 group 展开）
+ *   - 无 chevron 按钮
+ *   - 无 sliding
+ *   - 但有 icon + name + count + 4 个 status badge + 2px 进度条
+ *
+ * 用于：group card 展开后，按 pluginName 桶里每个 plugin 渲染一个段头。
+ */
+function buildPluginSectionItem(
+  pluginName: string,
+  tasks: EncvTask[],
+  tone: 'automation' | 'ai_agent',
+): DisplayItem {
+  let passed = 0, failed = 0, running = 0, pending = 0
+  for (const t of tasks) {
+    if (t.status === 'completed') passed++
+    else if (t.status === 'failed') failed++
+    else if (t.status === 'running' || t.status === 'cancelling') running++
+    else pending++
+  }
+  const finished = passed + failed
+  const percent = tasks.length > 0 ? Math.round((finished / tasks.length) * 100) : 0
+  return {
+    kind: 'plugin_section',
+    key: `plugin-section-${tone}-${pluginName}-${tasks[0]?.id ?? 'empty'}`,
+    pluginName,
+    tone,
+    tasks,
+    subSummary: { passed, failed, running, pending, percent },
   }
 }
 
@@ -853,6 +957,114 @@ onIonViewWillEnter(() => {
 .group-chevron-btn {
   --color: var(--ion-color-medium-shade);
   margin: 0;
+}
+
+/* ============================================================
+   🆕 2026-06-10 修复：plugin sub-section（2 级嵌套 group 内的插件段头）
+   ============================================================ */
+.plugin-sub-section {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 12px 56px;  /* 左侧 56px 缩进（对应 group card 4px border + 40px icon + 12px 间距） */
+  background: rgba(79, 140, 255, 0.05);
+  border-bottom: 1px solid rgba(79, 140, 255, 0.12);
+  font-size: 13px;
+  min-height: 44px;
+}
+.plugin-sub-section.plugin-tone-ai_agent {
+  background: rgba(139, 92, 246, 0.05);
+  border-bottom-color: rgba(139, 92, 246, 0.12);
+}
+
+.plugin-sub-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.plugin-sub-icon.plugin-tone-ai_agent {
+  background: rgba(139, 92, 246, 0.18);
+  color: var(--ion-color-secondary);
+}
+.plugin-sub-icon.plugin-tone-automation {
+  background: rgba(79, 140, 255, 0.18);
+  color: var(--ion-color-primary);
+}
+.plugin-sub-icon ion-icon {
+  font-size: 14px;
+}
+
+.plugin-sub-info {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+.plugin-sub-name {
+  font-weight: 600;
+  color: var(--ion-color-dark);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.plugin-sub-count {
+  font-size: 11px;
+  color: var(--encv-text-secondary);
+  white-space: nowrap;
+}
+
+.plugin-sub-badges {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+  align-items: center;
+}
+.plugin-sub-badges .status-badge {
+  font-size: 10px;
+  --padding-start: 5px;
+  --padding-end: 6px;
+  --padding-top: 1px;
+  --padding-bottom: 1px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.plugin-sub-badges .badge-icon {
+  font-size: 10px;
+}
+.plugin-sub-badges .badge-spinner {
+  width: 8px;
+  height: 8px;
+  --color: currentColor;
+}
+
+.plugin-sub-progress-track {
+  position: absolute;
+  left: 56px;
+  right: 12px;
+  bottom: 2px;
+  height: 2px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 1px;
+  overflow: hidden;
+  pointer-events: none;
+}
+.plugin-sub-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--ion-color-primary), var(--ion-color-primary-shade));
+  border-radius: 1px;
+  transition: width 0.3s ease;
+}
+.plugin-tone-ai_agent .plugin-sub-progress-fill {
+  background: linear-gradient(90deg, var(--ion-color-secondary), var(--ion-color-secondary-shade));
 }
 
 .time-created {
