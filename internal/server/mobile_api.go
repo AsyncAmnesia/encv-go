@@ -948,6 +948,57 @@ func (s *Server) handleFFmpegStatusGin(c *gin.Context) {
 	})
 }
 
+// 🆕 2026-06-11 v7：接收前端自动化测试分析结果上报
+// 用途：Tasks.vue 「查看报告」按钮触发，把 localStorage 历史聚合 + 错误聚类
+//   通过 fetch 异步上报到后端，dev console 同时输出
+//   后端把 payload 写到 log（聚合分析用） + 返回 ack
+// 不阻塞前端 UI（fire-and-forget + silent fail）
+func (s *Server) handleAutomationReportGin(c *gin.Context) {
+	var payload map[string]any
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json: " + err.Error()})
+		return
+	}
+	// 提取关键字段便于日志检索
+	runCount, _ := payload["runCount"].(float64)
+	failed, _ := payload["totalFailed"].(float64)
+	passed, _ := payload["totalPassed"].(float64)
+	webdav, _ := payload["webdavRunCount"].(float64)
+	plugin, _ := payload["pluginRunCount"].(float64)
+	failureRate, _ := payload["failureRate"].(float64)
+	suspiciousCount := 0
+	if bugs, ok := payload["suspiciousBugs"].([]any); ok {
+		suspiciousCount = len(bugs)
+	}
+	// 失败/可疑 bug → warn 级别（运维日志监控可捞）
+	logLevel := "info"
+	if failed > 0 || suspiciousCount > 0 {
+		logLevel = "warn"
+	}
+	slog.LogAttrs(c.Request.Context(), slog.LevelInfo,
+		"[automation-report] 收到前端自动化测试分析上报",
+		slog.String("level", logLevel),
+		slog.Float64("runCount", runCount),
+		slog.Float64("webdavRunCount", webdav),
+		slog.Float64("pluginRunCount", plugin),
+		slog.Float64("totalPassed", passed),
+		slog.Float64("totalFailed", failed),
+		slog.Float64("failureRate%", failureRate),
+		slog.Int("suspiciousBugCount", suspiciousCount),
+	)
+	// 可疑 bug 详情单独打一行 JSON（方便日志检索）
+	if bugs, ok := payload["suspiciousBugs"].([]any); ok && len(bugs) > 0 {
+		bugJSON, _ := json.Marshal(bugs)
+		slog.Warn("[automation-report] suspicious bugs: " + string(bugJSON))
+	}
+	// 最近失败用例详情
+	if lastFailed, ok := payload["lastRunFailed"].([]any); ok && len(lastFailed) > 0 {
+		lfJSON, _ := json.Marshal(lastFailed)
+		slog.Warn("[automation-report] last run failed cases: " + string(lfJSON))
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "received": true})
+}
+
 func (s *Server) handleTagsListGin(c *gin.Context) {
 	allTags := GlobalTagStore.GetAllTags()
 	type tagEntry struct {

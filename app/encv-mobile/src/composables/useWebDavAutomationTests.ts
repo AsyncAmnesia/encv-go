@@ -24,7 +24,7 @@
  * - task 完成后调 clearTriggeredBy 清理（避免污染后续真实 task 的分组）
  */
 import { ref, computed } from 'vue'
-import { useTaskTrigger, type TriggeredBy } from './useTaskTrigger'
+import { setTaskMetadata, getTaskMetadata, type TriggeredBy } from './useTaskTrigger'
 
 // ============= 类型 =============
 
@@ -287,7 +287,7 @@ export function useWebDavAutomationTests() {
       startedAt,
     }
     // 任务系统适配：标记这个 testId 属于当前 run group
-    setTaskMetadata(testCase.id, 'automation' as TriggeredBy, currentRunId.value ?? undefined)
+    setTaskMetadata(testCase.id, 'automation', currentRunId.value)
     try {
       const result = await executeWebDavTest(testCase, baseUrl.value, timeoutMs)
       const completedAt = new Date().toISOString()
@@ -336,7 +336,7 @@ export function useWebDavAutomationTests() {
     const startedAt = currentRunStartedAt.value
     // 任务系统适配：所有 test 共享同一个 runId
     for (const c of WEBDAV_TEST_CASES) {
-      setTaskMetadata(c.id, 'automation' as TriggeredBy, currentRunId.value)
+      setTaskMetadata(c.id, 'automation', currentRunId.value)
     }
     persistCurrentRun()
     // 顺序跑（webdav 操作有依赖：PUT 后才能 GET，MOVE 后才能 DELETE；并行会冲突）

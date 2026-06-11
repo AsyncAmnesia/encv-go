@@ -15,6 +15,25 @@
     </ion-header>
 
     <ion-content>
+      <!-- WebDAV 启用状态 banner -->
+      <div v-if="webDavEnabled === false" class="webdav-status-banner webdav-status-disabled">
+        <ion-icon :icon="warningOutline" class="banner-icon"></ion-icon>
+        <div class="banner-text">
+          <strong>WebDAV 服务未启用</strong>
+          <p>后端 <code>config.yaml</code> 缺少 <code>webdav.root</code> 配置。所有 18 个测试用例都会因 404 失败。</p>
+        </div>
+        <ion-button fill="clear" size="small" @click="checkWebDavHealth">
+          <ion-icon :icon="sync" slot="icon-only"></ion-icon>
+        </ion-button>
+      </div>
+      <div v-else-if="webDavEnabled === true" class="webdav-status-banner webdav-status-enabled">
+        <ion-icon :icon="cloudDoneOutline" class="banner-icon"></ion-icon>
+        <div class="banner-text">
+          <strong>WebDAV 服务已启用</strong>
+          <p>endpoint: <code>{{ baseUrl }}</code></p>
+        </div>
+      </div>
+
       <!-- 调试栏：实时统计 -->
       <div class="webdav-debug-bar">
         <span>共 <strong>{{ summary.total }}</strong> 用例</span>
@@ -275,7 +294,19 @@ const detailRun = ref<WebDavTestRun | null>(null)
 
 onMounted(() => {
   historyRuns.value = getPersistedRuns()
+  // 异步检查 webdav 是否启用
+  checkWebDavHealth()
 })
+
+const webDavEnabled = ref<boolean | null>(null)  // null=检测中, true/false=结果
+async function checkWebDavHealth() {
+  try {
+    const res = await fetch(`${window.location.origin}/webdav/`, { method: 'OPTIONS' })
+    webDavEnabled.value = res.status < 500
+  } catch {
+    webDavEnabled.value = false
+  }
+}
 
 function getResult(caseId: string) {
   return results.value.find((r) => r.caseId === caseId)
@@ -404,6 +435,62 @@ function openRunDetail(run: WebDavTestRun) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 🆕 2026-06-11 v7：webdav 健康状态 banner */
+.webdav-status-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 10px 12px 4px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.webdav-status-banner .banner-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+.webdav-status-banner .banner-text {
+  flex: 1;
+  min-width: 0;
+}
+.webdav-status-banner strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 2px;
+  letter-spacing: -0.01em;
+}
+.webdav-status-banner p {
+  margin: 0;
+  font-size: 11px;
+  color: inherit;
+  opacity: 0.9;
+}
+.webdav-status-banner code {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 10px;
+  background: rgba(0, 0, 0, 0.08);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.webdav-status-disabled {
+  background: linear-gradient(135deg, rgba(255, 87, 34, 0.12), rgba(244, 67, 54, 0.08));
+  border: 1px solid rgba(244, 67, 54, 0.25);
+  color: #c62828;
+}
+.webdav-status-disabled .banner-icon {
+  color: var(--ion-color-danger);
+}
+.webdav-status-enabled {
+  background: linear-gradient(135deg, rgba(76, 175, 80, 0.1), rgba(54, 175, 110, 0.06));
+  border: 1px solid rgba(76, 175, 80, 0.22);
+  color: #2e7d32;
+}
+.webdav-status-enabled .banner-icon {
+  color: var(--ion-color-success);
 }
 
 .last-result-summary {

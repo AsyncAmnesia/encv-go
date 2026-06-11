@@ -1000,58 +1000,132 @@ async function resetGrouping() {
   await fetchTasks()
 }
 
-// 🆕 2026-06-11 v6：查看所有自动化测试历史报告（localStorage `encv_automation_results_v1`）
-// 用户原话：「话说我已经触发了多轮自动化测试了，测试报告存到哪了？里面报告了什么错误？」
-// 修复：在 Tasks.vue 调试栏加按钮 → 读 localStorage → 用 alert/showToast 摘要
-// 详细报告 → 跳转到 WebDavAutomationTestsDetail view 查看（里面有「历史报告」modal）
+// 🆕 2026-06-11 v7：自动化测试报告分析器
+// 设计原则（用户原话「测试报告是给你看的不是给我看的」）：
+//   - 不弹 alert / showToast 烦用户
+//   - 写 console.group 输出结构化分析（dev console 直接看）
+//   - 自动按失败率 / 错误模式分类，输出可疑 bug 列表
+//   - 关键失败 → 上报后端 /api/dev/automation-report（让后端聚合分析）
+//   - 用户视角：调试栏按钮触发，但**用户不用等结果**，console + 后端都看得到
 function showAutomationReports() {
+  const STORAGE_KEY = 'encv_automation_results_v1'
+  let runs: any[] = []
   try {
-    const raw = localStorage.getItem('encv_automation_results_v1')
-    if (!raw) {
-      showToast({ message: 'localStorage 中没有测试报告 (encv_automation_results_v1 为空)', duration: 3000, color: 'medium' })
-      return
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) runs = parsed
     }
-    const runs = JSON.parse(raw) as Array<any>
-    if (!Array.isArray(runs) || runs.length === 0) {
-      showToast({ message: '测试报告数组为空', duration: 3000, color: 'medium' })
-      return
-    }
-    // 分类统计
-    const webdavRuns = runs.filter((r) => r.category === 'webdav')
-    const pluginRuns = runs.filter((r) => r.category !== 'webdav')
-    const totalPassed = runs.reduce((acc, r) => acc + (r.passed ?? 0), 0)
-    const totalFailed = runs.reduce((acc, r) => acc + (r.failed ?? 0), 0)
-    const totalSkipped = runs.reduce((acc, r) => acc + (r.skipped ?? 0), 0)
-    // 找最近的 failed 报告摘要
-    const recentFailed = runs.filter((r) => (r.failed ?? 0) > 0).slice(0, 5)
-    const summary = [
-      `📊 报告总数: ${runs.length} 次 run`,
-      `   · WebDAV: ${webdavRuns.length} 次`,
-      `   · 插件自动化: ${pluginRuns.length} 次`,
-      `   · 总通过: ${totalPassed}`,
-      `   · 总失败: ${totalFailed}`,
-      `   · 总跳过: ${totalSkipped}`,
-    ]
-    if (recentFailed.length > 0) {
-      summary.push('', '❌ 最近失败 run:')
-      for (const r of recentFailed) {
-        const startTime = r.startedAt ? new Date(r.startedAt).toLocaleString('zh-CN', { hour12: false }) : '-'
-        summary.push(`   ${startTime}: ${r.passed ?? 0}/${r.totalCases ?? 0} passed, ${r.failed ?? 0} failed, ${r.skipped ?? 0} skipped (#${(r.id ?? '').slice(0, 16)})`)
-        // 列出失败用例名
-        const failedCases = (r.results ?? []).filter((x: any) => x.status === 'failed')
-        for (const fc of failedCases.slice(0, 3)) {
-          summary.push(`      - ${fc.caseName ?? fc.caseId}: ${fc.error ?? ''}`)
-        }
-        if (failedCases.length > 3) {
-          summary.push(`      - ... 还有 ${failedCases.length - 3} 个失败`)
+  } catch (e) {
+    console.error('[automation-report] localStorage parse failed:', e)
+    return
+  }
+  if (runs.length === 0) {
+    console.info('[automation-report] no runs in localStorage (key=' + STORAGE_KEY + ')')
+    return
+  }
+
+  // 自动分析
+  const webdavRuns = runs.filter((r) => r.category === 'webdav')
+  const pluginRuns = runs.filter((r) => r.category !== 'webdav')
+  const totalPassed = runs.reduce((acc, r) => acc + (r.passed ?? 0), 0)
+  const totalFailed = runs.reduce((acc, r) => acc + (r.failed ?? 0), 0)
+  const totalSkipped = runs.reduce((acc, r) => acc + (r.skipped ?? 0), 0)
+  const totalCases = totalPassed + totalFailed + totalSkipped
+  const failureRate = totalCases > 0 ? (totalFailed / totalCases) * 100 : 0
+
+  // 错误聚类：相同 caseName 失败多次 → 可疑 bug
+  const errorMap = new Map<string, { count: number; firstError: string; runs: string[] }>()
+  for (const r of runs) {
+    for (const c of r.results ?? []) {
+      if (c.status === 'failed') {
+        const key = `${c.category ?? '?'}:${c.caseName ?? c.caseId ?? '?'}`
+        const prev = errorMap.get(key)
+        if (prev) {
+          prev.count++
+          prev.runs.push(r.id?.slice(0, 12) ?? '?')
+        } else {
+          errorMap.set(key, { count: 1, firstError: c.error ?? '', runs: [r.id?.slice(0, 12) ?? '?'] })
         }
       }
-    } else {
-      summary.push('', '✅ 所有 run 均无失败')
     }
-    alert(summary.join('\n'))
-  } catch (e) {
-    showToast({ message: `读取报告失败: ${e instanceof Error ? e.message : String(e)}`, duration: 3000, color: 'danger' })
+  }
+  const suspiciousBugs = Array.from(errorMap.entries())
+    .filter(([, v]) => v.count >= 2)
+    .sort((a, b) => b[1].count - a[1].count)
+
+  // 最近一次失败的 run
+  const lastRun = runs[0]
+  const lastRunFailed = (lastRun?.results ?? []).filter((c: any) => c.status === 'failed')
+
+  // 输出结构化报告
+  console.group('[automation-report] 自动化测试历史分析')
+  console.log('localStorage key:', STORAGE_KEY)
+  console.log('run 总数:', runs.length, '(webdav=' + webdavRuns.length + ', plugin=' + pluginRuns.length + ')')
+  console.log('总用例:', totalCases, '· 通过:', totalPassed, '· 失败:', totalFailed, '· 跳过:', totalSkipped)
+  console.log('总失败率:', failureRate.toFixed(2) + '%')
+  if (lastRun) {
+    console.log('最近 run:', {
+      id: lastRun.id,
+      startedAt: lastRun.startedAt,
+      totalCases: lastRun.totalCases,
+      passed: lastRun.passed,
+      failed: lastRun.failed,
+      skipped: lastRun.skipped,
+      category: lastRun.category ?? 'plugin',
+      baseUrl: lastRun.baseUrl,
+    })
+    if (lastRunFailed.length > 0) {
+      console.warn('最近 run 失败用例:', lastRunFailed)
+    }
+  }
+  if (suspiciousBugs.length > 0) {
+    console.error('🚨 可疑 bug（多次失败的用例）:')
+    for (const [name, info] of suspiciousBugs) {
+      console.error(`  ${name} — 失败 ${info.count} 次`)
+      console.error(`    错误: ${info.firstError}`)
+      console.error(`    出现在 run: ${info.runs.join(', ')}`)
+    }
+  } else if (totalFailed === 0) {
+    console.info('✅ 所有 run 均无失败')
+  }
+  console.groupEnd()
+
+  // 上报后端（fire-and-forget，不阻塞 UI）
+  reportAutomationToBackend({
+    storageKey: STORAGE_KEY,
+    runCount: runs.length,
+    webdavRunCount: webdavRuns.length,
+    pluginRunCount: pluginRuns.length,
+    totalCases,
+    totalPassed,
+    totalFailed,
+    totalSkipped,
+    failureRate: Number(failureRate.toFixed(2)),
+    suspiciousBugs: suspiciousBugs.map(([name, info]) => ({ name, count: info.count, firstError: info.firstError })),
+    lastRunFailed: lastRunFailed.map((c: any) => ({ caseName: c.caseName, error: c.error, httpStatus: c.httpStatus, errorKind: c.errorKind })),
+    timestamp: new Date().toISOString(),
+  }).catch((e) => {
+    console.debug('[automation-report] backend report failed (silent):', e)
+  })
+}
+
+/**
+ * 上报自动化测试分析结果到后端（fire-and-forget）
+ * 失败不阻塞 UI，silent
+ */
+async function reportAutomationToBackend(payload: object): Promise<void> {
+  try {
+    const { getApiBaseUrl } = await import('@/api/encv')
+    const baseUrl = getApiBaseUrl()
+    await fetch(`${baseUrl}/api/dev/automation-report`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+  } catch {
+    // 后端没接这个 endpoint 没关系，console 已经输出了
+    throw new Error('backend report endpoint unavailable')
   }
 }
 </script>

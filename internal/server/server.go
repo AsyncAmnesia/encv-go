@@ -327,6 +327,7 @@ func (s *Server) Start(version string) (string, error) {
 	r.GET("/api/stream/external", s.handleStreamExternalFileGin)
 	r.GET("/api/build-info", s.handleBuildInfoGin)
 	r.GET("/api/ffmpeg-status", s.handleFFmpegStatusGin)
+	r.POST("/api/dev/automation-report", s.handleAutomationReportGin)
 	r.GET("/api/container/versions", s.handleGetContainerVersionsGin)
 	r.GET("/api/plugins", s.handlePluginsGin)
 	r.GET("/api/plugins/container-extensions", s.handleContainerExtensionsGin)
