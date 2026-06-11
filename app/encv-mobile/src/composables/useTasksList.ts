@@ -186,11 +186,18 @@ export function useTasksList() {
     }
   }
 
+  // 🆕 2026-06-10 修复：所有 apply* 函数都 spread 完整 payload
+  // 历史 bug：applyTaskCreated 只构造 {id, type, sourcePath, status, progress, createdAt}（6 字段）
+  //   → 丢失 pluginName/version/targetPath/extraFields
+  //   → Tasks.vue 任务组按 pluginName 分桶 → 全部落到 '(unknown plugin)' → 「插件没正确识别，任务依旧全部平铺」
+  // 修复：spread data 整个对象，WS 后端会发完整 *MobileTask（含 pluginName）
+
   function applyTaskUpdate(data: { id: string; type: string; status: string; progress: number }) {
     const idx = tasks.value.findIndex((t) => t.id === data.id)
     if (idx !== -1) {
       tasks.value[idx] = {
         ...tasks.value[idx],
+        ...data,  // 🆕 spread 整个 data（防 pluginName 丢失）
         status: data.status as TaskStatus,
         progress: data.progress,
       }
@@ -216,16 +223,30 @@ export function useTasksList() {
     }
   }
 
-  function applyTaskCreated(data: { id: string; type: string; sourcePath: string }) {
+  function applyTaskCreated(data: {
+    id: string
+    type: string
+    sourcePath: string
+    pluginName?: string
+    version?: number
+    targetPath?: string
+    createdAt?: string
+    [k: string]: any  // 允许后端多发字段（status/progress/phase/extraFields 等）
+  }) {
     const exists = tasks.value.some((t) => t.id === data.id)
     if (!exists) {
       tasks.value.unshift({
+        ...data,  // 🆕 spread 完整 payload（pluginName/version/targetPath/createdAt 等保留）
         id: data.id,
         type: data.type as TaskType,
         sourcePath: data.sourcePath,
-        status: 'queued',
-        progress: 0,
-        createdAt: new Date().toISOString(),
+        pluginName: data.pluginName,  // 🆕 关键字段：保持插件识别
+        version: data.version,
+        targetPath: data.targetPath,
+        status: data.status ?? 'queued',
+        progress: data.progress ?? 0,
+        phase: data.phase,
+        createdAt: data.createdAt ?? new Date().toISOString(),
       })
     }
   }
@@ -235,7 +256,7 @@ export function useTasksList() {
     if (idx !== -1) {
       const prev = tasks.value[idx]
       tasks.value[idx] = {
-        ...prev,
+        ...prev,  // 🆕 prev 已经有 pluginName（从 spread 来），不再被覆盖
         status: data.error ? 'failed' : 'completed',
         progress: data.error ? prev.progress : 100,
         phase: data.error ? prev.phase : 'completed',

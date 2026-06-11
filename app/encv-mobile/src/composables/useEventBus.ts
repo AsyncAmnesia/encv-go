@@ -1,9 +1,20 @@
 type Handler<T = any> = (data: T) => void
 
+// 🆕 2026-06-10 修复：task:* 事件 payload 是完整的 Task 快照（不是只 3 个字段）
+// 历史：applyTaskCreated 只解构 {id, type, sourcePath} → 丢失 pluginName/version/targetPath
+//       → Tasks.vue 任务组按 pluginName 分桶时全部落到 '(unknown plugin)'
+//       → 插件子段头永远不显示，用户报「插件没正确识别，任务依旧全部平铺」
+// 修复：类型用 EncvTask 全字段，apply 函数 spread 整个 payload
+//
+// 后端 Broadcast('task:created', task) 发的就是 *MobileTask 全字段（internal/service/task_manager.go:178-180）
+//   WsBackend.ts:88 → emit(msg.type, msg.data) 透传 → 完整结构
+//   HttpPollBackend.ts:100 → emit('task:created', {id, type, sourcePath}) ✗ 截断了！需要修
+//   ⚠️ 上面那条要同步改 backend/poll → emit 完整 task（见 HttpPollBackend.ts）
+import type { EncvTask } from '@/api/encv'
 export interface EncvEvents {
-  'task:update': { id: string; type: string; status: string; progress: number }
+  'task:update': Partial<EncvTask> & { id: string; type: string; status: string; progress: number }
   'task:progress': { id: string; progress: number; phase: string; speed: string; eta: string }
-  'task:created': { id: string; type: string; sourcePath: string }
+  'task:created': Partial<EncvTask> & { id: string; type: string; sourcePath: string; pluginName?: string; version?: number; targetPath?: string; createdAt?: string }
   'task:completed': { id: string; error?: string }
   'task:refresh': Record<string, never>
   'file:change': { path: string; action: 'create' | 'delete' | 'modify' }

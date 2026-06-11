@@ -97,7 +97,11 @@ export function createHttpPollBackend(
       if (!prev) {
         // 🆕 新 task
         lastSnapshot.set(t.id, snapshotOf(t))
-        emit('task:created', { id: t.id, type: t.type, sourcePath: t.sourcePath })
+        // 🆕 2026-06-10 修复：emit 完整 task（不是只 3 字段），applyTaskCreated 需要 pluginName/version/targetPath
+        // 历史 bug：{id, type, sourcePath} → pluginName 丢失 → Tasks.vue 任务组按 pluginName 分桶全部落到
+        //   '(unknown plugin)' → 「插件没正确识别，任务依旧全部平铺」
+        // 跟 WsBackend 行为对齐（WsBackend 直接 emit msg.data，透传全字段）
+        emit('task:created', t)
         if (t.status && t.status !== 'queued') {
           emit('task:update', { id: t.id, type: t.type, status: t.status, progress: t.progress })
         }
