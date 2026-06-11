@@ -62,7 +62,20 @@ export interface RealtimeTransport {
 let _instance: RealtimeTransport | null = null
 let _forcedMode: TransportMode | null = null
 
-/** 检测是否在 Capacitor native 环境（APK / iOS） */
+/**
+ * 检测是否在 Capacitor native 环境（APK / iOS）
+ *
+ * 关键决策（2026-06-11）：native 真机仍走 ws 模式，**不**用 native-bridge。
+ *
+ * 原因：
+ *   1. NativeBridgeBackend 现状是空壳（start() 只 emit online:true，无事件转发）——
+ *      走 native-bridge 意味着真机 task 进度永远不更新、mock 写盘永远不触发
+ *   2. Capacitor WebView = Android System WebView / iOS WKWebView = Chrome/Safari 内核
+ *      → WebSocket 原生支持，直连 127.0.0.1:2025 即可
+ *   3. ws 模式比 native-bridge 简单得多（不用写 native plugin）
+ *
+ * native-bridge 留作未来 SSE / 设备本地 socket 实现（见 NativeBridgeBackend.ts TODO）。
+ */
 function isNative(): boolean {
   if (typeof window === 'undefined') return false
   // Capacitor 在 window 上挂 capacitor 全局对象
@@ -70,10 +83,19 @@ function isNative(): boolean {
   return Boolean(cap && typeof cap.isNativePlatform === 'function' && cap.isNativePlatform())
 }
 
-/** 选举 transport 模式 */
+/** 选举 transport 模式
+ *
+ * 顺序（2026-06-11 v3 修正）：
+ *   1. _forcedMode（测试用强制模式）
+ *   2. isOpenPreviewBrowser()    → http-poll（沙箱 trae 反代 :16000 不支持 WS upgrade）
+ *   3. 默认                       → ws（**包括真机** Capacitor WebView，NativeBridgeBackend 暂未实现）
+ *
+ * 历史：原顺序是 isNative() → native-bridge（空壳）→ 真机进度永远不更新
+ */
 function electMode(): TransportMode {
   if (_forcedMode) return _forcedMode
-  if (isNative()) return 'native-bridge'
+  // 关键：OpenPreview 浏览器判断放在 isNative 之前
+  // 因为 trae OpenPreview 也可能在 webview 内跑（Capacitor 检测可能误报）
   if (isOpenPreviewBrowser()) return 'http-poll'
   return 'ws'
 }

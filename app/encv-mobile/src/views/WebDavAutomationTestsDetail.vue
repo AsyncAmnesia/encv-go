@@ -19,8 +19,8 @@
       <div v-if="webDavEnabled === false" class="webdav-status-banner webdav-status-disabled">
         <ion-icon :icon="warningOutline" class="banner-icon"></ion-icon>
         <div class="banner-text">
-          <strong>WebDAV 服务未启用</strong>
-          <p>后端 <code>config.yaml</code> 缺少 <code>webdav.root</code> 配置。所有 18 个测试用例都会因 404 失败。</p>
+          <strong>{{ t('devtools.webdavAuth.disabledTitle') }}</strong>
+          <p>{{ t('devtools.webdavAuth.disabledHint') }}</p>
         </div>
         <ion-button fill="clear" size="small" @click="checkWebDavHealth">
           <ion-icon :icon="sync" slot="icon-only"></ion-icon>
@@ -29,7 +29,7 @@
       <div v-else-if="webDavEnabled === true" class="webdav-status-banner webdav-status-enabled">
         <ion-icon :icon="cloudDoneOutline" class="banner-icon"></ion-icon>
         <div class="banner-text">
-          <strong>WebDAV 服务已启用</strong>
+          <strong>{{ t('devtools.webdavAuth.enabledTitle') }}</strong>
           <p>endpoint: <code>{{ baseUrl }}</code></p>
         </div>
       </div>

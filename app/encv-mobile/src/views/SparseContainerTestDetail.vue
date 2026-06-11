@@ -217,9 +217,11 @@ import {
 const { t } = useI18n()
 
 // 默认值与 Go testutil.DefaultSparseConfig 对齐
+// 🆕 2026-06-11 v3 修正：物理分片 = 128GB (131072 MB) — 真机 ECv4 实际场景
+//   沙箱仍可用 0 (sparse main file) 验证，但真机要测的就是 100 个 128G .part 物理分片
 const DEFAULT_FRAGMENT_COUNT = 100
 const DEFAULT_FRAGMENT_SIZE_GB = 128
-const DEFAULT_PHYSICAL_CHUNK_MB = 0
+const DEFAULT_PHYSICAL_CHUNK_MB = 131072  // 128GB = 128 × 1024 MB
 const DEFAULT_OUTPUT_DIR = '/tmp/encv-sparse-test'
 
 const cfg = ref({
@@ -281,9 +283,10 @@ onMounted(async () => {
       // 浏览器可能无 StorageManager
     }
   }
-  // 真机：physicalChunkMB 强制 ≥ 30（.part 文件最小粒度），避免 main file sparse 撑爆 RAM
-  if (isNative() && Number(cfg.value.physicalChunkMB) === 0) {
-    cfg.value.physicalChunkMB = 30
+  // 沙箱（isNative=false）：用 sparse main file 验证（physicalChunkMB=0，物理占用 ~16KB）
+  // 真机（isNative=true）：默认 128GB 物理分片（131072 MB）—— 这就是 ECv4 真机要测的
+  if (!isNative() && Number(cfg.value.physicalChunkMB) === 131072) {
+    cfg.value.physicalChunkMB = 0
   }
 })
 

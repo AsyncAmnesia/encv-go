@@ -192,6 +192,11 @@ export default {
     'devtools.webdavAuth.resetToBackendHint': '已用后端账号填入输入框（点"保存到本地"才写入）',
     'devtools.webdavAuth.backendHas': '后端账号',
     'devtools.webdavAuth.backendNoAuth': '后端未启用 auth（输入框保持空）',
+    // 🆕 2026-06-11 v3：WebDAV 服务状态 banner（替换被删的瞎编 config.yaml 字符串）
+    'devtools.webdavAuth.enabledTitle': 'WebDAV 服务已启用',
+    'devtools.webdavAuth.enabledHint': '后端 /api/webdav/local-info 返回 enabled=true',
+    'devtools.webdavAuth.disabledTitle': 'WebDAV 服务未启用',
+    'devtools.webdavAuth.disabledHint': '后端未启用 WebDAV。设置路径：服务器设置 → WebDAV → 启用 + 配置 webdav.root 目录。',
     // 🆕 2026-06-11：ECv4 容量边界测试（sparse 虚拟容器，100×128GB）
     'devtools.sparseContainer.title': 'ECv4 容量边界测试',
     'devtools.sparseContainer.entryHint': '写入 100×128GB sparse 虚拟容器，验证 physical_used ≪ virtual_total（不实际占用 12.8TB）',
@@ -425,6 +430,11 @@ export default {
     'devtools.webdavAuth.resetToBackendHint': 'Backend credentials filled in (click "Save Locally" to persist)',
     'devtools.webdavAuth.backendHas': 'Backend account',
     'devtools.webdavAuth.backendNoAuth': 'Backend auth disabled (leave inputs empty)',
+    // 🆕 2026-06-11 v3：WebDAV status banner (replaces fabricated config.yaml string)
+    'devtools.webdavAuth.enabledTitle': 'WebDAV Service Enabled',
+    'devtools.webdavAuth.enabledHint': 'Backend /api/webdav/local-info returned enabled=true',
+    'devtools.webdavAuth.disabledTitle': 'WebDAV Service Disabled',
+    'devtools.webdavAuth.disabledHint': 'WebDAV not enabled on backend. Configure: Server Settings → WebDAV → enable + set webdav.root directory.',
     // 🆕 2026-06-11：ECv4 capacity boundary test (sparse virtual container, 100×128GB)
     'devtools.sparseContainer.title': 'ECv4 Capacity Boundary Test',
     'devtools.sparseContainer.entryHint': 'Write a 100×128GB sparse virtual container to verify physical_used ≪ virtual_total (no actual 12.8TB usage)',
