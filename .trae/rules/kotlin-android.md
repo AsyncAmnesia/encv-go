@@ -1,9 +1,6 @@
 # Kotlin 2.3.21 + Android 编码参考（本项目金标准）
 
 > 来源：CI 编译通过代码 + AAR 反编译证据 + Kotlin 官方文档
-> 本文件作为本项目所有 .kt 文件的编写校验标准。
-
----
 
 ## 一、变量声明
 
@@ -72,7 +69,6 @@ fun someAction(call: PluginCall) {
 - 业务逻辑在 `Dispatchers.IO`（不阻塞主线程）
 - 结果回调在 `Dispatchers.Main`（Capacitor 要求）
 - `call.resolve/reject` 必须在主线程
-
 ### 2.3 初始化代码中调用 suspend 函数
 
 ```kotlin
@@ -84,8 +80,6 @@ fun setupFramework(hostActivityClass: Class<*>) {
     // ...
 }
 ```
-
----
 
 ## 三、模块可见性架构
 
@@ -139,17 +133,11 @@ proxyManager.setHostActivity(
 | `getAllInstallPlugins()` | `List<PluginInfo>` (non-null) | 直接用，无需 null 检查 |
 | `PluginInfo.enabled` | `boolean` (primitive) | 直接用 `.enabled`，无需 `?.` |
 
----
-
-## 五、import 清单（按需选择）
+## 五、import 清单
 
 ```kotlin
-// 协程（几乎所有异步代码需要）
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
+// 协程
+import kotlinx.coroutines.{Dispatchers, GlobalScope, launch, runBlocking, withContext}
 
 // Android 核心
 import android.content.Context
@@ -166,13 +154,8 @@ import com.getcapacitor.JSObject
 import com.getcapacitor.PluginCall
 
 // 项目内部（:app 模块）
-import com.encvgo.combolite.EncvComboLiteHost       // 唯一 ComboLite 入口
-import com.encvgo.combolite.diagnostic.DiagnosticKit  // 诊断工具
-import com.encvgo.combolite.model.OperationResult      // 统一结果类型
-import com.encvgo.app.AppLogger                        // 日志
-import com.encvgo.app.LogExporter                      // 导出
-import com.encvgo.app.PermissionHelper                 // 权限
-import com.encvgo.app.UriUtils                          // URI
+import com.encvgo.combolite.{EncvComboLiteHost, DiagnosticKit, model.OperationResult}
+import com.encvgo.app.{AppLogger, LogExporter, PermissionHelper, UriUtils}
 ```
 
 **禁止在 :app 模块中 import**：
@@ -201,13 +184,9 @@ import com.encvgo.combolite.SomeClass
 Class<SomeClass>()
 ```
 
-**例外**：第三方 AAR 的包名（如 `com.combo.core.*`）在 import 中出现是正常的，但同样应通过文件顶部 import 声明，不在调用处内联。
+**例外**：第三方 AAR 的包名（如 `com.combo.core.*`）在 import 中出现是正常的，但同样应通过文件顶部 import 声明。
 
----
-
-## 六、"金标准"文件参照
-
-以下文件已在 CI 中通过 Kotlin 编译，新代码必须参照其风格：
+## 六、"金标准"参照
 
 | 文件 | 验证过的模式 |
 |------|------------|
