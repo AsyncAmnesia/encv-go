@@ -25,6 +25,7 @@
  */
 import { ref, computed } from 'vue'
 import { setTaskMetadata } from './useTaskTrigger'
+import { fetchWebDavLocalInfo } from '@/api/encv'
 
 // ============= WebDAV Basic Auth =============
 // 🆕 2026-06-11：避免 fetch 收到 401 触发浏览器原生弹窗，统一注入 Authorization header
@@ -299,11 +300,33 @@ export function useWebDavAutomationTests() {
     return { passed, failed, skipped, running, pending, total, percent }
   })
 
-  /** 探测后端 webdav endpoint 根 URL */
-  function detectBaseUrl(): string {
-    // 优先用 window.location.origin（同源 → 走 :16666 gateway → :2025 后端）
-    // Capacitor native 端 origin 可能是 capacitor://localhost / http://localhost
-    return `${window.location.origin}/webdav`
+  /**
+   * 探测后端 webdav endpoint 根 URL
+   *
+   * 🆕 2026-06-11 修复：必须从 /api/webdav/local-info 拉（对齐自身 webdav 服务）
+   * 旧实现硬编码 `${window.location.origin}/webdav` 完全无视 webdav_root 配置
+   * → 用户 webdav_root 配成 /dav /shared /dav-files 等任意前缀都失败
+   */
+  async function detectBaseUrl(): Promise<string> {
+    // 同源（dev preview / Capacitor 走 :16666 gateway）默认走 /webdav
+    const fallback = `${window.location.origin}/webdav`
+    try {
+      const info = await fetchWebDavLocalInfo()
+      if (info?.webdavPath && info?.serverBaseUrl) {
+        // 规范化：去掉末尾多余的斜杠，确保 path 以 / 开头
+        const base = info.serverBaseUrl.replace(/\/+$/, '')
+        const path = info.webdavPath.startsWith('/') ? info.webdavPath : `/${info.webdavPath}`
+        return `${base}${path}`.replace(/\/+$/, '')  // 末尾不残留斜杠
+      }
+    } catch (err) {
+      console.warn('[webdav] detectBaseUrl: fetchWebDavLocalInfo failed, using fallback', err)
+    }
+    return fallback
+  }
+
+  /** 设置 baseUrl（供 onMounted 主动调用） */
+  async function refreshBaseUrl(): Promise<void> {
+    baseUrl.value = await detectBaseUrl()
   }
 
   /** 初始化结果列表（pending） */
@@ -382,7 +405,7 @@ export function useWebDavAutomationTests() {
     }
     isRunning.value = true
     initResults()
-    baseUrl.value = detectBaseUrl()
+    baseUrl.value = await detectBaseUrl()  // 🆕 2026-06-11：async，调用后端 local-info API
     currentRunId.value = `webdav-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
     currentRunStartedAt.value = new Date().toISOString()
     const startedAt = currentRunStartedAt.value
@@ -493,6 +516,7 @@ export function useWebDavAutomationTests() {
     // actions
     runAllCases,
     cancelRun,
+    refreshBaseUrl,  // 🆕 2026-06-11：让 view onMounted 主动对齐 webdav 真实 baseUrl
     getPersistedRuns,
     getPersistedRun,
     clearPersistedRuns,

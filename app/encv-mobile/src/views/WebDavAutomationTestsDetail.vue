@@ -339,25 +339,33 @@ import { fetchWebDavLocalInfo, type WebDavLocalInfo } from '@/api/encv'
 const { t } = useI18n()
 const {
   results, summary, isRunning, currentRunId, baseUrl,
-  runAllCases, cancelRun, getPersistedRuns, clearPersistedRuns,
+  runAllCases, cancelRun, refreshBaseUrl, getPersistedRuns, clearPersistedRuns,
 } = useWebDavAutomationTests()
 
 const showHistory = ref(false)
 const historyRuns = ref<WebDavTestRun[]>([])
 const detailRun = ref<WebDavTestRun | null>(null)
 
-onMounted(() => {
+onMounted(async () => {
   historyRuns.value = getPersistedRuns()
-  // 异步检查 webdav 是否启用
+  // 🆕 2026-06-11 修复：先 loadWebDavLocalInfo 再 checkWebDavHealth
+  // 旧顺序：checkWebDavHealth 跑在 loadWebDavLocalInfo 之前 → localInfo.value === null
+  //        → fallback 硬编码 /webdav → 即使 webdav_root 配成 /dav 也错
+  await loadWebDavLocalInfo()
+  await refreshBaseUrl()  // 🆕 同步 baseUrl → 模板里 {{ baseUrl }} 显示真实 endpoint
   checkWebDavHealth()
-  // 异步拉取后端 webdav 账号（用于默认填充输入框）
-  loadWebDavLocalInfo()
 })
 
 const webDavEnabled = ref<boolean | null>(null)  // null=检测中, true/false=结果
 async function checkWebDavHealth() {
   try {
-    const res = await fetch(`${window.location.origin}/webdav/`, { method: 'OPTIONS' })
+    // 🆕 2026-06-11 修复：使用后端 /api/webdav/local-info 返回的 webdavPath + serverBaseUrl
+    // 旧实现硬编码 /webdav，忽略了 webdav_root 字段（用户可配置成 /dav /shared 等任意前缀）
+    // → 始终 404 / 405 → webDavEnabled=false
+    const path = localInfo.value?.webdavPath || '/webdav/'
+    const baseUrl = localInfo.value?.serverBaseUrl || window.location.origin
+    const url = `${baseUrl}${path}`.replace(/\/+$/, '/')  // 规范化末尾斜杠
+    const res = await fetch(url, { method: 'OPTIONS' })
     webDavEnabled.value = res.status < 500
   } catch {
     webDavEnabled.value = false

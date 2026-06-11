@@ -14,7 +14,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,7 +23,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Soltus/encv-go/internal/utils/ffmpeg"
 	"github.com/gin-gonic/gin"
 )
 
@@ -336,69 +334,16 @@ func emitSseEvent(w io.Writer, flusher http.Flusher, event, data string) {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// 最小有效字节模板（ffmpeg 优先，无 base64 fallback）
+// 最小有效字节模板（go:embed 预编码，零 ffmpeg 运行时调用）
 // ════════════════════════════════════════════════════════════════════
 //
-// 2026-06-11 改造：删 base64 fallback（真机上就是 171 字节假 MKV，垃圾）
+// 2026-06-11 改造：参考加密视频任务怎么调用 ffmpeg 的
+//   - 加密视频任务：ffmpeg.Run 调「真输入文件 → 输出文件」（不依赖 lavfi）
+//   - mock 生成：    直接用「真文件字节」= go:embed 进二进制
+//   - 真机/沙箱/dev 行为一致，零 cgo 边界
 //
-// 优先级：
-//   1. 走 internal/utils/ffmpeg.Runner 抽象调 ffmpeg
-//      - 沙箱：ExecRunner (os/exec /usr/bin/ffmpeg)
-//      - 真机：NativeRunner (cgo dlopen libffmpeg.so ffmpeg_run)
-//   2. ffmpeg 不可用或失败 → 返回 nil（**严禁 base64 fallback**）
-//      上层 handleMockGenerateGin 写 0 字节文件，调用方会看到错误
-//
-// mp4/mkv 必须显式 -map 0:a -map 1:v（sine+color 2 个 input 不指定 stream 会失败）
-//
-// 单次 ffmpeg 调用 ~100-300ms，4 个文件串行最多 ~1.2s。可接受。
+// 详见 [mock_media_embedded.go](mock_media_embedded.go) 的根因分析。
 // ════════════════════════════════════════════════════════════════════
-
-// ffmpegGenerate 调用 ffmpeg 生成指定格式的媒体字节
-//
-// 2026-06-11 改造：改走 internal/utils/ffpeg.Runner 抽象层
-//   - 沙箱：ExecRunner (os/exec 调 /usr/bin/ffmpeg)
-//   - 真机：NativeRunner (cgo dlopen 调 libffmpeg.so ffmpeg_run)
-//
-// 失败返回 nil（**严禁 base64 fallback** —— 真机就是 171 字节假 MKV）
-// 调用方 minimalMP4/MKV/MP3/FLAC 会把 nil 透传给上层 generateMockSpecs，
-// 上层 handleMockGenerateGin 写到磁盘时直接 0 字节，调用方会看到错误
-func ffmpegGenerate(args []string, ext string) []byte {
-	// 0. 先 ffmpeg.Available() 检查（Runner 内部已缓存）
-	ffmpegOk, ffprobeOk, errMsg := ffmpeg.Available()
-	if !ffmpegOk && !ffprobeOk {
-		slog.Warn("[mock] ffmpeg runner not available, returning nil (no base64 fallback)", "ext", ext, "errMsg", errMsg)
-		return nil
-	}
-
-	// 1. 写 temp file（ffmpeg 输出到 file，stdout 不行）
-	tmpFile, err := os.CreateTemp("", "encv-mock-*"+"."+ext)
-	if err != nil {
-		slog.Warn("[mock] create temp file failed", "ext", ext, "err", err)
-		return nil
-	}
-	tmpPath := tmpFile.Name()
-	_ = tmpFile.Close()
-	defer func() { _ = os.Remove(tmpPath) }()
-
-	ffmpegArgs := append(append([]string{}, args...), "-y", "-loglevel", "error", tmpPath)
-
-	// 2. 跨平台调 ffmpeg（沙箱 exec / 真机 dlopen）
-	ctx := context.Background()
-	_, stderr, exitCode, err := ffmpeg.RunWithOutput(ctx, ffmpegArgs...)
-	if err != nil || exitCode != 0 {
-		slog.Warn("[mock] ffmpeg generate failed (no base64 fallback)", "ext", ext, "exitCode", exitCode, "err", err, "stderr", stderr)
-		return nil
-	}
-
-	// 3. 读回 temp file
-	data, err := os.ReadFile(tmpPath)
-	if err != nil || len(data) == 0 {
-		slog.Warn("[mock] read temp file failed", "ext", ext, "err", err, "size", len(data))
-		return nil
-	}
-	slog.Info("[mock] ffmpeg generated media", "ext", ext, "size", len(data))
-	return data
-}
 
 func minimalJPEG() []byte {
 	// 来自 scripts/generate-mock-files.ts 1:1 对应
@@ -462,71 +407,25 @@ func pngCrcTable() [256]uint32 {
 }
 
 func minimalMP4() []byte {
-	// 2026-06-11 修复：加 -map 0:a -map 1:v（sine + color 2 input 不指定 stream 会失败）
-	// 沙箱实测：ffmpeg 6.1 → test_mp4_simple.mp4 = 19801 字节 (h264+aac, 2.0s)
-	if data := ffmpegGenerate([]string{
-		"-f", "lavfi",
-		"-i", "sine=frequency=440:duration=2",
-		"-f", "lavfi",
-		"-i", "color=c=0x3B82F6:s=320x240:d=2:r=15",
-		"-map", "0:a",
-		"-map", "1:v",
-		"-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage", "-pix_fmt", "yuv420p",
-		"-c:a", "aac", "-b:a", "64k",
-		"-shortest",
-	}, "mp4"); data != nil {
-		return data
-	}
-	// 严禁 base64 fallback —— 返回 nil 让上层报错
-	return nil
+	// 2026-06-11 改造：go:embed 预编码字节（沙箱 ffmpeg 6.1 一次性生成 → 详见 mock_media_embedded.go）
+	// h264 + aac, 2.0s, 320x240, 19801 bytes
+	// 真机/沙箱行为一致，零 ffmpeg 运行时调用，零 cgo 边界
+	return minimalMP4Bytes
 }
 
 func minimalMKV() []byte {
-	// 2026-06-11 修复：加 -map 0:a -map 1:v
-	// 沙箱实测：ffmpeg 6.1 → test_mkv_simple.mkv = 9453 字节 (vorbis+h264, 2.0s)
-	if data := ffmpegGenerate([]string{
-		"-f", "lavfi",
-		"-i", "sine=frequency=660:duration=2",
-		"-f", "lavfi",
-		"-i", "color=c=0x10B981:s=160x120:d=2:r=10",
-		"-map", "0:a",
-		"-map", "1:v",
-		"-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage", "-pix_fmt", "yuv420p",
-		"-c:a", "libvorbis",
-		"-shortest",
-	}, "mkv"); data != nil {
-		return data
-	}
-	// 严禁 base64 fallback
-	return nil
+	// h264 + vorbis, 2.0s, 160x120, 9586 bytes
+	return minimalMKVBytes
 }
 
 func minimalMP3() []byte {
-	// 2026-06-11 修复：删 base64 fallback
-	// 沙箱实测：ffmpeg 6.1 → test_mp3.mp3 = 33062 字节 (libmp3lame, 2.0s)
-	if data := ffmpegGenerate([]string{
-		"-f", "lavfi",
-		"-i", "sine=frequency=440:duration=2",
-		"-c:a", "libmp3lame", "-b:a", "128k",
-	}, "mp3"); data != nil {
-		return data
-	}
-	// 严禁 base64 fallback
-	return nil
+	// mp3 128k, 2.0s, 33062 bytes
+	return minimalMP3Bytes
 }
 
 func minimalFLAC() []byte {
-	// 2026-06-11 修复：删 base64 fallback
-	// 沙箱实测：ffmpeg 6.1 → test_flac.flac = 32487 字节 (flac, 2.0s)
-	if data := ffmpegGenerate([]string{
-		"-f", "lavfi",
-		"-i", "sine=frequency=440:duration=2",
-		"-c:a", "flac", "-sample_fmt", "s16",
-	}, "flac"); data != nil {
-		return data
-	}
-	// 严禁 base64 fallback
-	return nil
+	// flac s16, 2.0s, 32987 bytes
+	return minimalFLACBytes
 }
 
 func minimalPDF() []byte {

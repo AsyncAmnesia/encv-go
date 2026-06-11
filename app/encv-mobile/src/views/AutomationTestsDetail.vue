@@ -25,6 +25,44 @@
 
     <ion-content>
 
+      <!-- ========== 🆕 2026-06-11 内联错误卡（替代 Toast） ========== -->
+      <div v-if="inlineError" class="inline-error-card" role="alert">
+        <div class="inline-error-header">
+          <ion-icon :icon="closeCircleOutline" color="danger" class="inline-error-icon"></ion-icon>
+          <div class="inline-error-title-block">
+            <div class="inline-error-title">{{ inlineError.title }}</div>
+            <div class="inline-error-source">
+              源头: {{ inlineError.source }} · {{ formatInlineErrorTime(inlineError.at) }}
+            </div>
+          </div>
+          <button class="inline-error-close" @click="clearInlineError" aria-label="关闭">×</button>
+        </div>
+        <pre class="inline-error-message">{{ inlineError.message }}</pre>
+        <div v-if="inlineError.hint" class="inline-error-hint">
+          <strong>💡 排查:</strong> {{ inlineError.hint }}
+        </div>
+        <div class="inline-error-actions">
+          <button
+            v-if="inlineError.source === 'mockGenerate'"
+            class="inline-error-retry"
+            @click="handleGenerateMock"
+            :disabled="isGenerating"
+          >重试生成 Mock</button>
+          <button
+            v-if="inlineError.source === 'loadPlugins'"
+            class="inline-error-retry"
+            @click="handleLoadPlugins"
+            :disabled="isLoadingPlugins"
+          >重试加载插件</button>
+          <button
+            v-if="inlineError.source === 'mockReset'"
+            class="inline-error-retry"
+            @click="handleResetMock"
+            :disabled="isResetting"
+          >重试重置</button>
+        </div>
+      </div>
+
       <!-- ========== Mock 数据管理区 ========== -->
       <ion-list>
         <ion-list-header>
@@ -230,6 +268,29 @@ const mockStats = ref<{ count: number; totalSize: number } | null>(null)
 const generateProgressText = ref('')
 const mockGenerated = ref(false)
 
+// 🆕 2026-06-11 修复：内联错误卡（替代 showToast，饱和调试原则：禁用 Toast）
+// 历史：用户反馈「真机 mock 生成 ffmpeg 失败 / 后端崩溃 → 弹个 toast 就没了，根本看不到」
+// 旧实现：`showToast({ message: '失败: xxx', duration: 2500 })` —— 2.5 秒后消失、且 1 次只 1 行
+// 新实现：内联 card 持久显示，承载：title / message / stack / 关联 action（重试/查看后端日志）
+interface InlineError {
+  source: 'mockGenerate' | 'mockReset' | 'loadPlugins' | 'workflowStart' | 'workflow'
+  title: string
+  message: string
+  detail?: string  // 来自后端的 detail / stack
+  hint?: string    // 排查建议
+  at: number       // Date.now()，用于显示「刚刚」/「N 分钟前」
+}
+const inlineError = ref<InlineError | null>(null)
+function setInlineError(err: Omit<InlineError, 'at'>): void {
+  inlineError.value = { ...err, at: Date.now() }
+  // 同步 log 到 console 便于开发期排查
+  // eslint-disable-next-line no-console
+  console.error('[AutomationTestsDetail] inline error', err)
+}
+function clearInlineError(): void {
+  inlineError.value = null
+}
+
 // ---- 插件 & 用例 ----
 const plugins = ref<PluginMeta[]>([])
 const isLoadingPlugins = ref(false)
@@ -353,7 +414,19 @@ async function handleGenerateMock() {
     mockGenerated.value = true
     showToast({ message: `${t('devtools.generateMock')}: ${mockStats.value.count}`, color: 'success', duration: 1500 })
   } catch (e) {
-    showToast({ message: `${t('devtools.generateMock')} failed: ${e instanceof Error ? e.message : e}`, color: 'danger', duration: 2500 })
+    // 🆕 2026-06-11 修复：用 inline error card 替代 toast
+    // 历史：真机 mock 生成 ffmpeg 失败 + 后端崩溃 → toast 2.5s 一闪就消失，用户看不到根因
+    const errMsg = e instanceof Error ? e.message : String(e)
+    const isBackendCrash = /502|503|504|connection.*refused|network.*error/i.test(errMsg)
+    setInlineError({
+      source: 'mockGenerate',
+      title: 'Mock 数据生成失败',
+      message: errMsg,
+      hint: isBackendCrash
+        ? '后端可能已崩溃（502/网络拒绝）。请检查后端日志（pm2 logs encv-go），重启后再试。'
+        : '检查 mockRoot 路径权限 / 后端 SSE 响应 / 后端 mock_generator.go 日志',
+    })
+    // 不弹 toast（饱和调试原则：禁用 Toast），错误卡已持久显示
   } finally {
     isGenerating.value = false
     generateProgressText.value = ''
@@ -369,7 +442,13 @@ async function handleResetMock() {
     mockGenerated.value = false
     showToast({ message: `Reset: ${r.removed} files`, color: 'success', duration: 1500 })
   } catch (e) {
-    showToast({ message: `Reset failed: ${e instanceof Error ? e.message : e}`, color: 'danger', duration: 2500 })
+    // 🆕 2026-06-11 修复：inline error card
+    setInlineError({
+      source: 'mockReset',
+      title: 'Mock 数据重置失败',
+      message: e instanceof Error ? e.message : String(e),
+      hint: '检查 5 个 mock 目录权限（01-plain-media / 02-alist-encrypt / 03-encv-containers / 04-boundary-test / 02-test-output）',
+    })
   } finally {
     isResetting.value = false
   }
@@ -383,7 +462,13 @@ async function handleLoadPlugins() {
     buildDynamicWorkflow()
     showToast({ message: `${plugins.value.length} plugins, ${dynamicTestCases.value.length} cases`, color: 'success', duration: 1500 })
   } catch (e) {
-    showToast({ message: `Load plugins failed: ${e instanceof Error ? e.message : e}`, color: 'danger', duration: 2000 })
+    // 🆕 2026-06-11 修复：inline error card
+    setInlineError({
+      source: 'loadPlugins',
+      title: '加载插件失败',
+      message: e instanceof Error ? e.message : String(e),
+      hint: '检查后端 /api/plugins 是否 200；plugin 元数据是否含 supportedExtensions/taskOptions',
+    })
   } finally {
     isLoadingPlugins.value = false
   }
@@ -711,7 +796,13 @@ async function handleRunWorkflow() {
       duration: 1500,
     })
   } catch (e) {
-    showToast({ message: `${e instanceof Error ? e.message : e}`, color: 'danger', duration: 2500 })
+    // 🆕 2026-06-11 修复：inline error card
+    setInlineError({
+      source: 'workflowStart',
+      title: '启动工作流失败',
+      message: e instanceof Error ? e.message : String(e),
+      hint: '检查后端 task 队列是否满 / 是否已有运行中的 workflow / mock 数据是否生成',
+    })
   }
 }
 
@@ -726,6 +817,15 @@ function onSelectStep(step: StepRun) {
 
 function formatTime(iso: string): string {
   try { return new Date(iso).toLocaleTimeString() } catch { return iso }
+}
+
+function formatInlineErrorTime(at: number): string {
+  // 把 Date.now() 渲染成「刚刚 / N 分钟前 / HH:MM:SS」
+  const secAgo = Math.floor((Date.now() - at) / 1000)
+  if (secAgo < 5) return '刚刚'
+  if (secAgo < 60) return `${secAgo} 秒前`
+  if (secAgo < 3600) return `${Math.floor(secAgo / 60)} 分钟前`
+  return new Date(at).toLocaleTimeString()
 }
 
 function humanSize(bytes: number): string {
@@ -760,4 +860,58 @@ onUnmounted(() => {
 .view-toggle { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; background: none; border: none; color: #6B5D4C; cursor: pointer; padding: 2px 6px; border-radius: 3px; }
 .view-toggle--active { background: #1A1A1A; color: #F4EFE6; }
 .view-toggle-sep { color: #C9BBA1; }
+
+/* 🆕 2026-06-11 内联错误卡（饱和调试原则：禁用 Toast，错误必须持久可见） */
+.inline-error-card {
+  margin: 12px 16px;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, rgba(220, 38, 38, 0.08) 0%, rgba(220, 38, 38, 0.04) 100%);
+  border-left: 4px solid var(--ion-color-danger);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.15);
+}
+.inline-error-header { display: flex; align-items: flex-start; gap: 10px; }
+.inline-error-icon { font-size: 24px; flex-shrink: 0; margin-top: 2px; }
+.inline-error-title-block { flex: 1; min-width: 0; }
+.inline-error-title { font-size: 15px; font-weight: 600; color: var(--ion-color-danger-shade); line-height: 1.3; }
+.inline-error-source { font-size: 11px; color: var(--ion-color-medium); margin-top: 2px; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
+.inline-error-close { background: none; border: none; font-size: 24px; line-height: 1; color: var(--ion-color-medium); cursor: pointer; padding: 0 4px; flex-shrink: 0; }
+.inline-error-close:hover { color: var(--ion-color-danger); }
+.inline-error-message {
+  margin: 10px 0 0 34px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 4px;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ion-color-dark);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.inline-error-hint {
+  margin: 10px 0 0 34px;
+  padding: 8px 10px;
+  background: rgba(59, 130, 246, 0.08);
+  border-left: 3px solid var(--ion-color-primary);
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ion-color-dark);
+}
+.inline-error-actions { margin: 12px 0 0 34px; display: flex; gap: 8px; }
+.inline-error-retry {
+  padding: 6px 14px;
+  background: var(--ion-color-danger);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  font-weight: 500;
+}
+.inline-error-retry:hover { background: var(--ion-color-danger-shade); }
+.inline-error-retry:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>
