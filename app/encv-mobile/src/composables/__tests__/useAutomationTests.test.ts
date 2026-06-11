@@ -10,7 +10,8 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useAutomationTests, DEFAULT_AUTOMATION_SOURCE } from '@/composables/useAutomationTests'
-import { _getAllForTesting, _reloadTriggeredByCache } from '@/composables/useTaskTrigger'
+import { _reloadTriggeredByCache, getTriggeredBy } from '@/composables/useTaskTrigger'
+import { ECV2, ECV3, ECV4 } from '@/constants/containerVersion'
 
 // mock createTask 和 fetchPlugins
 let createTaskMock: any
@@ -97,7 +98,7 @@ describe('useAutomationTests.generateTestCases 笛卡尔积', () => {
       expect(c.version).toBe(3)
       expect(c.cipherMode).toBeUndefined()
       expect(c.compressionMode).toBeUndefined()
-      expect(c.expectedBehavior).toBe('might-fail') // v3 已废弃
+      expect(c.expectedBehavior).toBe('might-fail') // ECv3 已废弃
     }
   })
 
@@ -105,23 +106,23 @@ describe('useAutomationTests.generateTestCases 笛卡尔积', () => {
     const t = useAutomationTests()
     t.plugins.value = [makePlugin('multi', [2, 3, 4], 4)]
     const cases = t.generateTestCases({ sourceFile: '/foo' })
-    // v2: encrypt 1 + decrypt 1 = 2
-    // v3: encrypt 1 + decrypt 1 = 2
-    // v4: encrypt 4 + decrypt 1 = 5
+    // ECv2: encrypt 1 + decrypt 1 = 2
+    // ECv3: encrypt 1 + decrypt 1 = 2
+    // ECv4: encrypt 4 + decrypt 1 = 5
     // 总 9
     expect(cases.length).toBe(9)
-    expect(cases.filter((c) => c.version === 2).length).toBe(2)
-    expect(cases.filter((c) => c.version === 3).length).toBe(2)
-    expect(cases.filter((c) => c.version === 4).length).toBe(5)
+    expect(cases.filter((c) => c.version === ECV2).length).toBe(2)
+    expect(cases.filter((c) => c.version === ECV3).length).toBe(2)
+    expect(cases.filter((c) => c.version === ECV4).length).toBe(5)
   })
 
-  it('多版本 plugin：includeDeprecated=false 跳过 v2/v3', () => {
+  it('多版本 plugin：includeDeprecated=false 跳过 ECv2/ECv3', () => {
     const t = useAutomationTests()
     t.plugins.value = [makePlugin('multi', [2, 3, 4], 4)]
     const cases = t.generateTestCases({ sourceFile: '/foo', includeDeprecated: false })
-    // 只剩 v4
+    // 只剩 ECv4
     expect(cases.length).toBe(5)
-    expect(cases.every((c) => c.version === 4)).toBe(true)
+    expect(cases.every((c) => c.version === ECV4)).toBe(true)
   })
 
   it('无 taskOptions 的 plugin 跳过', () => {
@@ -147,7 +148,7 @@ describe('useAutomationTests.generateTestCases 笛卡尔积', () => {
     t.plugins.value = [makePlugin('mp4', [4], 4)]
     const cases = t.generateTestCases({ sourceFile: '/foo' })
     const example = cases.find((c) => c.cipherMode === 1 && c.compressionMode === 'zstd')
-    expect(example?.id).toBe('mp4-encrypt-v4-c1-zstd')
+    expect(example?.id).toBe('mp4-encrypt-ECv4-c1-zstd')
   })
 })
 
@@ -178,11 +179,14 @@ describe('useAutomationTests.runTests 真实行为', () => {
 
     await t.runTests(cases)
 
-    const all = _getAllForTesting()
-    const triggerValues = Object.values(all).map((v) => v.triggeredBy)
-    // 全部为 automation
-    expect(triggerValues.length).toBe(cases.length)
-    expect(triggerValues.every((v) => v === 'automation')).toBe(true)
+    // 通过公共 API getTriggeredBy() 验证每个 task 都被登记为 automation
+    // （v7 简化后 useTaskTrigger 不再导出内部 map getter，改用公共查询 API）
+    const triggers: string[] = []
+    for (const r of t.results.value) {
+      if (r.taskId) triggers.push(getTriggeredBy(r.taskId))
+    }
+    expect(triggers.length).toBe(cases.length)
+    expect(triggers.every((v) => v === 'automation')).toBe(true)
   })
 
   it('progress 计数正确：提交成功 → pending（等 WS 回调）', async () => {

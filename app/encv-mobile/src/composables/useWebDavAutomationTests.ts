@@ -26,6 +26,55 @@
 import { ref, computed } from 'vue'
 import { setTaskMetadata, getTaskMetadata, type TriggeredBy } from './useTaskTrigger'
 
+// ============= WebDAV Basic Auth =============
+// 🆕 2026-06-11：避免 fetch 收到 401 触发浏览器原生弹窗，统一注入 Authorization header
+// 来源优先级：
+//   1) localStorage 'encv_webdav_creds_v1'（用户在 UI 面板配置）
+//   2) 内置默认值（与后端 cfg.Webdav 默认账号保持一致）
+//   3) 后端未启用 auth（username/password 为空）→ 返回 undefined → 不带 Authorization
+const WEBDAV_CREDS_STORAGE_KEY = 'encv_webdav_creds_v1'
+const WEBDAV_DEFAULT_USERNAME = 'encv'
+const WEBDAV_DEFAULT_PASSWORD = 'encv-webdav'
+
+interface WebDavCreds {
+  username: string
+  password: string
+}
+
+function loadWebDavCreds(): WebDavCreds {
+  try {
+    const raw = localStorage.getItem(WEBDAV_CREDS_STORAGE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<WebDavCreds>
+      if (typeof parsed.username === 'string' && typeof parsed.password === 'string') {
+        return { username: parsed.username, password: parsed.password }
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return { username: WEBDAV_DEFAULT_USERNAME, password: WEBDAV_DEFAULT_PASSWORD }
+}
+
+/**
+ * 构造 Basic Auth header；如果 username/password 都为空则不返回 header（避免触发 401 弹窗）
+ */
+function buildAuthHeaders(creds: WebDavCreds): Record<string, string> | undefined {
+  if (!creds.username || !creds.password) return undefined
+  // btoa 在现代浏览器和 Capacitor 中都可用（WebView 内核为 Chromium/WebKit）
+  const token = btoa(`${creds.username}:${creds.password}`)
+  return { Authorization: `Basic ${token}` }
+}
+
+/** 合并 auth + 调用方自定义 headers（auth 优先，但调用方可覆盖） */
+function mergeHeaders(
+  auth: Record<string, string> | undefined,
+  extra?: Record<string, string>,
+): Record<string, string> {
+  if (!auth && !extra) return {}
+  return { ...(auth ?? {}), ...(extra ?? {}) }
+}
+
 // ============= 类型 =============
 
 export type WebDavTestStatus = 'pending' | 'running' | 'passed' | 'failed' | 'skipped'
@@ -291,7 +340,8 @@ export function useWebDavAutomationTests() {
     // 任务系统适配：标记这个 testId 属于当前 run group
     setTaskMetadata(testCase.id, 'automation', currentRunId.value)
     try {
-      const result = await executeWebDavTest(testCase, baseUrl.value, timeoutMs)
+      const auth = buildAuthHeaders(loadWebDavCreds())
+      const result = await executeWebDavTest(testCase, baseUrl.value, timeoutMs, auth)
       const completedAt = new Date().toISOString()
       const durationMs = new Date(completedAt).getTime() - new Date(startedAt).getTime()
       const updated: WebDavTestResult = {
@@ -462,6 +512,7 @@ async function executeWebDavTest(
   testCase: WebDavTestCase,
   baseUrl: string,
   timeoutMs: number,
+  authHeaders: Record<string, string> | undefined,
 ): Promise<WebDavTestOutcome> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
@@ -469,47 +520,49 @@ async function executeWebDavTest(
     let outcome: WebDavTestOutcome
     switch (testCase.id) {
       case 'list_root':
-        outcome = await expectList(`${baseUrl}/`, controller.signal, 200, /01-plain-media/)
+        outcome = await expectList(`${baseUrl}/`, controller.signal, 200, /01-plain-media/, authHeaders)
         break
       case 'list_video':
-        outcome = await expectList(`${baseUrl}/01-plain-media/video/`, controller.signal, 200, /sample\.(mp4|mkv)/)
+        outcome = await expectList(`${baseUrl}/01-plain-media/video/`, controller.signal, 200, /sample\.(mp4|mkv)/, authHeaders)
         break
       case 'list_audio':
-        outcome = await expectList(`${baseUrl}/01-plain-media/audio/`, controller.signal, 200, /sample\.(mp3|flac)/)
+        outcome = await expectList(`${baseUrl}/01-plain-media/audio/`, controller.signal, 200, /sample\.(mp3|flac)/, authHeaders)
         break
       case 'list_image':
-        outcome = await expectList(`${baseUrl}/01-plain-media/image/`, controller.signal, 200, /sample\.(png|jpg)/)
+        outcome = await expectList(`${baseUrl}/01-plain-media/image/`, controller.signal, 200, /sample\.(png|jpg)/, authHeaders)
         break
       case 'options':
-        outcome = await expectOptions(`${baseUrl}/`, controller.signal)
+        outcome = await expectOptions(`${baseUrl}/`, controller.signal, authHeaders)
         break
       case 'get_video_sample':
-        outcome = await expectGetFile(`${baseUrl}/01-plain-media/video/sample.mp4`, controller.signal)
+        outcome = await expectGetFile(`${baseUrl}/01-plain-media/video/sample.mp4`, controller.signal, authHeaders)
         break
       case 'head_video_sample':
-        outcome = await expectHeadFile(`${baseUrl}/01-plain-media/video/sample.mp4`, controller.signal)
+        outcome = await expectHeadFile(`${baseUrl}/01-plain-media/video/sample.mp4`, controller.signal, authHeaders)
         break
       case 'propfind_root':
-        outcome = await expectPropfind(`${baseUrl}/`, controller.signal)
+        outcome = await expectPropfind(`${baseUrl}/`, controller.signal, authHeaders)
         break
       case 'mkcol_test_dir':
-        outcome = await expectMkcol(`${baseUrl}/02-test-output/webdav-test/`, controller.signal)
+        outcome = await expectMkcol(`${baseUrl}/02-test-output/webdav-test/`, controller.signal, authHeaders)
         break
       case 'put_test_file':
         outcome = await expectPut(
           `${baseUrl}/02-test-output/webdav-test/upload-1.txt`,
           controller.signal,
           `webdav-test-payload-${Date.now()}`,
+          authHeaders,
         )
         break
       case 'get_uploaded_file':
-        outcome = await expectGetFile(`${baseUrl}/02-test-output/webdav-test/upload-1.txt`, controller.signal)
+        outcome = await expectGetFile(`${baseUrl}/02-test-output/webdav-test/upload-1.txt`, controller.signal, authHeaders)
         break
       case 'move_uploaded_file':
         outcome = await expectMove(
           `${baseUrl}/02-test-output/webdav-test/upload-1.txt`,
           `${baseUrl}/02-test-output/webdav-test/renamed.txt`,
           controller.signal,
+          authHeaders,
         )
         break
       case 'copy_uploaded_file':
@@ -517,19 +570,20 @@ async function executeWebDavTest(
           `${baseUrl}/02-test-output/webdav-test/renamed.txt`,
           `${baseUrl}/02-test-output/webdav-test/copy.txt`,
           controller.signal,
+          authHeaders,
         )
         break
       case 'delete_file':
-        outcome = await expectDelete(`${baseUrl}/02-test-output/webdav-test/copy.txt`, controller.signal)
+        outcome = await expectDelete(`${baseUrl}/02-test-output/webdav-test/copy.txt`, controller.signal, authHeaders)
         break
       case 'delete_renamed_file':
-        outcome = await expectDelete(`${baseUrl}/02-test-output/webdav-test/renamed.txt`, controller.signal)
+        outcome = await expectDelete(`${baseUrl}/02-test-output/webdav-test/renamed.txt`, controller.signal, authHeaders)
         break
       case 'delete_test_dir':
-        outcome = await expectDelete(`${baseUrl}/02-test-output/webdav-test/`, controller.signal)
+        outcome = await expectDelete(`${baseUrl}/02-test-output/webdav-test/`, controller.signal, authHeaders)
         break
       case 'get_404':
-        outcome = await expectStatus(`${baseUrl}/__nope__.txt`, { method: 'GET' }, controller.signal, 404)
+        outcome = await expectStatus(`${baseUrl}/__nope__.txt`, { method: 'GET' }, controller.signal, 404, authHeaders)
         break
       case 'put_no_parent':
         outcome = await expectStatus(
@@ -537,6 +591,7 @@ async function executeWebDavTest(
           { method: 'PUT', body: 'data' },
           controller.signal,
           [409, 404, 405],  // 兼容：可能返回 409 conflict / 404 not found / 405 method not allowed
+          authHeaders,
         )
         break
       default:
@@ -568,8 +623,9 @@ async function expectList(
   signal: AbortSignal,
   expectStatus: number,
   expectPattern: RegExp,
+  auth: Record<string, string> | undefined,
 ): Promise<WebDavTestOutcome> {
-  const res = await fetch(url, { method: 'GET', signal })
+  const res = await fetch(url, { method: 'GET', signal, headers: auth ?? {} })
   if (res.status !== expectStatus) {
     return { passed: false, httpStatus: res.status, error: `expected ${expectStatus}, got ${res.status}`, errorKind: res.status >= 500 ? 'http_5xx' : 'http_4xx' }
   }
@@ -580,8 +636,8 @@ async function expectList(
   return { passed: true, httpStatus: res.status }
 }
 
-async function expectGetFile(url: string, signal: AbortSignal): Promise<WebDavTestOutcome> {
-  const res = await fetch(url, { method: 'GET', signal })
+async function expectGetFile(url: string, signal: AbortSignal, auth: Record<string, string> | undefined): Promise<WebDavTestOutcome> {
+  const res = await fetch(url, { method: 'GET', signal, headers: auth ?? {} })
   if (res.status !== 200) {
     return { passed: false, httpStatus: res.status, error: `expected 200, got ${res.status}`, errorKind: res.status >= 500 ? 'http_5xx' : 'http_4xx' }
   }
@@ -591,8 +647,8 @@ async function expectGetFile(url: string, signal: AbortSignal): Promise<WebDavTe
   return { passed: true, httpStatus: 200 }
 }
 
-async function expectHeadFile(url: string, signal: AbortSignal): Promise<WebDavTestOutcome> {
-  const res = await fetch(url, { method: 'HEAD', signal })
+async function expectHeadFile(url: string, signal: AbortSignal, auth: Record<string, string> | undefined): Promise<WebDavTestOutcome> {
+  const res = await fetch(url, { method: 'HEAD', signal, headers: auth ?? {} })
   if (res.status !== 200) {
     return { passed: false, httpStatus: res.status, error: `expected 200, got ${res.status}`, errorKind: res.status >= 500 ? 'http_5xx' : 'http_4xx' }
   }
@@ -603,8 +659,8 @@ async function expectHeadFile(url: string, signal: AbortSignal): Promise<WebDavT
   return { passed: true, httpStatus: 200 }
 }
 
-async function expectOptions(url: string, signal: AbortSignal): Promise<WebDavTestOutcome> {
-  const res = await fetch(url, { method: 'OPTIONS', signal })
+async function expectOptions(url: string, signal: AbortSignal, auth: Record<string, string> | undefined): Promise<WebDavTestOutcome> {
+  const res = await fetch(url, { method: 'OPTIONS', signal, headers: auth ?? {} })
   if (res.status < 200 || res.status >= 300) {
     return { passed: false, httpStatus: res.status, error: `expected 2xx, got ${res.status}`, errorKind: res.status >= 500 ? 'http_5xx' : 'http_4xx' }
   }
@@ -616,10 +672,10 @@ async function expectOptions(url: string, signal: AbortSignal): Promise<WebDavTe
   return { passed: true, httpStatus: res.status }
 }
 
-async function expectPropfind(url: string, signal: AbortSignal): Promise<WebDavTestOutcome> {
+async function expectPropfind(url: string, signal: AbortSignal, auth: Record<string, string> | undefined): Promise<WebDavTestOutcome> {
   const res = await fetch(url, {
     method: 'PROPFIND',
-    headers: { Depth: '1', 'Content-Type': 'application/xml' },
+    headers: mergeHeaders(auth, { Depth: '1', 'Content-Type': 'application/xml' }),
     body: '<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/></d:prop></d:propfind>',
     signal,
   })
@@ -629,8 +685,8 @@ async function expectPropfind(url: string, signal: AbortSignal): Promise<WebDavT
   return { passed: true, httpStatus: res.status }
 }
 
-async function expectMkcol(url: string, signal: AbortSignal): Promise<WebDavTestOutcome> {
-  const res = await fetch(url, { method: 'MKCOL', signal })
+async function expectMkcol(url: string, signal: AbortSignal, auth: Record<string, string> | undefined): Promise<WebDavTestOutcome> {
+  const res = await fetch(url, { method: 'MKCOL', signal, headers: auth ?? {} })
   // 201 Created / 405 Method Not Allowed (目录已存在) 都算通过
   if (res.status === 201 || res.status === 405) {
     return { passed: true, httpStatus: res.status }
@@ -638,10 +694,10 @@ async function expectMkcol(url: string, signal: AbortSignal): Promise<WebDavTest
   return { passed: false, httpStatus: res.status, error: `expected 201/405, got ${res.status}`, errorKind: res.status >= 500 ? 'http_5xx' : 'http_4xx' }
 }
 
-async function expectPut(url: string, signal: AbortSignal, body: string): Promise<WebDavTestOutcome> {
+async function expectPut(url: string, signal: AbortSignal, body: string, auth: Record<string, string> | undefined): Promise<WebDavTestOutcome> {
   const res = await fetch(url, {
     method: 'PUT',
-    headers: { 'Content-Type': 'text/plain' },
+    headers: mergeHeaders(auth, { 'Content-Type': 'text/plain' }),
     body,
     signal,
   })
@@ -651,10 +707,10 @@ async function expectPut(url: string, signal: AbortSignal, body: string): Promis
   return { passed: true, httpStatus: res.status }
 }
 
-async function expectMove(src: string, dst: string, signal: AbortSignal): Promise<WebDavTestOutcome> {
+async function expectMove(src: string, dst: string, signal: AbortSignal, auth: Record<string, string> | undefined): Promise<WebDavTestOutcome> {
   const res = await fetch(src, {
     method: 'MOVE',
-    headers: { Destination: dst, Overwrite: 'F' },
+    headers: mergeHeaders(auth, { Destination: dst, Overwrite: 'F' }),
     signal,
   })
   if (res.status < 200 || res.status >= 300) {
@@ -663,10 +719,10 @@ async function expectMove(src: string, dst: string, signal: AbortSignal): Promis
   return { passed: true, httpStatus: res.status }
 }
 
-async function expectCopy(src: string, dst: string, signal: AbortSignal): Promise<WebDavTestOutcome> {
+async function expectCopy(src: string, dst: string, signal: AbortSignal, auth: Record<string, string> | undefined): Promise<WebDavTestOutcome> {
   const res = await fetch(src, {
     method: 'COPY',
-    headers: { Destination: dst, Overwrite: 'F' },
+    headers: mergeHeaders(auth, { Destination: dst, Overwrite: 'F' }),
     signal,
   })
   if (res.status < 200 || res.status >= 300) {
@@ -675,8 +731,8 @@ async function expectCopy(src: string, dst: string, signal: AbortSignal): Promis
   return { passed: true, httpStatus: res.status }
 }
 
-async function expectDelete(url: string, signal: AbortSignal): Promise<WebDavTestOutcome> {
-  const res = await fetch(url, { method: 'DELETE', signal })
+async function expectDelete(url: string, signal: AbortSignal, auth: Record<string, string> | undefined): Promise<WebDavTestOutcome> {
+  const res = await fetch(url, { method: 'DELETE', signal, headers: auth ?? {} })
   if (res.status === 204 || res.status === 200 || res.status === 404) {
     // 204 = 删除成功, 200 = 某些 webdav 实现, 404 = 已删除（幂等通过）
     return { passed: true, httpStatus: res.status }
@@ -689,8 +745,9 @@ async function expectStatus(
   init: RequestInit,
   signal: AbortSignal,
   expected: number | number[],
+  auth: Record<string, string> | undefined,
 ): Promise<WebDavTestOutcome> {
-  const res = await fetch(url, { ...init, signal })
+  const res = await fetch(url, { ...init, signal, headers: mergeHeaders(auth, init.headers as Record<string, string> | undefined) })
   const expectedList = Array.isArray(expected) ? expected : [expected]
   if (!expectedList.includes(res.status)) {
     return { passed: false, httpStatus: res.status, error: `expected ${expectedList.join('|')}, got ${res.status}`, errorKind: res.status >= 500 ? 'http_5xx' : 'http_4xx' }

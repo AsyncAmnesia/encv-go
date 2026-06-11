@@ -8,8 +8,8 @@
  *
  * 核心设计：零硬编码 cipher mode / compression / version
  * - version 从 plugin.taskOptions.supportedVersions 派生
- * - v4 才有 cipherMode (0/1) × compressionMode (none/zstd) 的笛卡尔积
- * - v2/v3 不带 cipher/compression
+ * - ECv4 (推荐) 才有 cipherMode (0/1) × compressionMode (none/zstd) 的笛卡尔积
+ * - ECv3 (deprecated) 不带 cipher/compression
  * - 默认源文件是 01-plain-media/video/sample.mp4（跨 plugin 通用）
  *
  * 真机安全：所有 source 走 withSafetyBoundary({ forceAutomation: true })
@@ -29,6 +29,7 @@ import { usePathResolver } from '@/composables/usePathResolver'
 import { recordTriggeredBy, setTaskMetadata, type TriggeredBy } from '@/composables/useTaskTrigger'
 import { analyzeError, type ErrorAnalysis } from '@/composables/useErrorAnalyzer'
 import { eventBus } from '@/composables/useEventBus'
+import { isDeprecatedVersion, isRecommendedVersion, formatContainerVersion } from '@/constants/containerVersion'
 
 export type { TriggeredBy }
 
@@ -256,12 +257,12 @@ export function useAutomationTests() {
 
       for (const taskType of ['encrypt', 'decrypt'] as const) {
         for (const version of versions) {
-          // includeDeprecated 默认 true：包含 v2/v3（用于回归）
+          // includeDeprecated 默认 true：包含 ECv2/ECv3（用于回归）
           // 用户关闭后跳过这些版本
-          if (opts.includeDeprecated === false && version <= 3) continue
+          if (opts.includeDeprecated === false && isDeprecatedVersion(version)) continue
 
-          const isV4 = version === 4
-          // v4 encrypt 才有 cipher + compression 笛卡尔积
+          const isV4 = isRecommendedVersion(version)
+          // ECv4 (推荐) encrypt 才有 cipher + compression 笛卡尔积
           // decrypt 不需要（解密时由文件头决定）
           const cipherModes: Array<number | undefined> =
             isV4 && taskType === 'encrypt' ? [0, 1] : [undefined]
@@ -273,7 +274,7 @@ export function useAutomationTests() {
               const idParts = [
                 plugin.name,
                 taskType,
-                `v${version}`,
+                formatContainerVersion(version),
                 cipherMode !== undefined ? `c${cipherMode}` : '',
                 compressionMode !== undefined ? compressionMode : '',
               ].filter(Boolean)
@@ -285,7 +286,7 @@ export function useAutomationTests() {
                 version,
                 cipherMode,
                 compressionMode,
-                expectedBehavior: version <= 3 ? 'might-fail' : 'success',
+                expectedBehavior: isDeprecatedVersion(version) ? 'might-fail' : 'success',
               })
             }
           }

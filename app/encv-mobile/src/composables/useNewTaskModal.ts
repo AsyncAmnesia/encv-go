@@ -9,6 +9,7 @@ import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
 import { eventBus } from '@/composables/useEventBus'
 import { recordTriggeredBy } from '@/composables/useTaskTrigger'
+import { isRecommendedVersion } from '@/constants/containerVersion'
 import NewTaskModal from '@/components/NewTaskModal.vue'
 
 const { normalize } = usePathResolver()
@@ -160,10 +161,10 @@ export function useNewTaskModal() {
               pluginName,
               extraPayload,
               shouldSendPassword ? (state.secondaryPassword || undefined) : undefined,
-              // v4 独有：cipher mode / compression 字段不在 v2/v3 Header 中存在
-              // 后端 v2/v3 容器会忽略这些字段，但发送额外字段会污染 v2/v3 的 .sccg* 容器元数据
-              state.taskType === 'encrypt' && Number(state.version) === 4 ? state.cipherMode : undefined,
-              state.taskType === 'encrypt' && Number(state.version) === 4 ? state.compressionMode : undefined,
+              // ECv4 独有：cipher mode / compression 字段不在 ECv2/ECv3 Header 中存在
+              // 后端 ECv2/ECv3 容器会忽略这些字段，但发送额外字段会污染 ECv2/ECv3 的 .sccg* 容器元数据
+              state.taskType === 'encrypt' && isRecommendedVersion(Number(state.version)) ? state.cipherMode : undefined,
+              state.taskType === 'encrypt' && isRecommendedVersion(Number(state.version)) ? state.compressionMode : undefined,
             )
             // 登记任务触发者标签：用户手动创建 → 'user'
             if (task?.id) recordTriggeredBy(task.id, 'user')

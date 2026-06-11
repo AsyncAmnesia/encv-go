@@ -47,6 +47,58 @@
         <span class="base-url" :title="baseUrl">{{ baseUrl }}</span>
       </div>
 
+      <!-- 账号配置面板（折叠，避免干扰测试视图） -->
+      <ion-list>
+        <ion-item button @click="showAuthPanel = !showAuthPanel" detail="false">
+          <ion-icon :icon="keyOutline" slot="start" color="medium"></ion-icon>
+          <ion-label>
+            <h3>{{ t('devtools.webdavAuth.title') }}</h3>
+            <p>
+              <span v-if="authRequired" class="auth-status-required">{{ t('devtools.webdavAuth.required') }}</span>
+              <span v-else class="auth-status-optional">{{ t('devtools.webdavAuth.optional') }}</span>
+              ·
+              <span class="creds-summary">{{ maskedUsername }}</span>
+            </p>
+          </ion-label>
+          <ion-icon :icon="showAuthPanel ? chevronUp : chevronDown" slot="end"></ion-icon>
+        </ion-item>
+        <div v-if="showAuthPanel" class="auth-panel-body">
+          <ion-item>
+            <ion-label position="stacked">{{ t('devtools.webdavAuth.username') }}</ion-label>
+            <ion-input
+              v-model="credsUsername"
+              :placeholder="t('devtools.webdavAuth.usernamePlaceholder')"
+              autocapitalize="off"
+              autocorrect="off"
+              spellcheck="false"
+            ></ion-input>
+          </ion-item>
+          <ion-item>
+            <ion-label position="stacked">{{ t('devtools.webdavAuth.password') }}</ion-label>
+            <ion-input
+              v-model="credsPassword"
+              :placeholder="t('devtools.webdavAuth.passwordPlaceholder')"
+              type="password"
+            ></ion-input>
+          </ion-item>
+          <ion-item button @click="saveCreds">
+            <ion-icon :icon="checkmarkCircle" slot="start" color="primary"></ion-icon>
+            <ion-label>
+              <h3>{{ t('devtools.webdavAuth.save') }}</h3>
+              <p>{{ t('devtools.webdavAuth.saveHint') }}</p>
+            </ion-label>
+          </ion-item>
+          <ion-item button @click="resetToBackend" :disabled="!backendUsername">
+            <ion-icon :icon="cloudDownloadOutline" slot="start" color="medium"></ion-icon>
+            <ion-label>
+              <h3>{{ t('devtools.webdavAuth.resetToBackend') }}</h3>
+              <p v-if="backendUsername">{{ t('devtools.webdavAuth.backendHas') }}: <code>{{ backendUsername }}</code></p>
+              <p v-else>{{ t('devtools.webdavAuth.backendNoAuth') }}</p>
+            </ion-label>
+          </ion-item>
+        </div>
+      </ion-list>
+
       <!-- 控制区 -->
       <ion-list>
         <ion-list-header>
@@ -271,16 +323,18 @@ import { ref, computed, onMounted } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton,
   IonContent, IonList, IonListHeader, IonItem, IonIcon, IonLabel, IonBadge,
-  IonButton, IonSpinner, IonModal, alertController,
+  IonButton, IonSpinner, IonModal, IonInput, alertController,
 } from '@ionic/vue'
 import {
   playCircle, stopCircle, timeOutline, sync, checkmarkCircle, closeCircle,
   warningOutline, removeCircle, trashOutline, cloudDoneOutline, archiveOutline,
   ellipseOutline, swapVertical, documentTextOutline, cloudUploadOutline, keyOutline,
+  cloudDownloadOutline, chevronUp, chevronDown,
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { useWebDavAutomationTests, WEBDAV_TEST_CASES, type WebDavTestRun, type WebDavTestStatus } from '@/composables/useWebDavAutomationTests'
 import { showToast } from '@/composables/useToast'
+import { fetchWebDavLocalInfo, type WebDavLocalInfo } from '@/api/encv'
 
 const { t } = useI18n()
 const {
@@ -296,6 +350,8 @@ onMounted(() => {
   historyRuns.value = getPersistedRuns()
   // 异步检查 webdav 是否启用
   checkWebDavHealth()
+  // 异步拉取后端 webdav 账号（用于默认填充输入框）
+  loadWebDavLocalInfo()
 })
 
 const webDavEnabled = ref<boolean | null>(null)  // null=检测中, true/false=结果
@@ -306,6 +362,65 @@ async function checkWebDavHealth() {
   } catch {
     webDavEnabled.value = false
   }
+}
+
+// ============= WebDAV 账号配置（避免浏览器 401 弹窗） =============
+const showAuthPanel = ref(false)
+const credsUsername = ref('')
+const credsPassword = ref('')
+const backendUsername = ref('')
+const authRequired = ref(false)
+const localInfo = ref<WebDavLocalInfo | null>(null)
+
+const CRED_STORAGE_KEY = 'encv_webdav_creds_v1'
+
+async function loadWebDavLocalInfo() {
+  try {
+    const info = await fetchWebDavLocalInfo()
+    localInfo.value = info
+    backendUsername.value = info.username
+    authRequired.value = info.authRequired
+    // 如果 localStorage 没存过，且后端启用了 auth → 用后端默认填充输入框
+    const stored = localStorage.getItem(CRED_STORAGE_KEY)
+    if (!stored && info.authRequired) {
+      credsUsername.value = info.username
+      credsPassword.value = info.password
+    } else if (stored) {
+      // 已经有用户配置：把 username 回填到 UI（password 留空，避免明文暴露在 input value）
+      try {
+        const parsed = JSON.parse(stored) as { username?: string; password?: string }
+        if (parsed.username) credsUsername.value = parsed.username
+        if (parsed.password) credsPassword.value = parsed.password
+      } catch {
+        // ignore
+      }
+    }
+  } catch (e) {
+    console.debug('[webdav] loadWebDavLocalInfo failed', e)
+  }
+}
+
+const maskedUsername = computed(() => {
+  if (credsUsername.value) return credsUsername.value
+  if (backendUsername.value) return `${backendUsername.value} (${t('devtools.webdavAuth.fromBackend')})`
+  return t('devtools.webdavAuth.notSet')
+})
+
+function saveCreds() {
+  localStorage.setItem(
+    CRED_STORAGE_KEY,
+    JSON.stringify({ username: credsUsername.value, password: credsPassword.value }),
+  )
+  showToast({ message: t('devtools.webdavAuth.saved'), color: 'success' })
+  // 下次 runAllCases 会自动用新 creds（loadWebDavCreds 每次从 localStorage 读）
+}
+
+function resetToBackend() {
+  if (!localInfo.value) return
+  credsUsername.value = localInfo.value.username
+  credsPassword.value = localInfo.value.password
+  // 不立即清 localStorage，让用户明确点 save 才保存；点 reset 只是把输入框填上后端值
+  showToast({ message: t('devtools.webdavAuth.resetToBackendHint'), color: 'medium' })
 }
 
 function getResult(caseId: string) {

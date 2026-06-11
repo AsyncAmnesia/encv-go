@@ -36,13 +36,14 @@ import {
 } from '@ionic/vue'
 import type { ContainerVersionInfo } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
+import { CONTAINER_VERSIONS, DEFAULT_CONTAINER_VERSION } from '@/constants/containerVersion'
 import RadioItem from './RadioItem.vue'
 
 const props = withDefaults(defineProps<{
   modelValue: number
   versions?: ContainerVersionInfo[]
 }>(), {
-  modelValue: 4,
+  modelValue: DEFAULT_CONTAINER_VERSION,
 })
 
 const emit = defineEmits<{
@@ -51,17 +52,10 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-// 容器格式版本：
-//   - ECv3 = 旧版本（deprecated，但仍可创建/读取）
-//   - ECv4 = 当前推荐版本
+// 🆕 2026-06-11 v2 cleanup：版本列表从 constants/containerVersion.ts 统一派生
 // 命名规则：ECv = ENCV Container，大写 EC，小写 v，避免与项目内 v2 架构命名混淆。
-// 注：ECv2 已在 SupportedVersions 中移除，不再可选。
-const defaultVersions: ContainerVersionInfo[] = [
-  { version: 3, status: 'deprecated', label: 'ECv3' },
-  { version: 4, status: 'recommended', label: 'ECv4' },
-]
-
-const versions = computed(() => props.versions || defaultVersions)
+// 注：ECV2 已在 SupportedVersions 中移除，不再可选。
+const versions = computed<ContainerVersionInfo[]>(() => props.versions ?? [...CONTAINER_VERSIONS])
 
 function handleChange(event: CustomEvent) {
   emit('update:modelValue', event.detail.value as number)

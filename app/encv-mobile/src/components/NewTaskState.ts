@@ -1,4 +1,5 @@
 import type { PluginCandidate, ContainerVersionInfo, TaskField, TaskOptions } from '@/api/encv'
+import { ECV4 } from '@/constants/containerVersion'
 
 export interface NewTaskState {
   taskType: string
@@ -14,8 +15,8 @@ export interface NewTaskState {
   extraValues: Record<string, string>
   filteredExtraFields: TaskField[]
   selectedPluginIndex: number
-  /** v4 CipherMode: 0 = AES-128-CTR（默认）, 1 = AES-256-CTR */
+  /** ECv${ECV4} CipherMode: 0 = AES-128-CTR（默认）, 1 = AES-256-CTR */
   cipherMode: number
-  /** v4 CompressionMode: 'none'（默认）| 'zstd' */
+  /** ECv${ECV4} CompressionMode: 'none'（默认）| 'zstd' */
   compressionMode: 'none' | 'zstd'
 }

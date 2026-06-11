@@ -164,11 +164,11 @@ const RULES: ErrorRule[] = [
     category: 'unsupported_version',
     phase: 'plugin',
     summary: '插件不支持此容器版本',
-    technicalExplanation: '当前 plugin 不支持测试用例的容器版本（v2/v3 已废弃，仅部分老 plugin 保留）。',
+    technicalExplanation: '当前 plugin 不支持测试用例的容器版本（ECv2/ECv3 已废弃，仅部分老 plugin 保留）。',
     fixes: [
-      { title: '关闭 includeDeprecated 开关', detail: '在测试运行器配置中把 includeDeprecated 设为 false，跳过 v2/v3 用例。' },
-      { title: '升级 plugin', detail: '在 plugin 仓库检查最新版本是否支持 v4。' },
-      { title: '标记 might-fail', detail: 'v2/v3 用例 expectedBehavior 已设为 might-fail，可视为预期失败。' },
+      { title: '关闭 includeDeprecated 开关', detail: '在测试运行器配置中把 includeDeprecated 设为 false，跳过 ECv2/ECv3 用例。' },
+      { title: '升级 plugin', detail: '在 plugin 仓库检查最新版本是否支持 ECv4。' },
+      { title: '标记 might-fail', detail: 'ECv2/ECv3 用例 expectedBehavior 已设为 might-fail，可视为预期失败。' },
     ],
   },
   // 不支持的 cipher mode
@@ -178,11 +178,11 @@ const RULES: ErrorRule[] = [
     category: 'unsupported_cipher',
     phase: 'plugin',
     summary: 'Cipher 模式不兼容',
-    technicalExplanation: 'plugin 不支持此 cipher mode（c0=AES-128, c1=AES-256）。可能是 v4 容器用 c1 但 plugin 限制为 c0。',
+    technicalExplanation: 'plugin 不支持此 cipher mode（c0=AES-128, c1=AES-256）。可能是 ECv4 容器用 c1 但 plugin 限制为 c0。',
     fixes: [
       { title: '检查 plugin 的 cipher 支持', detail: '查看 plugin 元数据 supportedCipherModes 或文档。' },
       { title: '只测 c0', detail: '暂时把测试用例的 cipher 维度缩为 [0]，定位后扩展。' },
-      { title: '对比 v4 容器 spec', detail: 'v4 容器支持 c0/c1，下游 plugin 必须升级才能解密 c1 容器。' },
+      { title: '对比 ECv4 容器 spec', detail: 'ECv4 容器支持 c0/c1，下游 plugin 必须升级才能解密 c1 容器。' },
     ],
   },
   // 不支持的 compression
@@ -192,11 +192,11 @@ const RULES: ErrorRule[] = [
     category: 'unsupported_compression',
     phase: 'plugin',
     summary: '压缩模式不兼容',
-    technicalExplanation: 'plugin 不支持 zstd 压缩或解压缩失败。v4 容器压缩模式 none/zstd。',
+    technicalExplanation: 'plugin 不支持 zstd 压缩或解压缩失败。ECv4 容器压缩模式 none/zstd。',
     fixes: [
       { title: '检查后端是否安装 zstd 库', detail: 'encv-go 主进程依赖 zstd C 库，缺失会导致 zstd 解压失败。' },
       { title: '只测 none', detail: '暂时把测试用例的 compression 维度缩为 ["none"]，定位后扩展。' },
-      { title: '对比 v4 spec', detail: 'v4 容器 spec 规定 compression 字段为 none/zstd，plugin 端必须同时支持。' },
+      { title: '对比 ECv4 spec', detail: 'ECv4 容器 spec 规定 compression 字段为 none/zstd，plugin 端必须同时支持。' },
     ],
   },
   // 密码错
@@ -210,7 +210,7 @@ const RULES: ErrorRule[] = [
     fixes: [
       { title: '确认密码正确', detail: '自动化测试统一使用 automation-test-pwd。手动测试时确认密码输入无误。' },
       { title: '检查 global vs independent', detail: 'plugin 的 passwordStrategy 决定是否走全局密码。global 模式下必须先在 Settings 设置。' },
-      { title: '检查二次密码', detail: 'v4 容器支持 secondary password（独立 AES key），缺失会导致 auth 失败。' },
+      { title: '检查二次密码', detail: 'ECv4 容器支持 secondary password（独立 AES key），缺失会导致 auth 失败。' },
     ],
   },
   // OOM

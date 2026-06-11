@@ -503,7 +503,7 @@ function buildDynamicWorkflow(): void {
       // 🆕 安全 ID 工具：把 plugin + version + ext + extraFields 转成文件系统安全的子目录名
       const makeSafeId = (extraFields: Record<string, string>): string => {
         const sortedKeys = Object.keys(extraFields).sort()
-        const parts: string[] = [plugin.name, `v${version}`, sourceExt]
+        const parts: string[] = [plugin.name, formatContainerVersion(version), sourceExt]
         for (const k of sortedKeys) {
           parts.push(`${k}-${extraFields[k]}`)
         }
@@ -527,7 +527,7 @@ function buildDynamicWorkflow(): void {
           const targetPath = `${mockRoot.value}02-test-output/${safeId}/`
 
           const stepId = `enc_${safeId}`
-          const nameParts: string[] = [plugin.name, 'ENCRYPT', `v${version}`, sourceExt]
+          const nameParts: string[] = [plugin.name, 'ENCRYPT', formatContainerVersion(version), sourceExt]
           for (const sf of encryptSelectFields) {
             const v = extraFields[sf.field.key]
             if (v) {
@@ -601,7 +601,7 @@ function buildDynamicWorkflow(): void {
           const sourcePathForDecrypt = `${mockRoot.value}02-test-output/${baseSafeId}/${encryptedFileName}`
 
           const stepId = `dec_${safeId.replace(/^dec_/, '')}`
-          const nameParts: string[] = [plugin.name, 'DECRYPT', `v${version}`, sourceExt]
+          const nameParts: string[] = [plugin.name, 'DECRYPT', formatContainerVersion(version), sourceExt]
           for (const sf of decryptSelectFields) {
             const v = extraFields[sf.field.key]
             if (v) {

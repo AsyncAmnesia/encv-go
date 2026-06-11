@@ -105,6 +105,11 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/WebDavAutomationTestsDetail.vue'),
       },
       {
+        // 🆕 2026-06-11：ECv4 容量边界测试（100×128GB sparse 虚拟容器）
+        path: 'settings/devtools/sparse-container-test',
+        component: () => import('@/views/SparseContainerTestDetail.vue'),
+      },
+      {
         path: 'settings/devtools/prototype/:id',
         component: () => import('@/views/PrototypeSandbox.vue'),
       },

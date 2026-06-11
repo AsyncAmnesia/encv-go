@@ -109,6 +109,15 @@ func IsDeprecatedVersion(version int) bool {
 	return GetVersionStatus(version) == VersionStatusDeprecated
 }
 
+// IsRecommendedVersion 返回容器版本是否是当前推荐版本（仅 ECv4）
+// 与 IsDeprecatedVersion 互斥：
+//   - IsRecommendedVersion(v) = true  ⇔ v == ContainerECv4
+//   - IsDeprecatedVersion(v)  = true  ⇔ v ∈ {ContainerECv2, ContainerECv3}
+//   - 二者都 = false                  ⇔ v 是 SupportedVersions 之外的未知版本
+func IsRecommendedVersion(version int) bool {
+	return GetVersionStatus(version) == VersionStatusRecommended
+}
+
 // FragmentType 定义分片的用途类型，使其意图更加明确
 type FragmentType string
 

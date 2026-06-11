@@ -95,7 +95,7 @@
       </div>
       <div class="info-item" v-if="task.containerVersion">
         <span class="info-label">{{ t('tasks.containerVersion') }}</span>
-        <span class="info-value container-version-pill">V{{ task.containerVersion }}</span>
+        <span class="info-value container-version-pill">{{ formatContainerVersion(task.containerVersion) }}</span>
       </div>
       <div class="info-item" v-if="task.version">
         <span class="info-label">{{ t('tasks.workflowVersion') }}</span>
@@ -125,6 +125,7 @@ import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
 import type { EncvTask } from '@/api/encv'
 import { getTriggeredBy, getRunIdForTask } from '@/composables/useTaskTrigger'
+import { formatContainerVersion } from '@/constants/containerVersion'
 
 const props = defineProps<{ task: EncvTask }>()
 const { t } = useI18n()

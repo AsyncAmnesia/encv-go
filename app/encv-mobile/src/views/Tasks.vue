@@ -339,7 +339,7 @@
                 <div v-if="item.task.status === 'completed'" class="completed-info">
                   <ion-icon :icon="checkmarkCircle" color="success" class="completed-icon"></ion-icon>
                   <span class="completed-text">{{ t('tasks.phaseCompleted') }}</span>
-                  <span v-if="item.task.containerVersion" class="container-version">V{{ item.task.containerVersion }}</span>
+                  <span v-if="item.task.containerVersion" class="container-version">{{ formatContainerVersion(item.task.containerVersion) }}</span>
                 </div>
                 <div v-if="item.task.warning" class="task-warning" @click="toggleWarningDetail(item.task)">
                   <ion-icon :icon="warningOutline" class="warning-icon"></ion-icon>
@@ -437,6 +437,7 @@ import { useNewTaskModal } from '@/composables/useNewTaskModal'
 import { useTasksList } from '@/composables/useTasksList'
 import { useTaskEventBridge } from '@/composables/useTaskEventBridge'
 import { getTriggeredBy, getRunIdForTask, clearTriggeredBy } from '@/composables/useTaskTrigger'
+import { formatContainerVersion } from '@/constants/containerVersion'
 
 const { t } = useI18n()
 const route = useRoute()

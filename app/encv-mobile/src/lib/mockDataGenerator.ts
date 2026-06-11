@@ -480,7 +480,7 @@ export function createAEFile(name: string, targetSize: number): Uint8Array {
   return padToSize(header, targetSize)
 }
 
-// ==================== ENCV v4 Container ====================
+// ==================== ENCV ECv4 Container ====================
 
 export function createSCCVFile(name: string, ext: string, targetSize: number): Uint8Array {
   const magic = new TextEncoder().encode('SCCV')

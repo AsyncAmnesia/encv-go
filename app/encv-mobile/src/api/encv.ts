@@ -1004,6 +1004,26 @@ export async function fetchContainerVersions(): Promise<ContainerVersionsRespons
   return response.json()
 }
 
+export interface WebDavLocalInfo {
+  enabled: boolean
+  authRequired: boolean
+  username: string
+  password: string
+  webdavPath: string
+  serverBaseUrl: string
+}
+
+/**
+ * 拉取后端本地 webdav endpoint 元信息（账号/密码/是否启用）
+ * 用于构造 Basic Auth header，避免触发浏览器 401 弹窗
+ */
+export async function fetchWebDavLocalInfo(): Promise<WebDavLocalInfo> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/webdav/local-info`)
+  if (!response.ok) throw new Error(`Failed to fetch webdav local info: ${response.status}`)
+  return response.json() as Promise<WebDavLocalInfo>
+}
+
 export type DecryptErrorCode = 'wrong_password' | 'data_corrupted' | 'decrypt_failed' | 'deprecated_version'
 
 export interface DecryptError {

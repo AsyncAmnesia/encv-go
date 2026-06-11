@@ -20,6 +20,7 @@ import (
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
+	"github.com/Soltus/encv-go/internal/v2/testutil"
 	alistencrypt "github.com/Soltus/encv-go/internal/v2/plugins/alistencrypt"
 	pluginInterfaces "github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
 	"github.com/Soltus/encv-go/internal/v2/types"
@@ -631,6 +632,31 @@ func (s *Server) handleTestLocalWebDAVGin(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+// handleWebDavLocalInfoGin 返回本地 webdav endpoint 的元信息（用户名/密码/是否启用），
+// 供前端自动化测试时构造 Basic Auth header，避免触发浏览器原生 401 弹窗
+func (s *Server) handleWebDavLocalInfoGin(c *gin.Context) {
+	if s.webdavFS == nil {
+		c.JSON(http.StatusOK, gin.H{
+			"enabled":       false,
+			"authRequired":  false,
+			"username":      "",
+			"password":      "",
+			"webdavPath":    s.webdavPath,
+			"serverBaseUrl": fmt.Sprintf("http://127.0.0.1:%d", s.cfg.Server.Port),
+		})
+		return
+	}
+	authRequired := s.cfg.Webdav.Username != "" || s.cfg.Webdav.Password != ""
+	c.JSON(http.StatusOK, gin.H{
+		"enabled":       true,
+		"authRequired":  authRequired,
+		"username":      s.cfg.Webdav.Username,
+		"password":      s.cfg.Webdav.Password,
+		"webdavPath":    s.webdavPath,
+		"serverBaseUrl": fmt.Sprintf("http://127.0.0.1:%d", s.cfg.Server.Port),
+	})
+}
+
 func (s *Server) handleIndexClearGin(c *gin.Context) {
 	s.mobileSvc.ClearIndex()
 	c.JSON(http.StatusOK, gin.H{"status": "cleared"})
@@ -997,6 +1023,128 @@ func (s *Server) handleAutomationReportGin(c *gin.Context) {
 		slog.Warn("[automation-report] last run failed cases: " + string(lfJSON))
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true, "received": true})
+}
+
+// ============= ECv4 Sparse Container Capacity Boundary Test =============
+
+// handleSparseContainerWriteGin 写一个 sparse 虚拟容器（默认 100×128GB）
+//
+// POST /api/dev/sparse-container
+// Body: {"fragmentCount": 100, "fragmentSizeGB": 128, "physicalChunkMB": 0, "containerType": 1}
+// Response: SparseResult (virtual/physical/manifest size + isSparse)
+func (s *Server) handleSparseContainerWriteGin(c *gin.Context) {
+	var req struct {
+		FragmentCount   int    `json:"fragmentCount"`
+		FragmentSizeGB  int    `json:"fragmentSizeGB"`
+		PhysicalChunkMB int    `json:"physicalChunkMB"`
+		ContainerType   uint16 `json:"containerType"`
+		BaseName        string `json:"baseName"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json: " + err.Error()})
+		return
+	}
+
+	outputDir := "/tmp/encv-sparse-test"
+	if req.BaseName == "" {
+		req.BaseName = fmt.Sprintf("sparse-%d", time.Now().Unix())
+	}
+
+	// 1GB = 1024^3
+	fragmentSize := int64(req.FragmentSizeGB) * 1024 * 1024 * 1024
+	if fragmentSize <= 0 {
+		fragmentSize = 128 * 1024 * 1024 * 1024
+	}
+
+	cfg := testutil.SparseContainerConfig{
+		OutputDir:       outputDir,
+		BaseName:        req.BaseName,
+		FragmentCount:   req.FragmentCount,
+		FragmentSize:    fragmentSize,
+		PhysicalChunkMB: req.PhysicalChunkMB,
+		ContainerType:   req.ContainerType,
+		CipherMode:      0,
+	}
+	if cfg.ContainerType == 0 {
+		cfg.ContainerType = 1
+	}
+	if cfg.FragmentCount == 0 {
+		cfg.FragmentCount = 100
+	}
+
+	res, err := testutil.WriteSparseVirtualContainer(cfg)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	slog.Info("[sparse-container] wrote",
+		"baseName", req.BaseName,
+		"virtualGB", res.VirtualTotal/(1024*1024*1024),
+		"physicalKB", res.PhysicalUsed/1024,
+		"isSparse", res.IsSparse,
+		"durationMs", res.DurationMs,
+	)
+	c.JSON(http.StatusOK, res)
+}
+
+// handleSparseContainerProbeGin 探测 1 个 fragment 的读路径
+//
+// GET /api/dev/sparse-container/probe?mainPath=/tmp/.../x.sccg&fragmentIdx=0&fragmentSizeGB=128
+// Response: EdgeProbeResult (seek/read duration + heap + physical/virtual size)
+func (s *Server) handleSparseContainerProbeGin(c *gin.Context) {
+	mainPath := c.Query("mainPath")
+	if mainPath == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "mainPath required"})
+		return
+	}
+	fragmentIdx := 0
+	if v := c.Query("fragmentIdx"); v != "" {
+		fmt.Sscanf(v, "%d", &fragmentIdx)
+	}
+	fragmentSizeGB := 128
+	if v := c.Query("fragmentSizeGB"); v != "" {
+		fmt.Sscanf(v, "%d", &fragmentSizeGB)
+	}
+	fragmentSize := int64(fragmentSizeGB) * 1024 * 1024 * 1024
+
+	probe, err := testutil.ReadSparseContainerEdgeProbe(mainPath, fragmentIdx, fragmentSize)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	slog.Info("[sparse-container] probe",
+		"mainPath", mainPath,
+		"fragmentIdx", fragmentIdx,
+		"seekMs", probe.SeekDurationMs,
+		"readMs", probe.ReadDurationMs,
+		"heapInUseKB", probe.HeapInUseKB,
+	)
+	c.JSON(http.StatusOK, probe)
+}
+
+// handleSparseContainerCleanupGin 清理 sparse 容器产物
+//
+// DELETE /api/dev/sparse-container?baseName=xxx
+// 默认清理 /tmp/encv-sparse-test/ 下所有 .sccg 产物
+func (s *Server) handleSparseContainerCleanupGin(c *gin.Context) {
+	baseName := c.Query("baseName")
+	outputDir := "/tmp/encv-sparse-test"
+
+	if baseName == "" {
+		// 清理整个目录
+		if err := os.RemoveAll(outputDir); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		slog.Info("[sparse-container] cleaned up entire output dir", "dir", outputDir)
+	} else {
+		if err := testutil.CleanupSparseContainer(outputDir, baseName); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		slog.Info("[sparse-container] cleaned up", "baseName", baseName)
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "baseName": baseName, "outputDir": outputDir})
 }
 
 func (s *Server) handleTagsListGin(c *gin.Context) {
