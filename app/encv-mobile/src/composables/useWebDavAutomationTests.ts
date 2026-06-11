@@ -228,7 +228,9 @@ function savePersistedRuns(webdavRuns: WebDavTestRun[]): void {
 // ============= Composable =============
 
 export function useWebDavAutomationTests() {
-  const { setTaskMetadata } = useTaskTrigger()
+  // 🆕 setTaskMetadata 是 module-level export（从 './useTaskTrigger' import），不是 composable
+  // 历史 v6 bug：错写成 `const { setTaskMetadata } = useTaskTrigger()` → ReferenceError
+  // 修复：直接用顶层 import 的 setTaskMetadata（line 27）
 
   const results = ref<WebDavTestResult[]>([])
   const isRunning = ref(false)
