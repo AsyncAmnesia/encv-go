@@ -442,14 +442,27 @@ func ffmpegGenerate(ext string) []byte {
 	args = append(args, "-y", "-loglevel", "error", dstPath)
 
 	// 5. 跑 ffmpeg
-	// 🆕 2026-06-11 v4：10s context timeout（**仅记录意图，cgo dlopen 实际不响应**）
-	// ⚠️ 已知限制：CallFFmpegNative 是阻塞 cgo call（ffmpeg_dlopen.go L200）
-	//   cgo 不会检查 ctx.Done()，这个 timeout 只能影响 ctx 相关的 Go 逻辑
-	//   真正防止 gin handler hang 靠的是：
-	//     ① 前端 30s AbortController 超时（src/api/mockGenerator.ts timeoutMs）→ abort fetch
-	//        → reader.read() reject → catch → inline error UI
-	//     ② 未来重构：把 ffmpeg 调 subprocess 化（cgo 隔离，子进程崩不挂主进程）
-	//   当前架构下，cgo 卡死会让此 goroutine 泄漏，但**用户感知 30s 后看到错误**。
+	// 🆕 2026-06-11 Phase 1 重构：通过 ctx timeout 让 WorkerRunner SIGKILL 子进程
+	//
+	// ┌──────────────────────────────────────────────────────────────┐
+	// │ 路径选择（init() 决定，见 ffmpeg/exec_runner.go init()）    │
+	// ├──────────────────────────────────────────────────────────────┤
+	// │ 沙箱 dev（!android build tag）:                              │
+	// │   - WorkerRunner（subprocess）✅ 完整隔离                    │
+	// │     encv-go → ffmpeg-worker → /usr/bin/ffmpeg                │
+	// │     ctx cancel → SIGKILL worker 整个进程组                  │
+	// │   - ExecRunner（fallback）: 同样 subprocess 但无 worker 包装 │
+	// │                                                              │
+	// │ 真机（gomobile bind → libffmpeg.so, build tag android）:    │
+	// │   - NativeRunner（cgo dlopen）❌ Phase 1 未隔离             │
+	// │     cgo call 阻塞 OS 线程 → ctx 取消无效                    │
+	// │     缓解：前端 30s AbortController（src/api/mockGenerator.ts）│
+	// │                                                              │
+	// │ Phase 2 计划（app/encv-mobile repo 改 build 系统）:          │
+	// │   - 把 ffmpeg-worker 打进 AAR                                │
+	// │   - 真机也走 WorkerRunner（worker 内部用 cgo 调 libffmpeg.so）│
+	// │   - 此时 ctx cancel 同样 SIGKILL worker → 彻底隔离           │
+	// └──────────────────────────────────────────────────────────────┘
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_, stderr, exitCode, err := ffmpeg.RunWithOutput(ctx, args...)

@@ -114,5 +114,19 @@ func (r *ExecRunner) Available() (bool, bool, string) {
 }
 
 func init() {
+	// 🆕 2026-06-11 Phase 1 重构：ffmpeg 调用优先级
+	//   1) WorkerRunner（subprocess 隔离，最安全，沙箱 dev 默认）
+	//   2) ExecRunner（直接 os/exec，无隔离，fallback）
+	//
+	// 真机（gomobile bind → libffmpeg.so）走 native_runner.go 的 init()
+	// （build tag 隔离），不会进入这个 init()
+	//
+	// 选 WorkerRunner 的条件：worker 二进制存在 + 系统有 ffmpeg
+	if wr := NewWorkerRunner(); wr != nil {
+		if ok, _, _ := wr.Available(); ok {
+			SetRunner(wr)
+			return
+		}
+	}
 	SetRunner(&ExecRunner{})
 }
