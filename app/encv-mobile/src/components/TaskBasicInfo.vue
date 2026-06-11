@@ -7,8 +7,17 @@
     </div>
     <nav class="hierarchy-breadcrumb" :aria-label="t('tasks.hierarchy')">
       <ol class="breadcrumb-list">
+        <!-- 0️⃣ 根层：Tasks / 任务中心（永远显示，作为最外层容器） -->
+        <li class="breadcrumb-item breadcrumb-root">
+          <span class="breadcrumb-icon-bubble breadcrumb-tone-root">
+            <ion-icon :icon="listOutline" class="breadcrumb-icon"></ion-icon>
+          </span>
+          <span class="breadcrumb-label">{{ t('tasks.tasksRoot') }}</span>
+        </li>
+
         <!-- 1️⃣ 触发者层：user / automation / ai_agent -->
         <li class="breadcrumb-item breadcrumb-trigger" v-if="triggeredBy !== 'user'">
+          <ion-icon :icon="chevronForward" class="breadcrumb-sep"></ion-icon>
           <span class="breadcrumb-icon-bubble" :class="`trigger-tone-${triggeredBy}`">
             <ion-icon :icon="triggeredByIcon" class="breadcrumb-icon"></ion-icon>
           </span>
@@ -109,7 +118,7 @@ import { IonBadge, IonIcon } from '@ionic/vue'
 import {
   copyOutline, hardwareChipOutline, cogOutline, person,
   extensionPuzzle, chevronForward, documentTextOutline,
-  informationCircleOutline, gitBranchOutline,
+  informationCircleOutline, gitBranchOutline, listOutline,
   swapVertical, folderOutline, ellipsisHorizontalCircleOutline,
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
@@ -263,6 +272,9 @@ const sectionDimensionLabel = computed(() => {
 }
 .breadcrumb-icon-bubble.breadcrumb-tone-task {
   background: linear-gradient(135deg, #2f7ce0, #1e5aa0);
+}
+.breadcrumb-icon-bubble.breadcrumb-tone-root {
+  background: linear-gradient(135deg, #4a5568, #2d3748);
 }
 .breadcrumb-icon-bubble.trigger-tone-automation {
   background: linear-gradient(135deg, #5b9dff, #2f7ce0);

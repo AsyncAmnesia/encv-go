@@ -58,6 +58,14 @@
             <p>{{ t('devtools.automationTestsEntryDesc') }}</p>
           </ion-label>
         </ion-item>
+        <!-- 🆕 2026-06-11 v6：webdav 服务自动化测试入口 -->
+        <ion-item button detail @click="goWebDavTests">
+          <ion-icon :icon="cloudUploadOutline" slot="start" color="primary"></ion-icon>
+          <ion-label>
+            <h3>{{ t('devtools.webdavTests') }}</h3>
+            <p>{{ t('devtools.webdavTestsHint') }}</p>
+          </ion-label>
+        </ion-item>
       </ion-list>
 
       <!-- 沙箱预览：dev 专属入口，生产构建整段 v-if false 移除 -->
@@ -173,7 +181,7 @@ import {
   bugOutline, downloadOutline, readerOutline, trashOutline,
   chevronForward, playCircleOutline, musicalNotesOutline,
   colorPaletteOutline, settingsOutline, terminal, documentText,
-  cloudOutline, refreshOutline, eyeOutline,
+  cloudOutline, refreshOutline, eyeOutline, cloudUploadOutline,
   extensionPuzzleOutline, flaskOutline, rocketOutline,
 } from 'ionicons/icons'
 import { useRouter } from 'vue-router'
@@ -279,6 +287,10 @@ function openPreviewOpenListPlugin() {
 
 function goAutomationTests() {
   router.push('/tabs/settings/devtools/automation')
+}
+
+function goWebDavTests() {
+  router.push('/tabs/settings/devtools/webdav-tests')
 }
 
 function handleVConsoleToggle(event: CustomEvent) {

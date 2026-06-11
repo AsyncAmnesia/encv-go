@@ -100,6 +100,11 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/AutomationTestsDetail.vue'),
       },
       {
+        // 🆕 2026-06-11 v6：webdav 服务自动化测试入口
+        path: 'settings/devtools/webdav-tests',
+        component: () => import('@/views/WebDavAutomationTestsDetail.vue'),
+      },
+      {
         path: 'settings/devtools/prototype/:id',
         component: () => import('@/views/PrototypeSandbox.vue'),
       },

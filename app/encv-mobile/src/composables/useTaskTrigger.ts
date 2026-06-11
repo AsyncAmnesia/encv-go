@@ -59,17 +59,32 @@ let initialized = false
 function ensureLoaded(): void {
   if (initialized) return
   initialized = true
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return
-    const parsed = JSON.parse(raw) as TriggeredByMap
-    if (!parsed || typeof parsed !== 'object') return
-    // 同步到 reactive 容器（保留 reactive 响应式）
-    for (const [k, v] of Object.entries(parsed)) {
-      triggeredByMap[k] = v
+  // 🆕 2026-06-11 修复 v6：从所有历史 key 加载（v1 / v2 / v3）— 防止升级时丢数据
+  // 历史：之前升 v3 时只读 v3 key，v1/v2 数据被无声丢弃 → 重新打开预览后所有 task 变 'user'
+  // 修复：依次尝试 v3 → v2 → v1 任一 key 有数据就合并到 triggeredByMap
+  //   合并策略：v3 数据优先（最新），v1/v2 补缺
+  const LEGACY_KEYS = [
+    'encv_task_triggered_by_v3',  // 当前
+    'encv_task_triggered_by_v2',  // v4 改动前
+    'encv_task_triggered_by_v1',  // 最早
+  ]
+  for (const key of LEGACY_KEYS) {
+    try {
+      const raw = localStorage.getItem(key)
+      if (!raw) continue
+      const parsed = JSON.parse(raw) as TriggeredByMap
+      if (!parsed || typeof parsed !== 'object') continue
+      for (const [k, v] of Object.entries(parsed)) {
+        // 🆕 v6 合并策略：v3 数据优先（最先生效），v1/v2 补缺
+        if (!triggeredByMap[k]) {
+          triggeredByMap[k] = v
+        }
+      }
+      // 找到第一个有数据的 key 就 break（不再读更老的 key）
+      break
+    } catch {
+      // silent
     }
-  } catch {
-    // silent
   }
 }
 
@@ -146,13 +161,24 @@ export function setTaskMetadata(
 /**
  * 🆕 2026-06-10 修复 v4：取 task 的元数据
  * useTasksList.applyTaskCreated 在 spread data 后 merge 进来
+ *
+ * 🆕 2026-06-11 修复 v6：fallback 到 triggeredByMap（来自 localStorage）
+ * 历史：之前只读 taskMetadata Map → 重新加载页面后 Map 是空的 → fetchTasks 补不回来
+ *   → t.triggeredBy 永远 undefined → 全部变 user → 层级消失
+ * 修复：fallback 到 triggeredByMap（ensureLoaded 从 localStorage 加载）→ 跨刷新也能补回
  */
 export function getTaskMetadata(
   taskId: string,
 ): { triggeredBy: TriggeredBy; runId?: string } | undefined {
   if (!taskId) return undefined
   ensureLoaded()
-  return taskMetadata.get(taskId)
+  // 优先读 taskMetadata（当前 session 最新）
+  const meta = taskMetadata.get(taskId)
+  if (meta) return meta
+  // 🆕 v6 fallback：读 triggeredByMap（来自 localStorage，跨 session 持久）
+  const entry = triggeredByMap[taskId]
+  if (entry) return { triggeredBy: entry.triggeredBy, runId: entry.runId }
+  return undefined
 }
 
 /**

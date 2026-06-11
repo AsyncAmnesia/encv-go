@@ -155,6 +155,10 @@
             <ion-icon :icon="sync" slot="start"></ion-icon>
             重置分组
           </ion-button>
+          <ion-button size="small" fill="clear" @click="showAutomationReports" class="grouping-reset-btn" title="查看所有自动化测试历史报告（localStorage 持久化）">
+            <ion-icon :icon="archiveOutline" slot="start"></ion-icon>
+            查看报告
+          </ion-button>
         </div>
         <template v-for="item in displayedItems" :key="item.key">
           <!-- 🆕 2026-06-10 修复：自动化测试 / AI agent 任务组折叠 -->
@@ -421,7 +425,7 @@ import {
   warningOutline, lockClosed, search, funnel, trashBin,
   extensionPuzzle, swapVertical, chevronDown,
   hardwareChipOutline, cogOutline, person, chevronForward, chevronBack,
-  folderOutline, ellipsisHorizontalCircleOutline,
+  folderOutline, ellipsisHorizontalCircleOutline, archiveOutline,
 } from 'ionicons/icons'
 import { useRoute, useRouter } from 'vue-router'
 import type { EncvTask, TaskType } from '@/api/encv'
@@ -994,6 +998,61 @@ async function resetGrouping() {
   collapsedSubSectionKeys.value = new Set()
   showToast({ message: '已清空任务触发者缓存，刷新页面后生效', duration: 2000, color: 'medium' })
   await fetchTasks()
+}
+
+// 🆕 2026-06-11 v6：查看所有自动化测试历史报告（localStorage `encv_automation_results_v1`）
+// 用户原话：「话说我已经触发了多轮自动化测试了，测试报告存到哪了？里面报告了什么错误？」
+// 修复：在 Tasks.vue 调试栏加按钮 → 读 localStorage → 用 alert/showToast 摘要
+// 详细报告 → 跳转到 WebDavAutomationTestsDetail view 查看（里面有「历史报告」modal）
+function showAutomationReports() {
+  try {
+    const raw = localStorage.getItem('encv_automation_results_v1')
+    if (!raw) {
+      showToast({ message: 'localStorage 中没有测试报告 (encv_automation_results_v1 为空)', duration: 3000, color: 'medium' })
+      return
+    }
+    const runs = JSON.parse(raw) as Array<any>
+    if (!Array.isArray(runs) || runs.length === 0) {
+      showToast({ message: '测试报告数组为空', duration: 3000, color: 'medium' })
+      return
+    }
+    // 分类统计
+    const webdavRuns = runs.filter((r) => r.category === 'webdav')
+    const pluginRuns = runs.filter((r) => r.category !== 'webdav')
+    const totalPassed = runs.reduce((acc, r) => acc + (r.passed ?? 0), 0)
+    const totalFailed = runs.reduce((acc, r) => acc + (r.failed ?? 0), 0)
+    const totalSkipped = runs.reduce((acc, r) => acc + (r.skipped ?? 0), 0)
+    // 找最近的 failed 报告摘要
+    const recentFailed = runs.filter((r) => (r.failed ?? 0) > 0).slice(0, 5)
+    const summary = [
+      `📊 报告总数: ${runs.length} 次 run`,
+      `   · WebDAV: ${webdavRuns.length} 次`,
+      `   · 插件自动化: ${pluginRuns.length} 次`,
+      `   · 总通过: ${totalPassed}`,
+      `   · 总失败: ${totalFailed}`,
+      `   · 总跳过: ${totalSkipped}`,
+    ]
+    if (recentFailed.length > 0) {
+      summary.push('', '❌ 最近失败 run:')
+      for (const r of recentFailed) {
+        const startTime = r.startedAt ? new Date(r.startedAt).toLocaleString('zh-CN', { hour12: false }) : '-'
+        summary.push(`   ${startTime}: ${r.passed ?? 0}/${r.totalCases ?? 0} passed, ${r.failed ?? 0} failed, ${r.skipped ?? 0} skipped (#${(r.id ?? '').slice(0, 16)})`)
+        // 列出失败用例名
+        const failedCases = (r.results ?? []).filter((x: any) => x.status === 'failed')
+        for (const fc of failedCases.slice(0, 3)) {
+          summary.push(`      - ${fc.caseName ?? fc.caseId}: ${fc.error ?? ''}`)
+        }
+        if (failedCases.length > 3) {
+          summary.push(`      - ... 还有 ${failedCases.length - 3} 个失败`)
+        }
+      }
+    } else {
+      summary.push('', '✅ 所有 run 均无失败')
+    }
+    alert(summary.join('\n'))
+  } catch (e) {
+    showToast({ message: `读取报告失败: ${e instanceof Error ? e.message : String(e)}`, duration: 3000, color: 'danger' })
+  }
 }
 </script>
 

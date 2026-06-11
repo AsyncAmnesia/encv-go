@@ -142,6 +142,7 @@ export default {
 
     // 🆕 2026-06-11 v5：breadcrumb 层级 + section 维度
     'tasks.hierarchy': '任务层级',
+    'tasks.tasksRoot': '任务中心',
     'tasks.runLabel': '运行',
     'tasks.taskLabel': '任务',
     'tasks.workflowVersion': '工作流版本',
@@ -153,6 +154,28 @@ export default {
     'tasks.dimensionCategory': '分类',
     'tasks.dimensionNone': '其他',
     'tasks.sectionOther': '其他任务',
+
+    // 🆕 2026-06-11 v6: webdav 自动化测试
+    'devtools.webdavTests': 'WebDAV 服务测试',
+    'devtools.webdavTestsHint': '针对应用自身提供的 WebDAV 服务（/webdav/）进行全方位协议级测试。18 个用例覆盖 list / read / write / meta / auth 5 大类。每个用例实时写入本地 localStorage，跟插件自动化测试共享报告存储。',
+    'devtools.cases': '用例',
+    'devtools.runAll': '运行全部',
+    'devtools.runAllDesc': '依次执行 18 个 WebDAV 协议级测试用例',
+    'devtools.cancel': '取消',
+    'devtools.cancelDesc': '停止当前正在运行的 WebDAV 测试',
+    'devtools.testCases': '测试用例',
+    'devtools.lastResult': '最近结果',
+    'devtools.passed': '通过',
+    'devtools.failed': '失败',
+    'devtools.skipped': '跳过',
+    'devtools.viewHistory': '查看历史报告',
+    'devtools.testReports': '测试报告历史',
+    'devtools.clearHistory': '清空历史',
+    'devtools.confirmClearHistory': '确认清空历史报告',
+    'devtools.confirmClearHistoryMsg': '即将清空所有 WebDAV 测试历史（保留插件自动化测试报告）。此操作不可撤销。',
+    'devtools.historyCleared': '历史已清空',
+    'devtools.noHistory': '暂无历史报告',
+    'devtools.noHistoryHint': '运行一次 WebDAV 测试即可在本地持久化报告（localStorage）',
   },
   en: {
     'tasks.title': 'Tasks',
@@ -297,6 +320,7 @@ export default {
 
     // 🆕 2026-06-11 v5: breadcrumb hierarchy + section dimension
     'tasks.hierarchy': 'Task Hierarchy',
+    'tasks.tasksRoot': 'Task Center',
     'tasks.runLabel': 'Run',
     'tasks.taskLabel': 'Task',
     'tasks.workflowVersion': 'Workflow Version',
@@ -308,5 +332,27 @@ export default {
     'tasks.dimensionCategory': 'Category',
     'tasks.dimensionNone': 'Other',
     'tasks.sectionOther': 'Other Tasks',
+
+    // 🆕 2026-06-11 v6: webdav automation tests
+    'devtools.webdavTests': 'WebDAV Service Tests',
+    'devtools.webdavTestsHint': 'Full protocol-level tests against the app\'s built-in WebDAV service (/webdav/). 18 cases cover list / read / write / meta / auth. Each case is persisted to localStorage in real time, sharing the same report store with plugin automation tests.',
+    'devtools.cases': 'cases',
+    'devtools.runAll': 'Run All',
+    'devtools.runAllDesc': 'Execute all 18 WebDAV protocol-level test cases sequentially',
+    'devtools.cancel': 'Cancel',
+    'devtools.cancelDesc': 'Stop the currently running WebDAV test run',
+    'devtools.testCases': 'Test Cases',
+    'devtools.lastResult': 'Last Result',
+    'devtools.passed': 'passed',
+    'devtools.failed': 'failed',
+    'devtools.skipped': 'skipped',
+    'devtools.viewHistory': 'View History Reports',
+    'devtools.testReports': 'Test Reports History',
+    'devtools.clearHistory': 'Clear History',
+    'devtools.confirmClearHistory': 'Confirm Clear History',
+    'devtools.confirmClearHistoryMsg': 'About to clear all WebDAV test history (plugin automation test reports will be preserved). This cannot be undone.',
+    'devtools.historyCleared': 'History cleared',
+    'devtools.noHistory': 'No history reports yet',
+    'devtools.noHistoryHint': 'Run a WebDAV test once to persist the report locally (localStorage)',
   },
 }
