@@ -51,6 +51,23 @@ func (r *NativeRunner) Probe(args ...string) ([]byte, error) {
 	return nil, nil
 }
 
+// Available 探测 libffmpeg.so / libffprobe.so 是否能 dlopen + dlsym 关键 symbol。
+// 委托给 utils.CheckFFmpegAvailable（内部用 RTLD_NOW | RTLD_LOCAL 试 dlopen，
+// 不会执行 ffmpeg_run，因此 cgo 不会阻塞 OS thread）。
+//
+// Phase 2 行为：init() 已经优先选 WorkerRunner（worker binary 存在的话），
+// 所以本方法实际只在以下场景被调用：
+//   1) init() 决定走 NativeRunner（worker 不在）
+//   2) 运行时有人调 ffmpeg.Available() 探测健康
+//   3) mock_generator 之类上层逻辑检查 runtime capability
+//
+// 2026-06-11: 加这个方法是因为 Runner interface 要求 Available()，
+// 之前 Phase 1 重写时漏写导致 native_runner.go 编译失败。
+func (r *NativeRunner) Available() (ffmpegOk bool, ffprobeOk bool, errMsg string) {
+	ok, ok2, msg, _, _ := utils.CheckFFmpegAvailable()
+	return ok, ok2, msg
+}
+
 // init prefers WorkerRunner (subprocess isolation) over NativeRunner (in-process
 // cgo). WorkerRunner is safe because the parent can SIGKILL the worker on ctx
 // cancel; NativeRunner cannot interrupt an in-flight cgo call.
