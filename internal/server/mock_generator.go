@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/Soltus/encv-go/internal/utils/ffmpeg"
@@ -217,6 +218,13 @@ func (s *Server) handleMockGenerateGin(c *gin.Context) {
 		return
 	}
 
+	// 🆕 2026-06-11 修复：mock generate 并发 race
+	// 多请求同时写同一文件（os.WriteFile 非原子：open(O_TRUNC) → write → close）→
+	//   文件状态取决于最后 close 的 goroutine → count/size 不稳定
+	// 全局互斥串行化（dev tool 低频，串行可接受；Phase 3 可改 per-path 锁）
+	s.mockGenMu.Lock()
+	defer s.mockGenMu.Unlock()
+
 	// SSE writer
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
@@ -302,6 +310,10 @@ func (s *Server) handleMockResetGin(c *gin.Context) {
 		"02-test-output",
 	}
 
+	// 🆕 2026-06-11：复用 mockGenMu，防止 generate/reset 互踩
+	s.mockGenMu.Lock()
+	defer s.mockGenMu.Unlock()
+
 	removed := 0
 	for _, sub := range knownSubdirs {
 		dir := filepath.Join(root, sub)
@@ -381,6 +393,11 @@ func emitSseEvent(w io.Writer, flusher http.Flusher, event, data string) {
 //   4. 读回 /tmp 字节
 //
 // 失败返回 nil（**严禁 base64 fallback** —— 那是 171 字节假 MKV 垃圾）
+
+// mockFfmpegSeq 用于 ffmpegGenerate 内部生成唯一 tmp 文件名
+// 防止并发请求写入同一 tmp 文件导致 race（10 并发测试时所有 goroutine 同进程 → 同 PID → 冲突）
+var mockFfmpegSeq atomic.Uint64
+
 func ffmpegGenerate(ext string) []byte {
 	// 0. ffmpeg 可用性
 	ffmpegOk, _, errMsg := ffmpeg.Available()
@@ -389,6 +406,9 @@ func ffmpegGenerate(ext string) []byte {
 		return nil
 	}
 
+	// 唯一序列号（PID 同进程复用 → 需要 atomic counter 区分每次调用）
+	seq := mockFfmpegSeq.Add(1)
+
 	// 1. 选源文件 + 写 tmp
 	var srcBytes []byte
 	var srcName string
@@ -396,11 +416,11 @@ func ffmpegGenerate(ext string) []byte {
 	switch ext {
 	case "mp4", "mkv":
 		srcBytes = sourceMP4Bytes
-		srcName = "encv-mock-src-" + fmt.Sprintf("%d", os.Getpid()) + ".mp4"
+		srcName = fmt.Sprintf("encv-mock-src-%d-%d.mp4", os.Getpid(), seq)
 		srcArgs = []string{"-i", ""}  // placeholder, set after WriteFile
 	case "mp3", "flac":
 		srcBytes = sourceWAVBytes
-		srcName = "encv-mock-src-" + fmt.Sprintf("%d", os.Getpid()) + ".wav"
+		srcName = fmt.Sprintf("encv-mock-src-%d-%d.wav", os.Getpid(), seq)
 		srcArgs = []string{"-i", ""}
 	default:
 		slog.Warn("[mock] unknown ext, returning nil", "ext", ext)
@@ -414,8 +434,8 @@ func ffmpegGenerate(ext string) []byte {
 	defer func() { _ = os.Remove(srcPath) }()
 	srcArgs[1] = srcPath
 
-	// 2. 输出 tmp
-	dstPath := filepath.Join(os.TempDir(), "encv-mock-dst-"+fmt.Sprintf("%d", os.Getpid())+"."+ext)
+	// 2. 输出 tmp（同样用 seq 唯一化）
+	dstPath := filepath.Join(os.TempDir(), fmt.Sprintf("encv-mock-dst-%d-%d.%s", os.Getpid(), seq, ext))
 	defer func() { _ = os.Remove(dstPath) }()
 
 	// 3. ffmpeg args

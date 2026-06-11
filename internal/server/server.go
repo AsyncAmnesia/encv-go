@@ -44,6 +44,10 @@ type Server struct {
 	cfg            *config.Config
 	configPath     string
 	configMu       sync.Mutex
+	// 🆕 2026-06-11 修复：mock generate 并发 race
+	// 多 goroutine 同时写同一文件（os.WriteFile 非原子）→ 部分覆盖 + count 不稳定
+	// 加全局互斥串行化（dev tool，低频，代价可接受）
+	mockGenMu      sync.Mutex
 	servingDir     string
 	version        string
 	instanceID     string
