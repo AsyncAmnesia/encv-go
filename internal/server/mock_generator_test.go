@@ -5,6 +5,7 @@
 // 3. handleMockGenerateGin 拒绝非白名单 root
 // 4. handleMockResetGin 拒绝非白名单 root
 // 5. handleMockGenerateGin SSE 流（progress + done 事件）
+// 6. minimalMP4/MKV/MP3/FLAC magic + size（依赖 ffmpeg，CI 无 ffmpeg 自动 SKIP）
 package server
 
 import (
@@ -17,8 +18,22 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Soltus/encv-go/internal/utils/ffmpeg"
 	"github.com/gin-gonic/gin"
 )
+
+// requireFFmpeg 跳过测试当 ffmpeg runner 不可用（CI 容器无 ffmpeg）
+//
+// 2026-06-11 改造：minimalMP4/MKV/MP3/FLAC 现在**只**走 ffmpeg（无 base64 fallback）
+// → 没有 ffmpeg 时这些函数返回 nil，断言 magic byte 会 panic
+// → 改 SKIP 而非 FAIL（CI 容器没装 ffmpeg 不算 fail，但本地 dev / 真机必须有）
+func requireFFmpeg(t *testing.T) {
+	t.Helper()
+	ffmpegOk, ffprobeOk, errMsg := ffmpeg.Available()
+	if !ffmpegOk && !ffprobeOk {
+		t.Skipf("ffmpeg runner not available, skipping (errMsg=%q)", errMsg)
+	}
+}
 
 func init() {
 	gin.SetMode(gin.TestMode)
@@ -117,6 +132,7 @@ func TestGenerateMockSpecs(t *testing.T) {
 }
 
 func TestMinimalMediaMagic(t *testing.T) {
+	requireFFmpeg(t)
 	// JPEG 头 0xFF 0xD8
 	jpeg := minimalJPEG()
 	if jpeg[0] != 0xFF || jpeg[1] != 0xD8 {
@@ -130,23 +146,35 @@ func TestMinimalMediaMagic(t *testing.T) {
 			t.Errorf("PNG signature byte %d: got %x want %x", i, png[i], b)
 		}
 	}
-	// MP4 ftyp
+	// MP4 ftyp（2026-06-11：ffmpeg 真生成，无 base64 fallback）
 	mp4 := minimalMP4()
+	if len(mp4) < 8 {
+		t.Fatalf("MP4 too short: %d bytes (ffmpeg failed?)", len(mp4))
+	}
 	if string(mp4[4:8]) != "ftyp" {
 		t.Errorf("MP4 ftyp wrong: %s", string(mp4[4:8]))
 	}
 	// MKV EBML
 	mkv := minimalMKV()
+	if len(mkv) < 4 {
+		t.Fatalf("MKV too short: %d bytes (ffmpeg failed?)", len(mkv))
+	}
 	if mkv[0] != 0x1A || mkv[1] != 0x45 || mkv[2] != 0xDF || mkv[3] != 0xA3 {
 		t.Errorf("MKV EBML wrong: %x %x %x %x", mkv[0], mkv[1], mkv[2], mkv[3])
 	}
 	// MP3 ID3
 	mp3 := minimalMP3()
+	if len(mp3) < 3 {
+		t.Fatalf("MP3 too short: %d bytes (ffmpeg failed?)", len(mp3))
+	}
 	if string(mp3[0:3]) != "ID3" {
 		t.Errorf("MP3 ID3 wrong: %s", string(mp3[0:3]))
 	}
 	// FLAC fLaC
 	flac := minimalFLAC()
+	if len(flac) < 4 {
+		t.Fatalf("FLAC too short: %d bytes (ffmpeg failed?)", len(flac))
+	}
 	if string(flac[0:4]) != "fLaC" {
 		t.Errorf("FLAC magic wrong: %s", string(flac[0:4]))
 	}
@@ -168,21 +196,25 @@ func TestMinimalMediaMagic(t *testing.T) {
 	}
 }
 
-// 🆕 2026-06-10 修复验证
+// 2026-06-11 修复验证（替换 2026-06-10 旧版）
 // 历史 bug：minimalMP4() 返回 36 字节 (ftyp+moov+mdat header)，无视频帧数据。
-// 修复后：ffmpeg 优先生成几 KB~几 MB 可播放字节，fallback 是 base64 内嵌 4.8KB mp4。
-// 这个测试断言「不能 < 几 KB」防止再退化。
+// 旧 fix (2026-06-10)：ffmpeg 优先 + base64 内嵌 fallback（4.8KB MP4 / 171B MKV）
+// 新 fix (2026-06-11)：删 base64 fallback，**只**走 ffmpeg
+//   - 沙箱：/usr/bin/ffmpeg 在 → mp4=19801B / mkv=9453B / mp3=33062B / flac=32487B（实测）
+//   - 真机：libffmpeg.so dlopen 调 ffmpeg_run
+//   - CI 容器无 ffmpeg → requireFFmpeg SKIP，不算失败
 func TestMinimalMediaIsPlayable(t *testing.T) {
+	requireFFmpeg(t)
 	tests := []struct {
 		name     string
 		data     []byte
 		minBytes int
 		why      string
 	}{
-		{"MP4 (mp4 box + frame data)", minimalMP4(), 2000, "base64 fallback = 4782B H.264+AAC 1s"},
-		{"MKV (EBML + audio block)", minimalMKV(), 50, "createMKV = 170B (手写骨架，但 > 50)"},
-		{"MP3 (ID3v2 + 108 frames)", minimalMP3(), 30000, "createMP3 = 45197B (108 个 MPEG 帧)"},
-		{"FLAC (fLaC sig + STREAMINFO)", minimalFLAC(), 50, "createFLAC = 94B (header + padding)"},
+		{"MP4 (mp4 box + frame data)", minimalMP4(), 2000, "ffmpeg -map 0:a -map 1:v + libx264+aac = ~20KB"},
+		{"MKV (EBML + audio block)", minimalMKV(), 1000, "ffmpeg -map 0:a -map 1:v + libvorbis+libx264 = ~9KB"},
+		{"MP3 (ID3v2 + 108 frames)", minimalMP3(), 30000, "ffmpeg libmp3lame 128kbps 2s = ~33KB"},
+		{"FLAC (fLaC sig + STREAMINFO)", minimalFLAC(), 5000, "ffmpeg flac -sample_fmt s16 2s = ~32KB"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

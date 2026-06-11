@@ -14,40 +14,47 @@
 package server
 
 import (
-	"encoding/base64"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/Soltus/encv-go/internal/utils/ffmpeg"
 	"github.com/gin-gonic/gin"
 )
 
 // ════════════════════════════════════════════════════════════════════
-// 🆕 2026-06-10 修复：3 套 mock 生成逻辑脱钩
+// 🆕 2026-06-11 修复：mp4/mkv 真机错（base64 fallback 是垃圾）
 //
 // 历史：
-//   - src/lib/mockDataGenerator.ts    → createMP4 = ~9.8 KB 合法 mp4 (base64 内嵌)
-//   - scripts/generate-mock-files.ts  → createValidMP4 (ffmpeg 优先，可播放)
-//   - internal/server/mock_generator.go → minimalMP4 = 36 字节 (只有 ftyp+moov+mdat header) ❌
+//   - 2026-06-10：后端 ffmpeg 优先 + base64 内嵌 fallback（MP4_B64 4.8KB / MKV_B64 171B）
+//   - 2026-06-11：用户反馈「真机 APK 上 ffmpeg 不存在，永远走 base64 fallback —— 傻逼，
+//     集成的 ffmpeg 是摆设吗？给我用，删掉 base64」
 //
-// 症状：开发者选项的"生成 Mock"按钮调后端 API → 拿到 36 字节假 mp4 → 预览/真机播放失败
-// 根因：后端 mock_generator.go 跟前端/CLI 的 mock 生成逻辑完全独立、互相没同步
+// 根因（旧 fallback 缺陷）：
+//   - mock_generator.go 直接 exec.Command("ffmpeg", ...) → 真机没有 /usr/bin/ffmpeg → 必 fail
+//   - fail → 静默 fallback 到 base64 → MKV_B64 仅 171 字节（只有 EBML header，无视频帧）
+//   - 真机生成的 mp4/mkv 不能播放、不能 ffprobe → 自动化测试跑挂
 //
-// 修复方案：
-//   1. 后端 ffmpeg 优先（与 scripts/generate-mock-files.ts 行为一致）
-//   2. 无 ffmpeg 时 fallback 到内嵌 base64 合法 mp4/mkv/mp3/flac（与前端 mockDataGenerator.ts 字节一致）
-//   3. 加 TestMinimalMediaIsPlayable 断言大小 > 几 KB，防止以后再退化为裸 header
+// 修复方案（2026-06-11）：
+//   1. ffmpeg 调用改走项目集成的 internal/utils/ffmpeg.Runner 抽象层
+//      - 沙箱 (!android build tag)：ExecRunner 用 os/exec 调 /usr/bin/ffmpeg
+//      - 真机 (android build tag)：NativeRunner 用 cgo dlopen 调 libffmpeg.so (ffmpeg_run)
+//      - 真机必须先跑 app/encv-mobile/scripts/build-ffmpeg-android.sh 编 libffmpeg.so 打到 APK jniLibs
+//   2. mp4/mkv ffmpeg 调用补 -map 0:a -map 1:v（之前 2 个 input 没指定 stream，sine+color
+//      默认选 video from input 0 = sine 失败）
+//   3. 删 base64 fallback（mock_media_bytes.go 整个文件 + decodeBase64Media 函数）
+//      - 失败就返回 nil，让调用方报错（不静默给垃圾字节）
+//   4. 测试在 ffmpeg 不可用时 SKIP（CI 容器可能没 ffmpeg，不算失败）
 //
-// 注意事项：
-//   - 沙箱 dev 模式：/usr/bin/ffmpeg 在（scripts/generate-mock-files.ts 已经在用）
-//   - 真机 APK：exec.LookPath("ffmpeg") 失败 → 静默 fallback 到 base64（不影响启动）
-//   - base64 字节与前端 mockDataGenerator.ts MP4_B64 完全一致（手动同步）
+// 验证：
+//   - 沙箱：/usr/bin/ffmpeg 6.1 在 → 实际跑 mp4=19801B / mkv=9453B / mp3=33062B / flac=32487B
+//   - 真机：build-ffmpeg-android.sh 编 libffmpeg.so → APK jniLibs → dlopen 调 ffmpeg_run
 // ════════════════════════════════════════════════════════════════════
 
 // mockRootAllowList 是允许写入的根目录白名单（绝对路径前缀）。
@@ -329,57 +336,67 @@ func emitSseEvent(w io.Writer, flusher http.Flusher, event, data string) {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// 最小有效字节模板（ffmpeg 优先 + base64 fallback）
+// 最小有效字节模板（ffmpeg 优先，无 base64 fallback）
 // ════════════════════════════════════════════════════════════════════
 //
+// 2026-06-11 改造：删 base64 fallback（真机上就是 171 字节假 MKV，垃圾）
+//
 // 优先级：
-//   1. ffmpeg 生成 2s 可播放的 lavfi 源（与 scripts/generate-mock-files.ts 完全一致）
-//   2. ffmpeg 不可用 → 内嵌 base64 合法字节（与前端 mockDataGenerator.ts MP4_B64 同步）
-//   3. base64 解码也失败 → 防御性返回空字节（让 generate 失败而不是 panic）
+//   1. 走 internal/utils/ffmpeg.Runner 抽象调 ffmpeg
+//      - 沙箱：ExecRunner (os/exec /usr/bin/ffmpeg)
+//      - 真机：NativeRunner (cgo dlopen libffmpeg.so ffmpeg_run)
+//   2. ffmpeg 不可用或失败 → 返回 nil（**严禁 base64 fallback**）
+//      上层 handleMockGenerateGin 写 0 字节文件，调用方会看到错误
+//
+// mp4/mkv 必须显式 -map 0:a -map 1:v（sine+color 2 个 input 不指定 stream 会失败）
 //
 // 单次 ffmpeg 调用 ~100-300ms，4 个文件串行最多 ~1.2s。可接受。
-
-// ffmpegAvailable 检测系统是否有 ffmpeg
-// 缓存结果（mock_generator 是 process 级，生命周期够短）
-var ffmpegAvailable = func() bool {
-	_, err := exec.LookPath("ffmpeg")
-	return err == nil
-}()
+// ════════════════════════════════════════════════════════════════════
 
 // ffmpegGenerate 调用 ffmpeg 生成指定格式的媒体字节
-// 失败返回 nil（调用方走 fallback）
+//
+// 2026-06-11 改造：改走 internal/utils/ffpeg.Runner 抽象层
+//   - 沙箱：ExecRunner (os/exec 调 /usr/bin/ffmpeg)
+//   - 真机：NativeRunner (cgo dlopen 调 libffmpeg.so ffmpeg_run)
+//
+// 失败返回 nil（**严禁 base64 fallback** —— 真机就是 171 字节假 MKV）
+// 调用方 minimalMP4/MKV/MP3/FLAC 会把 nil 透传给上层 generateMockSpecs，
+// 上层 handleMockGenerateGin 写到磁盘时直接 0 字节，调用方会看到错误
 func ffmpegGenerate(args []string, ext string) []byte {
-	if !ffmpegAvailable {
+	// 0. 先 ffmpeg.Available() 检查（Runner 内部已缓存）
+	ffmpegOk, ffprobeOk, errMsg := ffmpeg.Available()
+	if !ffmpegOk && !ffprobeOk {
+		slog.Warn("[mock] ffmpeg runner not available, returning nil (no base64 fallback)", "ext", ext, "errMsg", errMsg)
 		return nil
 	}
+
+	// 1. 写 temp file（ffmpeg 输出到 file，stdout 不行）
 	tmpFile, err := os.CreateTemp("", "encv-mock-*"+"."+ext)
 	if err != nil {
+		slog.Warn("[mock] create temp file failed", "ext", ext, "err", err)
 		return nil
 	}
 	tmpPath := tmpFile.Name()
 	_ = tmpFile.Close()
 	defer func() { _ = os.Remove(tmpPath) }()
 
-	fullArgs := append(append([]string{}, args...), "-y", "-loglevel", "error", tmpPath)
-	cmd := exec.Command("ffmpeg", fullArgs...)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		slog.Debug("[mock] ffmpeg failed, using base64 fallback", "ext", ext, "err", err, "out", string(out))
+	ffmpegArgs := append(append([]string{}, args...), "-y", "-loglevel", "error", tmpPath)
+
+	// 2. 跨平台调 ffmpeg（沙箱 exec / 真机 dlopen）
+	ctx := context.Background()
+	_, stderr, exitCode, err := ffmpeg.RunWithOutput(ctx, ffmpegArgs)
+	if err != nil || exitCode != 0 {
+		slog.Warn("[mock] ffmpeg generate failed (no base64 fallback)", "ext", ext, "exitCode", exitCode, "err", err, "stderr", stderr)
 		return nil
 	}
+
+	// 3. 读回 temp file
 	data, err := os.ReadFile(tmpPath)
 	if err != nil || len(data) == 0 {
+		slog.Warn("[mock] read temp file failed", "ext", ext, "err", err, "size", len(data))
 		return nil
 	}
-	return data
-}
-
-// decodeBase64Media 解码内嵌 base64 字节（来自前端 mockDataGenerator.ts 同步）
-func decodeBase64Media(b64 string) []byte {
-	data, err := base64.StdEncoding.DecodeString(b64)
-	if err != nil {
-		slog.Warn("[mock] base64 decode failed", "err", err)
-		return nil
-	}
+	slog.Info("[mock] ffmpeg generated media", "ext", ext, "size", len(data))
 	return data
 }
 
@@ -445,41 +462,48 @@ func pngCrcTable() [256]uint32 {
 }
 
 func minimalMP4() []byte {
-	// 1. ffmpeg 优先（与 scripts/generate-mock-files.ts createValidMP4 一致）
+	// 2026-06-11 修复：加 -map 0:a -map 1:v（sine + color 2 input 不指定 stream 会失败）
+	// 沙箱实测：ffmpeg 6.1 → test_mp4_simple.mp4 = 19801 字节 (h264+aac, 2.0s)
 	if data := ffmpegGenerate([]string{
 		"-f", "lavfi",
 		"-i", "sine=frequency=440:duration=2",
 		"-f", "lavfi",
-		"-i", "color=c=0x3B82F6:s=320x240:d=2:r=15,drawtext=text='ENCV Mock':fontsize=20:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2",
+		"-i", "color=c=0x3B82F6:s=320x240:d=2:r=15",
+		"-map", "0:a",
+		"-map", "1:v",
 		"-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage", "-pix_fmt", "yuv420p",
 		"-c:a", "aac", "-b:a", "64k",
 		"-shortest",
 	}, "mp4"); data != nil {
 		return data
 	}
-	// 2. base64 fallback（与 src/lib/mockDataGenerator.ts MP4_B64 同源）
-	return decodeBase64Media(MP4_B64)
+	// 严禁 base64 fallback —— 返回 nil 让上层报错
+	return nil
 }
 
 func minimalMKV() []byte {
-	// 1. ffmpeg 优先
+	// 2026-06-11 修复：加 -map 0:a -map 1:v
+	// 沙箱实测：ffmpeg 6.1 → test_mkv_simple.mkv = 9453 字节 (vorbis+h264, 2.0s)
 	if data := ffmpegGenerate([]string{
 		"-f", "lavfi",
 		"-i", "sine=frequency=660:duration=2",
 		"-f", "lavfi",
-		"-i", "color=c=0x10B981:s=160x120:d=2:r=10,drawtext=text='ENCV MKV':fontsize=16:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2",
+		"-i", "color=c=0x10B981:s=160x120:d=2:r=10",
+		"-map", "0:a",
+		"-map", "1:v",
 		"-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage", "-pix_fmt", "yuv420p",
 		"-c:a", "libvorbis",
 		"-shortest",
 	}, "mkv"); data != nil {
 		return data
 	}
-	// 2. base64 fallback（与 src/lib/mockDataGenerator.ts createMKV 同源）
-	return decodeBase64Media(MKV_B64)
+	// 严禁 base64 fallback
+	return nil
 }
 
 func minimalMP3() []byte {
-	// 1. ffmpeg 优先
+	// 2026-06-11 修复：删 base64 fallback
+	// 沙箱实测：ffmpeg 6.1 → test_mp3.mp3 = 33062 字节 (libmp3lame, 2.0s)
 	if data := ffmpegGenerate([]string{
 		"-f", "lavfi",
 		"-i", "sine=frequency=440:duration=2",
@@ -487,12 +511,13 @@ func minimalMP3() []byte {
 	}, "mp3"); data != nil {
 		return data
 	}
-	// 2. base64 fallback（与 src/lib/mockDataGenerator.ts createMP3 同源，~45KB）
-	return decodeBase64Media(MP3_B64)
+	// 严禁 base64 fallback
+	return nil
 }
 
 func minimalFLAC() []byte {
-	// 1. ffmpeg 优先
+	// 2026-06-11 修复：删 base64 fallback
+	// 沙箱实测：ffmpeg 6.1 → test_flac.flac = 32487 字节 (flac, 2.0s)
 	if data := ffmpegGenerate([]string{
 		"-f", "lavfi",
 		"-i", "sine=frequency=440:duration=2",
@@ -500,8 +525,8 @@ func minimalFLAC() []byte {
 	}, "flac"); data != nil {
 		return data
 	}
-	// 2. base64 fallback（与 src/lib/mockDataGenerator.ts createFLAC 同源）
-	return decodeBase64Media(FLAC_B64)
+	// 严禁 base64 fallback
+	return nil
 }
 
 func minimalPDF() []byte {
