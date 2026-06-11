@@ -309,6 +309,7 @@ func (s *Server) Start(version string) (string, error) {
 	r.DELETE("/api/tasks", s.handleClearCompletedTasksGin)
 	r.POST("/api/webdav/test", s.handleTestWebDAVGin)
 	r.GET("/api/webdav/test-local", s.handleTestLocalWebDAVGin)
+	r.GET("/api/webdav/local-info", s.handleWebDavLocalInfoGin)
 	r.GET("/api/remote/info", s.handleRemoteInfoGin)
 	r.GET("/api/remote/openlist", s.handleListOpenlistSitesGin)
 	r.POST("/api/remote/openlist", s.handleAddOpenlistSiteGin)
@@ -327,12 +328,19 @@ func (s *Server) Start(version string) (string, error) {
 	r.GET("/api/stream/external", s.handleStreamExternalFileGin)
 	r.GET("/api/build-info", s.handleBuildInfoGin)
 	r.GET("/api/ffmpeg-status", s.handleFFmpegStatusGin)
+	r.POST("/api/dev/automation-report", s.handleAutomationReportGin)
+	r.POST("/api/dev/sparse-container", s.handleSparseContainerWriteGin)
+	r.GET("/api/dev/sparse-container/probe", s.handleSparseContainerProbeGin)
+	r.DELETE("/api/dev/sparse-container", s.handleSparseContainerCleanupGin)
 	r.GET("/api/container/versions", s.handleGetContainerVersionsGin)
 	r.GET("/api/plugins", s.handlePluginsGin)
 	r.GET("/api/plugins/container-extensions", s.handleContainerExtensionsGin)
 	r.GET("/api/alist-encrypt/stream", s.handleAlistEncryptStreamGin)
 	r.GET("/api/alist-encrypt/decode-filename", s.handleAlistDecodeFilenameGin)
 	r.POST("/api/logs", s.handleAPILogsGin)
+	// 自动化测试 mock 数据生成/重置（root 白名单校验后写入）
+	r.POST("/api/mock/generate", s.handleMockGenerateGin)
+	r.POST("/api/mock/reset", s.handleMockResetGin)
 	r.GET("/ws", gin.WrapF(s.handleWebSocket))
 
 	// Agent AI 端点（集成到 encv-go 主后端）

@@ -8,6 +8,8 @@ import { usePathResolver } from '@/composables/usePathResolver'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
 import { eventBus } from '@/composables/useEventBus'
+import { recordTriggeredBy } from '@/composables/useTaskTrigger'
+import { isRecommendedVersion } from '@/constants/containerVersion'
 import NewTaskModal from '@/components/NewTaskModal.vue'
 
 const { normalize } = usePathResolver()
@@ -28,6 +30,8 @@ interface NewTaskState {
   extraValues: Record<string, string>
   filteredExtraFields: TaskField[]
   selectedPluginIndex: number
+  cipherMode: number
+  compressionMode: 'none' | 'zstd'
 }
 
 export function useNewTaskModal() {
@@ -58,6 +62,8 @@ export function useNewTaskModal() {
       extraValues: {},
       filteredExtraFields: [],
       selectedPluginIndex: 0,
+      cipherMode: 0,
+      compressionMode: 'none',
     })
 
     resetTaskForm()
@@ -113,6 +119,8 @@ export function useNewTaskModal() {
         onUpdateVersion: (v: number) => { state.version = v },
         onUpdatePrimaryOverride: (v: string) => { state.primaryOverride = v },
         onUpdateSecondaryPassword: (v: string) => { state.secondaryPassword = v },
+        onUpdateCipherMode: (v: number) => { state.cipherMode = v },
+        onUpdateCompressionMode: (v: 'none' | 'zstd') => { state.compressionMode = v },
         onUpdateExtraValue: ({ key, value }: { key: string; value: string }) => { state.extraValues[key] = value },
         onSelectPlugin: (idx: number) => {
           state.selectedPluginIndex = idx
@@ -144,7 +152,7 @@ export function useNewTaskModal() {
             const extraPayload = Object.keys(state.extraValues).length > 0 ? state.extraValues : undefined
             const passwordStrategy = state.taskOptions?.passwordStrategy
             const shouldSendPassword = !passwordStrategy || passwordStrategy === 'global'
-            await createTask(
+            const task = await createTask(
               state.taskType as TaskType,
               state.sourcePath,
               state.targetPath || undefined,
@@ -153,7 +161,13 @@ export function useNewTaskModal() {
               pluginName,
               extraPayload,
               shouldSendPassword ? (state.secondaryPassword || undefined) : undefined,
+              // ECv4 独有：cipher mode / compression 字段不在 ECv2/ECv3 Header 中存在
+              // 后端 ECv2/ECv3 容器会忽略这些字段，但发送额外字段会污染 ECv2/ECv3 的 .sccg* 容器元数据
+              state.taskType === 'encrypt' && isRecommendedVersion(Number(state.version)) ? state.cipherMode : undefined,
+              state.taskType === 'encrypt' && isRecommendedVersion(Number(state.version)) ? state.compressionMode : undefined,
             )
+            // 登记任务触发者标签：用户手动创建 → 'user'
+            if (task?.id) recordTriggeredBy(task.id, 'user')
             await modal.dismiss()
             showToast({ message: t('tasks.taskCreated'), duration: 1500, color: 'success' })
             eventBus.emit('task:refresh', {})

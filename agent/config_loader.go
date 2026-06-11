@@ -166,6 +166,14 @@ func LoadAgentSettingsFromFile(path string) (AgentSettings, error) {
 	if err := json.Unmarshal(raw, &settings); err != nil {
 		return AgentSettings{}, fmt.Errorf("parse agent_settings in %s: %w", path, err)
 	}
+	// 1. 工具白名单（默认包含本次新增的 high_level 跨平台工具命令）
+	if len(settings.ToolWhitelist) == 0 {
+		settings.ToolWhitelist = []string{
+			"ffprobe", "ffmpeg", "du", "wc", "find", "stat", "mediainfo", "file",
+			// high_level 跨平台工具使用的 coreutils + powershell
+			"cat", "head", "tail", "grep", "env", "which", "ls", "powershell",
+		}
+	}
 	// Always do backwards-compat: the top-level "password" field
 	// is the pre-Phase-6 convention used by encv-go configs.
 	// Apply it whenever GlobalPassword is empty, regardless of

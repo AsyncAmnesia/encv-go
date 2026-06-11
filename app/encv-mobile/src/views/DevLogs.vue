@@ -106,14 +106,14 @@ import {
 import { trashOutline, copyOutline } from 'ionicons/icons'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
-import { useWebSocket } from '@/composables/useWebSocket'
+import { useRealtimeTransport } from '@/composables/useRealtimeTransport'
 import { useFrontendLogs, type LogEntry } from '@/composables/useFrontendLogs'
 import { showToast } from '@/composables/useToast'
 import { copyToClipboard } from '@/composables/useClipboard'
 import { checkServerStatus } from '@/api/encv'
 
 const { t } = useI18n()
-const ws = useWebSocket()
+const transport = useRealtimeTransport()
 
 const activeTab = ref<'frontend' | 'backend'>('frontend')
 const searchText = ref('')
@@ -303,14 +303,16 @@ function onServerStatus(data: any) {
 onMounted(async () => {
   await nextTick()
 
-  if (ws.connectionState.value !== 'connected') {
-    ws.connect()
-  }
+  // 🆕 2026-06-10：transport 已在 App.vue 启动，无需重复 connect()
+  // 之前重复 connect 会导致：
+  //   - App.vue connect → useWebSocket 单例
+  //   - DevLogs onMounted 又调一次 ws.connect()（idempotent 但冗余）
+  // 现在 transport 单例管理生命周期，DevLogs 只读 connectionState
 
   eventBus.on('ws:message', onWsMessage)
   eventBus.on('server:status', onServerStatus)
 
-  serverOnline.value = ws.connectionState.value === 'connected'
+  serverOnline.value = transport.connectionState.value === 'connected'
   if (!serverOnline.value) {
     const result = await checkServerStatus()
     serverOnline.value = result.online
@@ -320,7 +322,7 @@ onMounted(async () => {
     id: ++nextId,
     timestamp: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
     level: serverOnline.value ? 'info' : 'warn',
-    message: `DevLogs ready, server ${serverOnline.value ? 'online' : 'offline'} (ws=${ws.connectionState.value})`,
+    message: `DevLogs ready, server ${serverOnline.value ? 'online' : 'offline'} (transport=${transport.connectionState.value})`,
   })
 })
 

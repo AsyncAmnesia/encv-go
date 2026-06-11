@@ -605,5 +605,93 @@ go test ./internal/... ./cmd/... -count=1 -timeout 120s 2>&1 | tee /tmp/gotest.l
 1. **架构漂移型** — 旧 contract test 期望老 API（PluginManager.isInitialized），代码已重构走新封装（EncvComboLiteHost）
 2. **silent-fallback 型** — alist_encrypt plugin 静默把 `.sccgv` 改为 `.bin`，掩盖真实冲突
 
+---
+
+## 八、Frontend 改动 commit 前必跑 `vue-tsc --noEmit`（v3 教训 2026-06-11）
+
+> **v3 教训**：连续 3 轮把「测试报告自动化」「WebDAV Basic Auth」「ECv4 128GB Sparse」做完，commit 前只跑 `npx vitest run`（runtime 1006/1009 通过）+ 手动 `curl` 后端，**没跑 `vue-tsc --noEmit`**，结果前端压了 19 个 TypeScript 编译错误：
+> - 5 个未用 import（`ECV4` / `getTaskMetadata` / `TriggeredBy` / `IonButton` / `clearTriggeredBy`）
+> - 4 个 string→boolean 误传（`detail="false"` / `spellcheck="false"`）
+> - 3 个属性不存在（`task.version` / `_getAllForTesting` / `goSparseContainerTest`）
+> - 2 个 type 转换（`TaskStatus` / `TaskType` 没 cast）
+> - 2 个 case 不可达（switch 维度不匹配）
+> - 1 个 null→undefined（`string \| null` vs `string \| undefined`）
+> - 1 个 version 字段名错（`version` vs `containerVersion`）
+> - 1 个未声明导出（`_getAllForTesting` 测试 bug）
+>
+> 用户原话：**「每次修改都不检验，更新铁律！」**
+
+### 8.1 铁律
+
+**任何 `app/encv-mobile/src/` 下的修改(`.vue` / `.ts` / `.tsx`)完成 + commit 前必跑:**
+
+```bash
+cd /workspace/app/encv-mobile && pnpm exec npx vue-tsc --noEmit 2>&1 | tail -80
+```
+
+**退出码 = 0 且无 `error TS****` 行** → 才允许 commit。
+
+### 8.2 已知会出现的 vue-tsc 错误模式 + 修复铁律
+
+| 错误码 | 含义 | 修复模式 |
+|--------|------|---------|
+| `TS6133 'X' is declared but its value is never read` | import 进来没用 | 删除 import 项,或在 v-for 用 `_idx` 占位 |
+| `TS2339 Property 'X' does not exist on type 'Y'` | 字段名错 | 改用真实字段名（如 `task.containerVersion` 不是 `task.version`）|
+| `TS2304 Cannot find name 'X'` | 没 import | 加 `import { X } from '@/constants/...'` |
+| `TS2305 Module '...' has no exported member 'X'` | 测试引用了未导出的内部函数 | 改用 public API（如 `getTriggeredBy` 代替 `_getAllForTesting`）|
+| `TS2322 Type 'string' is not assignable to type 'boolean \| undefined'` | `detail="false"` 写成 string | 改 `:detail="false"` |
+| `TS2345 Argument of type 'string \| null' is not assignable to parameter of type 'string \| undefined'` | `ref<string \| null>` 没 coalesce | `value ?? undefined` |
+| `TS2678 Type '"X"' is not comparable to type '"a" \| "b"'` | switch 维度不在 union 中 | 加 `as 'a' \| 'b' \| 'X'` 收窄,或删 case |
+| `TS2353 Object literal may only specify known properties` | EncvTask 没 `version` 字段(用 `containerVersion`) | 改字段名 |
+
+### 8.3 反面教材 (v3 真实案例)
+
+```ts
+// ❌ 错：v-for 写了 idx 但没用
+<ion-item v-for="(testCase, idx) in WEBDAV_TEST_CASES" :key="testCase.id" ...>
+  <!-- idx 没用上 → vue-tsc 报 TS6133 -->
+
+// ✅ 对：未用变量前加下划线
+<ion-item v-for="(testCase, _idx) in WEBDAV_TEST_CASES" :key="testCase.id" ...>
+```
+
+```ts
+// ❌ 错：string 误传给 boolean prop
+<ion-item button detail="false" ...>  // detail 是 boolean，字符串"false"永远 truthy
+
+// ✅ 对：v-bind to boolean
+<ion-item button :detail="false" ...>
+```
+
+```ts
+// ❌ 错：测试引用未导出的内部 API
+import { _getAllForTesting } from '@/composables/useTaskTrigger'
+const map = _getAllForTesting()  // TS2305 编译失败
+
+// ✅ 对：用 public API 验证可观察行为
+expect(getTriggeredBy('task-599')).toBe('automation')  // 通过行为反推内部状态
+```
+
+### 8.4 tsconfig 已知 deprecation
+
+`baseUrl` 在 TypeScript 7.0 会移除,但当前项目 tsconfig 仍用。**这是 warning 不是 error**,
+vue-tsc exit 0 + 无 `error TS****` 行就允许 commit。**不需要** 立刻改 tsconfig。
+
+### 8.5 与其它守卫的配合
+
+```
+CI (5 min build)
+  ↓ 兜底
+vitest run (90s)       ← 抓 runtime
+  ↓
+vue-tsc --noEmit (20s) ← 抓编译期类型,本节铁律
+  ↓
+go test ./internal/...  ← 抓 Go runtime
+  ↓
+grep 残留扫描 (< 1s)    ← 抓 hardcode / 残留
+```
+
+**每一层都必跑**,任一不过 → 不 commit。
+
 **CI 守卫不会抓运行时 test 失败**（gofmt guard / kotlinc guard / toml guard 都是编译期守卫），
 所以沙箱的 `go test ./internal/...` 是**唯一**提前发现这类问题的环节。

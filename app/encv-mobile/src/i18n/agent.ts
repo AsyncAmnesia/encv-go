@@ -119,6 +119,25 @@ export default {
     'agent.tool.readOnly': '读取信息',
     'agent.tool.webSearch': '联网搜索',
     'agent.tool.unknown': '调用工具',
+    // ── Task 6: 工具状态徽章 + 错误反馈 ─────────────────────
+    // 用于 ToolDetailContent.vue 的 4 状态视觉：
+    //   running → 蓝色 spinner 旁的文字
+    //   success → 绿色对勾旁的文字
+    //   error   → 红色 ⚠️ badge / 错误详情
+    //   timeout → 30s 无响应后切换的 errorCode
+    //   duration → 卡片底部"耗时 {s} 秒"
+    'agent.tool.errorBadge': '工具错误',
+    'agent.tool.running': '执行中...',
+    'agent.tool.success': '执行成功',
+    'agent.tool.timeout': '执行超时',
+    'agent.tool.copyError': '复制错误',
+    'agent.tool.duration': '耗时 {s} 秒',
+    'agent.tool.errorDetails': '错误详情',
+    // ── Task 7: 缩放控件按钮 tooltip ─────────────────────
+    // AgentChat 右上角浮动按钮组 "A- / A / A+"
+    'agent.zoom.in': '放大',
+    'agent.zoom.out': '缩小',
+    'agent.zoom.reset': '重置',
 
     // ── Plan / Todo 块 ─────────────────────────────────
     'agent.plan': '计划',
@@ -271,6 +290,17 @@ export default {
     // ── v2 工具调用 badge ──────────────────────────────────
     'agent.v2Badge': 'v2',
     'agent.v2BadgeTitle': 'v2 工具（递归搜索 / 元数据 / 受限 shell 等）',
+
+    // ── Task 4: 工具卡片状态/耗时文案 ────────────────────────────
+    // 5 个 ToolStatus → i18n 语义化文案（覆盖 raw 英文 tag）
+    'agent.toolStatusPending': '等待中',
+    'agent.toolStatusRunning': '执行中',
+    'agent.toolStatusSuccess': '成功',
+    'agent.toolStatusFailed': '失败',
+    'agent.toolStatusCancelled': '已取消',
+    // 耗时：ms 占位符会被 formatDuration(毫秒) 替换为 "1.2s" / "850ms" 友好格式
+    'agent.toolDuration': '耗时 {ms}',
+    'agent.toolDurationLong': '耗时较长',
   },
   en: {
     'agent.title': 'AI Assistant',
@@ -388,6 +418,25 @@ export default {
     'agent.tool.readOnly': 'Read info',
     'agent.tool.webSearch': 'Web search',
     'agent.tool.unknown': 'Invoke tool',
+    // ── Task 6: tool status badges + error feedback ─────────────────────
+    // Used in ToolDetailContent.vue 4-state visuals:
+    //   running → label next to blue spinner
+    //   success → label next to green checkmark
+    //   error   → red ⚠️ badge / error details
+    //   timeout → errorCode after 30s of no response
+    //   duration → footer "Took {s}s" on tool cards
+    'agent.tool.errorBadge': 'Tool Error',
+    'agent.tool.running': 'Running...',
+    'agent.tool.success': 'Success',
+    'agent.tool.timeout': 'Timeout',
+    'agent.tool.copyError': 'Copy Error',
+    'agent.tool.duration': 'Took {s}s',
+    'agent.tool.errorDetails': 'Error Details',
+    // ── Task 7: zoom control button tooltips ─────────────────────
+    // Floating "A- / A / A+" button group in AgentChat top-right
+    'agent.zoom.in': 'Zoom In',
+    'agent.zoom.out': 'Zoom Out',
+    'agent.zoom.reset': 'Reset',
 
     // ── Plan / Todo block ─────────────────────────────
     'agent.plan': 'Plan',
@@ -527,5 +576,16 @@ export default {
     // ── v2 工具调用 badge ──────────────────────────────────
     'agent.v2Badge': 'v2',
     'agent.v2BadgeTitle': 'v2 tool (recursive search / metadata / restricted shell)',
+
+    // ── Task 4: tool card status / duration i18n ─────────────
+    'agent.toolStatusPending': 'Pending',
+    'agent.toolStatusRunning': 'Running',
+    'agent.toolStatusSuccess': 'Success',
+    'agent.toolStatusFailed': 'Failed',
+    'agent.toolStatusCancelled': 'Cancelled',
+    // Duration: {ms} placeholder is replaced by formatDuration() output
+    // e.g. "1.2s" / "850ms" / "1m 23s"
+    'agent.toolDuration': 'took {ms}',
+    'agent.toolDurationLong': 'took a long time',
   },
 }

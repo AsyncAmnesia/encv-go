@@ -147,6 +147,19 @@ export interface ToolCall {
   /** !auto_run —— 需要用户 4-决策确认 */
   needsConfirm: boolean
   status: ToolStatus
+  /**
+   * 失败时的错误码（与后端 ToolError.Code 对齐，如 'ENOENT' / 'TIMEOUT' / 'EXEC_FAILED'）。
+   * 仅在 status === 'failed' 时有值。
+   */
+  errorCode?: string
+  /** 失败时的错误消息（来自后端，已本地化；前端原样透传，不硬编码翻译） */
+  errorMessage?: string
+  /** 成功时的输出（来自后端 ToolResult.Output，结构因工具而异） */
+  output?: any
+  /** 运行开始时间戳（毫秒）。在 tool_status 收到 'running' 时填入 */
+  startedAt?: number
+  /** 运行结束时间戳（毫秒）。在 tool_result 到达 / 状态转为终态时填入 */
+  finishedAt?: number
 }
 
 export interface ToolResult {
@@ -733,6 +746,48 @@ export function useAgent() {
   let lastEventId = 0
   let abortController: AbortController | null = null
 
+  // ─── Task 3: tool_call 状态机 — 30s 无响应超时保护 ────────────────
+  // 当 tool_call 创建后 30s 内未收到 tool_result（且未进入 failed/cancelled
+  // 终态），自动标记为 failed + errorCode='TIMEOUT'。这是 user 反馈"工具
+  // 卡住没有任何反馈"的根因——之前前端没有超时机制，spinner 转 60s+ 仍然
+  // 停在 running。timer 必须在 tool_result 到达或 tool_call 进入终态时清除
+  // （clearToolCallTimeout），否则会泄漏。
+  const TOOL_CALL_TIMEOUT_MS = 30_000
+  const toolCallTimeoutMap = new Map<string, ReturnType<typeof setTimeout>>()
+
+  function clearToolCallTimeout(toolCallId: string): void {
+    const t = toolCallTimeoutMap.get(toolCallId)
+    if (t !== undefined) {
+      clearTimeout(t)
+      toolCallTimeoutMap.delete(toolCallId)
+    }
+  }
+
+  function armToolCallTimeout(toolCallId: string): void {
+    clearToolCallTimeout(toolCallId) // 防重入
+    const t = setTimeout(() => {
+      toolCallTimeoutMap.delete(toolCallId)
+      // 找到对应 tool_call，标 failed
+      for (const msg of messages.value) {
+        const tc = msg.tool_calls.find((c) => c.id === toolCallId)
+        if (!tc) continue
+        // 单向：终态（failed/cancelled/success）不再覆盖
+        if (tc.status === 'failed' || tc.status === 'cancelled' || tc.status === 'success') {
+          break
+        }
+        tc.status = 'failed'
+        tc.errorCode = 'TIMEOUT'
+        tc.errorMessage = '工具执行超过 30s 无响应'
+        tc.finishedAt = Date.now()
+        console.warn(
+          `[useAgent] tool_call ${toolCallId} (${tc.name}) timed out after ${TOOL_CALL_TIMEOUT_MS}ms`,
+        )
+        break
+      }
+    }, TOOL_CALL_TIMEOUT_MS)
+    toolCallTimeoutMap.set(toolCallId, t)
+  }
+
   // ─── Server Instance + Sequence 去重（Task 4） ────────────────────────
   // 后端 /api/health 返回 process-wide 唯一的 serverInstanceId。同一进程
   // 启动期间它恒定；进程重启（OS 分配新 PID / 启动时间不同）就会变化。
@@ -849,6 +904,43 @@ export function useAgent() {
   const mockScenarioPaused = computed(() => {
     const phase = mockRoundState.value?.phase
     return phase === 'awaiting_user_input' || phase === 'awaiting_branch_choice'
+  })
+
+  // ─── Task 3: tool_call 状态机派生 computed ────────────────────────
+  /**
+   * 正在运行 / 等待中的 tool_call 扁平列表。
+   *  - running：tool_status 收到 'running' 后保持
+   *  - pending：刚 tool_call 事件到达、还没收到 tool_status 'running'
+   * 命中这两个状态的 tool_call 全部列入，供 AgentChat footer 渲染
+   * 「🔄 工具执行中…」指示 + OperationCard 渲染脉冲动画。
+   */
+  const runningTools = computed(() => {
+    const list: ToolCall[] = []
+    for (const m of messages.value) {
+      for (const tc of m.tool_calls) {
+        if (tc.status === 'running' || tc.status === 'pending') {
+          list.push(tc)
+        }
+      }
+    }
+    return list
+  })
+
+  /** 是否有任意 tool_call 仍在运行 / 等待中（UI 状态指示用） */
+  const hasRunningTool = computed(() => runningTools.value.length > 0)
+
+  /**
+   * 当前会话中所有 tool_call 的扁平引用（按到达顺序）。
+   * 供 UI 一次性遍历渲染——避免在模板里再嵌套 .tool_calls。
+   */
+  const allToolCalls = computed(() => {
+    const list: ToolCall[] = []
+    for (const m of messages.value) {
+      for (const tc of m.tool_calls) {
+        list.push(tc)
+      }
+    }
+    return list
   })
 
   /**
@@ -1617,6 +1709,10 @@ export function useAgent() {
           // Task 27：记录工具调用事件到达顺序
           if (!m.eventLog) m.eventLog = []
           m.eventLog.push({ type: 'tool_call', id: tool.id })
+          // Task 3：启动 30s 超时 watchdog。若 30s 内未收到 tool_result，
+          // 自动标记 failed + errorCode='TIMEOUT'。timer 会在 tool_result
+          // 到达时由 clearToolCallTimeout 清除。
+          armToolCallTimeout(tool.id)
         }
         break
       }
@@ -1627,7 +1723,16 @@ export function useAgent() {
           for (const msg of messages.value) {
             const tc = msg.tool_calls.find((t) => t.id === ts.id)
             if (tc) {
+              // 状态机严格单向：failed/cancelled 是终态，后续 tool_status 不可降级
+              // （典型场景：失败后服务端还推了个 success 给陈旧连接）
+              if (tc.status === 'failed' || tc.status === 'cancelled' || tc.status === 'success') {
+                break
+              }
               tc.status = ts.status
+              // 进入 running 状态时记录 startedAt
+              if (ts.status === 'running' && tc.startedAt === undefined) {
+                tc.startedAt = Date.now()
+              }
               break
             }
           }
@@ -1639,6 +1744,7 @@ export function useAgent() {
         if (result) {
           // AG-UI 协议适配：TOOL_CALL_RESULT 归一化结果只有 {id, result}（无 name），
           // 从前面累积的 tool_calls 按 id 反查补齐 name
+          let matchedTc: ToolCall | null = null
           if (!result.name) {
             for (let i = messages.value.length - 1; i >= 0; i--) {
               const m = messages.value[i]
@@ -1646,6 +1752,18 @@ export function useAgent() {
               const tc = m.tool_calls.find((t) => t.id === result.id)
               if (tc?.name) {
                 result.name = tc.name
+                matchedTc = tc
+                break
+              }
+            }
+          } else {
+            // 已有 name：同样按 id 反查 tool_call，准备联动 status
+            for (let i = messages.value.length - 1; i >= 0; i--) {
+              const m = messages.value[i]
+              if (m.role !== 'assistant') continue
+              const tc = m.tool_calls.find((t) => t.id === result.id)
+              if (tc) {
+                matchedTc = tc
                 break
               }
             }
@@ -1655,6 +1773,62 @@ export function useAgent() {
           // Task 27：记录工具结果事件到达顺序
           if (!m.eventLog) m.eventLog = []
           m.eventLog.push({ type: 'tool_result', id: result.id })
+
+          // ── 状态机联动：tool_result → tool_call.status ──
+          // 关键修复：之前 tool_call.status 只看 tool_status 事件，failed 时
+          // 仍然显示 success。spec / 用户反馈：tool_result 到达时必须按
+          // is_error + status 字段联动外层 tool_call.status。
+          // 状态机严格单向：failed/cancelled 是终态（已被 tool_status 设过），
+          // 不再被 tool_result 覆盖（防止陈旧重放把 failed 改回 success）。
+          if (matchedTc && matchedTc.status !== 'failed' && matchedTc.status !== 'cancelled') {
+            const finishedAt = Date.now()
+            matchedTc.finishedAt = finishedAt
+
+            // ── errorCode / errorMessage 提取 ──
+            // ToolResult 类型契约不包含这两个字段（避免与后端 wire format 紧耦合），
+            // 但后端实际可能通过原始 event.data 传 errorCode / errorMessage /
+            // message 字段。这里就地再 JSON.parse 一次 raw data 拿这些可选字段。
+            // 容错：解析失败 / 字段缺失时退到 fallback。
+            let rawErrorCode: string | undefined
+            let rawErrorMessage: string | undefined
+            let rawOutput: any
+            try {
+              const raw = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
+              if (raw && typeof raw === 'object') {
+                const r = raw as Record<string, unknown>
+                if (typeof r.errorCode === 'string') rawErrorCode = r.errorCode
+                else if (typeof (r as any).code === 'string') rawErrorCode = (r as any).code
+                if (typeof r.errorMessage === 'string') rawErrorMessage = r.errorMessage
+                else if (typeof (r as any).message === 'string') rawErrorMessage = (r as any).message
+                if ('output' in r) rawOutput = (r as any).output
+              }
+            } catch {
+              // raw data 解析失败 → 用 fallback（不阻塞主流程）
+            }
+
+            // 后端契约：is_error=true 表示执行失败；status='cancelled' 表示用户取消
+            if (result.status === 'cancelled') {
+              matchedTc.status = 'cancelled'
+            } else if (result.is_error === true) {
+              matchedTc.status = 'failed'
+              matchedTc.errorCode = rawErrorCode || 'EXEC_FAILED'
+              // 错误消息原样透传（后端已本地化），不要在前端硬编码翻译
+              matchedTc.errorMessage = rawErrorMessage
+                || (typeof result.result === 'string' ? result.result : '')
+                || '工具执行失败'
+            } else {
+              matchedTc.status = 'success'
+              // output 字段：后端 AG-UI 格式可能挂在 raw.output 或 result.result
+              const output = rawOutput !== undefined
+                ? rawOutput
+                : (typeof result.result === 'string'
+                    ? (() => { try { return JSON.parse(result.result) } catch { return result.result } })()
+                    : result.result)
+              matchedTc.output = output
+            }
+            // 收到 result 时清除 30s 超时 timer（避免泄漏 + 误标记 failed）
+            clearToolCallTimeout(result.id)
+          }
         }
         break
       }
@@ -2159,9 +2333,18 @@ export function useAgent() {
       // 是否带 X-Agent-Protocol: agui header（默认 'auto' → 带）。
       // 后端看到 header 后用 AG-UI parser 解析 LLM 响应；不带则按
       // legacy 自定义 SSE 返回。
+      //
+      // Accept: text/event-stream —— 必传。Android 真机上 useProxiedFetch
+      // 已替换 window.fetch，见 isStream 判断（useProxiedFetch.ts#L166-169）：
+      //   命中此 header 才走 ApiProxy.streamStart()，否则走 fetchOnce()，
+      //   会把整个 SSE body 一次性塞进 new Response(body)，processLegacySSE
+      //   reader.read() 同步读完所有 chunk，**没有逐字流式效果**。
+      // dev 模式 useProxiedFetch 不安装，原生 fetch 走 WebView 自带 SSE 拆分，
+      // 加此 header 无副作用（CORS 不拦 Accept）。
       const sendAGUIHeader = shouldSendAGUIHeader()
       const fetchHeaders: Record<string, string> = {
         'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
         ...(sendAGUIHeader ? { 'X-Agent-Protocol': 'agui' } : {}),
       }
       // T15 unblock：mode === 'mock_resume' 时把 scenario 透传给后端，
@@ -2409,11 +2592,15 @@ export function useAgent() {
     abortController = new AbortController()
     try {
       // AG-UI 协议协商（与 send() 一致）
+      // Accept: text/event-stream —— 必传，触发 useProxiedFetch 走 streamStart，
+      // 否则 native 端走 fetchOnce 一次性读完所有 chunk，无流式效果。
+      // 详见 useAgent.send() 注释。
       const sendAGUIHeader = shouldSendAGUIHeader()
       const response = await fetch(`${getAgentBase()}/api/confirm`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
           ...(sendAGUIHeader ? { 'X-Agent-Protocol': 'agui' } : {}),
         },
         body: JSON.stringify({
@@ -2507,11 +2694,15 @@ export function useAgent() {
       while (hopsLeft-- > 0) {
         const headerLastEventId = lastEventId > 0 ? String(lastEventId) : undefined
         // AG-UI 协议协商（与 send() / confirmTool() 一致）
+        // Accept: text/event-stream —— 必传，触发 useProxiedFetch 走 streamStart，
+        // 否则 native 端走 fetchOnce 一次性读完所有 chunk，无流式效果。
+        // 详见 useAgent.send() 注释。
         const sendAGUIHeader = shouldSendAGUIHeader()
         const response = await fetch(`${getAgentBase()}/api/resume`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'Accept': 'text/event-stream',
             // SSE 标准 Last-Event-ID：与 EventSource 协议一致
             ...(headerLastEventId ? { 'Last-Event-ID': headerLastEventId } : {}),
             ...(sendAGUIHeader ? { 'X-Agent-Protocol': 'agui' } : {}),
@@ -2578,6 +2769,9 @@ export function useAgent() {
    */
   function reset(): void {
     stop()
+    // 清除所有 tool_call 超时 timer（避免泄漏 + reset 后误标记）
+    for (const t of toolCallTimeoutMap.values()) clearTimeout(t)
+    toolCallTimeoutMap.clear()
     if (currentSessionId.value) {
       try {
         localStorage.removeItem(STORAGE_PREFIX + currentSessionId.value)
@@ -2694,6 +2888,14 @@ export function useAgent() {
     isDebugAgent,
     // 调试：原始 SSE 事件日志（AgentDebugPanel ⑦ 区展示）
     rawSSEEvents,
+    // ── Task 3: tool_call 状态机派生 ─────────────────────────────
+    // - runningTools：当前正在 running/pending 的 tool_call 扁平列表
+    //   （供 AgentChat footer 渲染「🔄 工具执行中…」+ OperationCard 动画）
+    // - hasRunningTool：runningTools 非空标志位（UI 状态指示）
+    // - allToolCalls：所有 tool_call 扁平列表（供 UI 一次性遍历渲染）
+    runningTools,
+    hasRunningTool,
+    allToolCalls,
     // Task 4：以下为测试专用钩子。生产代码不应调用——所有 serverInstance
     // 同步都由 useAgent 内部 await refreshServerInstance() 完成。
     __refreshServerInstanceForTest: refreshServerInstance,

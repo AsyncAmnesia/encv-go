@@ -78,11 +78,12 @@ func createMinimalV4Fixture(t testing.TB, dataSize int64) string {
 
 	salt, _ := crypto.GenerateSalt_v2(types.SaltSize_v2)
 	key := crypto.GenerateKey(testPassword, salt, types.KeySize_v2)
+	macKey := crypto.DeriveMACKey(testPassword, bytes.Repeat([]byte{0xAB}, crypto.MACSaltLength))
 
 	origData := make([]byte, dataSize)
 	rand.Read(origData)
 
-	encResult, _ := crypto.EncryptSegment(origData, key, 0)
+	encResult, _ := crypto.EncryptSegment(origData, key, macKey, 0, crypto.CompressionModeNone)
 	encResult.SegmentID = 0
 
 	kviRaw := map[string]string{

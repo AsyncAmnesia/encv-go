@@ -17,11 +17,18 @@
 - ❌ `sleep 86400`、`sleep 999999`、`sleep infinity` —— **任何大于 60s 的 sleep 都不允许出现在 blocking 命令中**
 - ❌ `tail -f /var/log/xxx` 阻塞等待
 - ❌ `node server.js` 阻塞运行（无 daemon 化）
+- ❌ **`python3 -c "..."` / `node -e "..."` 跑交互式协议测试**（如 WS upgrade）—— 看起来 1-3s 很快，但 blocking + 副作用不可控
 
 **正确做法**：
 - ✅ 用 `pm2 start xxx.js --name xxx` 守护（fork 模式，立刻 daemon 化返回）
 - ✅ 如需长跑日志观察，用 `pm2 logs <name>` 短时查看（30s 内 kill）
 - ✅ 如需让某个 web 端口"保持在线"以供 OpenPreview，**先 pm2 守护** → 再让工具调用 `curl` 健康检查
+- ✅ **协议探测走持久化脚本**：把 `python3 -c` / `node -e` 的内容写成文件到 `scripts/`，下次直接 `bash scripts/probe-ws.sh`（仍要 < 5s）
+
+**反模式 A 变种（2026-06-10 实战踩坑）**：
+> 在测试 trae 反代 :16000 是否支持 WebSocket 时，我用了 `python3 -c "..."` 跑 WS handshake
+> 脚本。表面上 < 3s 结束，但**没有**记到「禁止」清单，导致下次再测又踩。
+> **正确**：写一个 `scripts/probe-ws-upgrade.sh` 持久化，3 行内可读；或 `curl --include --upgrade` + `-m 2` 直接测。
 
 ---
 
@@ -41,19 +48,26 @@
 
 ---
 
-### 反模式 C：阻塞 + web_server 类型假装常驻
+### 反模式 C：阻塞 + web_server 类型假装常驻（2026-06-10 已废止）
 
-**症状**：用 `command_type: web_server, blocking: true` 跑 `node server.js`，命令一直不返回。
+**症状**：用 `command_type: web_server, blocking: true` 跑 `node server.js` 或 `while true; do curl ...; sleep 5; done`，命令一直不返回。
 
-**根因**：web_server 命令是给 OpenPreview 工具注册端口用的「在线占位」。但**真正提供 web 服务的进程**必须由 pm2 守护，**不能用 RunCommand 自身当 server**。
+**历史根因（已废止）**：之前认为"OpenPreview 工具需要 web_server 类型命令作为 command_id 来源"，所以让 agent 起一个 while-true 循环作为占位。
+
+**2026-06-10 真相（用户痛批后纠正）**：
+- OpenPreview 工具本身就是端口注册入口，**不需要**任何阻塞 web_server 进程作为"来源"
+- `command_id` 只需取**任一已运行** RunCommand 的 id（如 `pm2 start` 那条、或后续 `curl` 健康检查的 id），工具不强制要求 web_server 类型
+- 起 `while true; curl; sleep` 阻塞进程 = 纯浪费 token、违反 §一 反模式 A
 
 **禁止**：
-- ❌ `node server.js` (blocking, command_type=web_server)
-- ❌ 任何 RunCommand 自身的进程扮演"长跑 web server"
+- ❌ `while true; do curl ...; sleep 5; done` (blocking, command_type=web_server) 当作"OpenPreview 来源"
+- ❌ `node server.js` (blocking, command_type=web_server) 把 RunCommand 自身当 server
+- ❌ 任何 RunCommand 自身扮演"长跑 web server 占位"
 
 **正确做法**：
-- ✅ 真实 server 进程：先 `pm2 start` 起来
-- ✅ OpenPreview 注册：另起一个 `command_type=web_server, blocking=true` 的 RunCommand（如 `while true; do curl -s http://localhost:15003/health; sleep 30; done`），它**循环**健康检查**已经在跑的** server → 工具会把这个命令的 command_id 当作 web_server 来源
+- ✅ 真实 server 进程：先 `pm2 start` 起来（preview-gateway:16666 + openpreview-stub:15003）
+- ✅ OpenPreview 注册：直接调 `OpenPreview(command_id=<任一已运行命令的 id>, preview_url="http://localhost:16666/")`
+- ✅ 工具调用完后立即返回，session/TTL 由 agent-tool-host 管理
 
 ---
 
@@ -66,7 +80,7 @@
 **根因（连环误判）**：
 1. 错把 `pnpm build` 当成"重建前端"标准做法 — 实际 `build` 产物 `dist/` 是给 **Android 离线包**用的（Capacitor sync → android/app/src/main/assets/public/），**不是 dev 预览**
 2. 错把 vite 自带 `preview` 当成"预览链接"通用方案 — vite preview 是**纯静态服务**，不走 vite dev 插件链（@ionic/vue、Capacitor polyfill、HMR 客户端）→ 前端能打开但**调不到任何 `/api/`** → 用户看到的"无错白屏 + 工具调用失败"是孤儿前端症状
-3. 错以为"vite preview"是 Capacitor + Ionic Vue 项目的合法入口 — 实际本项目 preview 链路是**已 pm2 守护的 4 件套**（preview-gateway:16666 → encv-mobile-vite:8100 → Go 后端 :2025），OpenPreview 直接打 16666 就行
+3. 错以为"vite preview"是 Capacitor + Ionic Vue 项目的合法入口 — 实际本项目 preview 链路是**已 pm2 守护的 2 件套**（preview-gateway:16666 内部统一管理 Go 后端 :2025 + Vite :8100），OpenPreview 直接打 16666 就行
 4. 思考过程没核对 §二 沙箱 dev 服务拓扑表，假设 vite 自己 serve 出来就等于项目预览
 
 **禁止**：
@@ -77,51 +91,67 @@
 
 **正确做法（用户说"重建前端 / 给我预览链接"时）**：
 - ✅ **不** build：vite dev (8100) 跑源码 + HMR，源码改动已自动热重载
-- ✅ **不**启新进程：preview-gateway (16666) + encv-mobile-vite (8100) + Go 后端 (2025) 已在 pm2 守护（除非 `pm2 list` 显示 offline 才需要 `pm2 restart`）
+- ✅ **不**启新进程：preview-gateway (16666) 已在 pm2 守护（除非 `pm2 list` 显示 offline 才需要 `pm2 restart`）
 - ✅ Preview 链接直接用：**http://localhost:16666/**
-- ✅ 调用 OpenPreview 工具展示 16666 链接（command_id 取最近一次 `curl -sI :16666/` 健康检查的 RunCommand 即可）
+- ✅ **调 OpenPreview 工具**展示 16666 链接（command_id 取**任一已运行的 RunCommand id**，如 `pm2 start` 那条或任何 `curl` 健康检查）
+- ✅ **不要**起 `while true; curl` 阻塞 web_server 进程（§一 反模式 C，已废止）
 - ✅ 如真要"完整重打"前端（如 Capacitor sync 场景），必须先和用户确认目标，并明确告知 `pnpm build` 不会重启 dev 服务
 
 **反查清单（用户说 preview/build/dev 时，先问自己）**：
 - [ ] 用户说的"预览"是 web dev 预览还是 Android 离线包？
-- [ ] pm2 list 看过吗？4 件套是否都在 online？
-- [ ] 我要启的端口在 §二 拓扑表里吗？（16666 / 8100 / 15002 / 15003 / 2025 / 5173 / 5244 / 5174）
+- [ ] pm2 list 看过吗？2 件套 (preview-gateway + openpreview-stub) 是否都在 online？
+- [ ] 我要启的端口在 §二 拓扑表里吗？（16666 / 15003；2025/8100/5174/5244 由 gateway 按需拉起）
 - [ ] 我要跑的命令在 §四 禁止命令清单里吗？
 
 ---
 
-## 二、pm2 联动启动标准流程
+## 二、pm2 联动启动标准流程（方案 C：网关合一，2026-06-08 大改）
 
-### 2.1 沙箱 dev 服务拓扑（本项目固定 4 上游）
+### 2.1 沙箱 dev 服务拓扑（pm2 监管 2 个 + gateway 内部管理 4 个子进程）
 
 | pm2 app | 端口 | 必备 | 角色 |
 |---------|------|------|------|
-| `preview-gateway` | :16666 | ✅ 必备 | 统一预览网关，对外唯一入口 |
-| `encv-mobile-vite` | :8100 | ✅ 必备 | 主 app Vite（被 :16666/ 代理） |
-| `preview-helper` | :15002 | ✅ 必备 | OpenPreview 占位 |
-| `openpreview-stub` | :15003 | ✅ 必备 | OpenPreview web_server command_id 源 |
-| `start-preview` | :2025 + :5173 | ⚠️ 可选 | Go 后端 air + 旧 vite；**⚠️ pm2 启动时必须注入 `ENCV_DEV_PREVIEW=1` + `ENCV_MOBILE=1`**（见 §五 env 注入铁律） |
-| `openlist` | :5244 | ⚠️ 可选 | OpenList 真实 fork Go 服务 |
-| `plugin-openlist-vite` | :5174 | ⚠️ 可选 | OpenList 管理 UI Vite（被 :16666/openlist-ui/ 代理） |
+| `preview-gateway` | :16666 | ✅ 必备 | 统一预览网关，**唯一对外入口 + 唯一进程管理者** |
+| `openpreview-stub` | :15003 | ✅ 必备 | OpenPreview web_server command_id 源（无法绕开，详见 §三） |
 
-**主 app 入口最少依赖**：`preview-gateway` + `encv-mobile-vite` + `preview-helper` + `openpreview-stub`，其余按需。
+**gateway 内部子进程**（由 `preview-gateway` 自己 `child_process.spawn` 管理，**不需独立 pm2 app**）：
 
-### 2.2 启动标准命令
+| 子进程 | 端口 | 默认 | 角色 | 开关 env |
+|--------|------|------|------|----------|
+| `encv-go` (air) | :2025 | ✅ 启用 | Go 后端（mobile overlay 关键） | `SPAWN_GO=0` 关闭 |
+| `encv-mobile-vite` | :8100 | ✅ 启用 | 主 app Vite（被 :16666/ 代理） | `SPAWN_VITE=0` 关闭 |
+| `plugin-openlist-vite` | :5174 | ❌ 按需 | OpenList 管理 UI Vite | `SPAWN_PLUGIN_VITE=1` 启用 |
+| `openlist` | :5244 | ❌ 按需 | OpenList 真实 fork Go 服务 | `SPAWN_OPENLIST=1` 启用 |
+
+**为什么只有 2 个 pm2 app？**（方案 C 解决的问题）
+- **历史 7 app 架构**：`preview-gateway` + `encv-mobile-vite` + `preview-helper` + `openpreview-stub` + `start-preview` + `plugin-openlist-vite` + `openlist`
+- **核心 bug**：`start-preview` 内部 & 启 vite :8100 与 `encv-mobile-vite` 抢同一端口；`preview-helper` 与 `openpreview-stub` 功能完全重复
+- **方案 C**：所有 dev 进程下放到 `preview-gateway` 内部（src/children.ts）；pm2 只管 2 个真正长跑的 app
+- **子进程死 → gateway 死 → pm2 重启整套**（避免出现 "vite 死、Go 活、gateway 200、用户看到白屏" 的鬼状态）
+
+### 2.2 启动标准命令（**只此一条**）
 
 ```bash
-# 1. 装 pm2（一次性）
-npm install -g pm2
+# 1. 装 pm2（一次性，setup-sandbox-env.sh 已做）
+which pm2 || npm install -g pm2
 
-# 2. 启动主 app 4 件套（来自 ecosystem.config.cjs）
-pm2 start /workspace/ecosystem.config.cjs \
-  --only preview-gateway,encv-mobile-vite,preview-helper
+# 2. 一行启动全部（2 个 app；其余由 preview-gateway 内部 spawn）
+pm2 start /workspace/ecosystem.config.cjs
 
-# 3. 额外启 openpreview-stub（该 app 不在 ecosystem 里，独立维护）
-PORT=15003 pm2 start /workspace/scripts/openpreview-stub.js \
-  --name openpreview-stub
+# 3. 验证
+pm2 list                                              # 看到 2 个 online
+curl -s http://localhost:16666/__gateway/health       # ok:true
+curl -sI http://localhost:16666/                      # HTTP/1.1 200 OK
+curl -s http://localhost:16666/api/service-guard | jq '.context.envDevPreview'   # true
+```
 
-# 4. 保存状态（sandbox 会话重置后可 pm2 resurrect 恢复）
-pm2 save
+**如果需要 plugin-vite / openlist**（按需）：
+```bash
+# 临时：单次启动前注入 env
+SPAWN_PLUGIN_VITE=1 pm2 restart preview-gateway
+SPAWN_OPENLIST=1    pm2 restart preview-gateway
+
+# 永久：编辑 ecosystem.config.cjs 把对应 env 改 '1'
 ```
 
 ### 2.3 完整命令参考
@@ -137,11 +167,11 @@ pm2 logs preview-gateway --lines 100
 pm2 logs --nostream --raw 0 0 100               # 拉最近 100 行非流
 
 # 启停
-pm2 start <script> --name <name>                # 启
-pm2 restart <name>                              # 重启
-pm2 stop <name>                                 # 停（保留 pm2 注册表）
-pm2 delete <name>                               # 删（出注册表）
-pm2 delete all                                  # 全删
+pm2 start /workspace/ecosystem.config.cjs       # 启全部
+pm2 restart preview-gateway                     # 改 gateway 配置（含 spawn 子进程重启）
+pm2 restart openpreview-stub                    # 改 stub
+pm2 stop all && pm2 delete all                  # 全清
+pm2 start <script> --name <name>                # 临时启单 app（不推荐，破坏单一管理）
 
 # 配置
 pm2 save                                        # 写 /root/.pm2/dump.pm2
@@ -152,15 +182,17 @@ pm2 reload ecosystem                            # 0 秒重载
 ### 2.4 验证命令
 
 ```bash
-# 端口在线
-lsof -i :16666 -i :8100 -i :15003 | head
+# 端口在线（只需检查 16666 / 15003；2025/8100 由 gateway 内部管理）
+lsof -i :16666 -i :15003 | grep LISTEN
 
 # 主 app 入口可达
 curl -sI http://localhost:16666/ | head -1
 # 期望: HTTP/1.1 200 OK
 
-# preview-gateway health（如果其他 upstream 未启，会 503；不影响 / 路径）
-curl -s http://localhost:16666/__gateway/health | head -c 200
+# preview-gateway health（含子进程状态）
+curl -s http://localhost:16666/__gateway/health | jq '{ok, children: [.children[].name], optionalDown: .optionalDown | length}'
+# 期望: {"ok": true, "children": ["encv-go", "encv-mobile-vite"], "optionalDown": 2}
+#  optionalDown 数 = 2 是因为 plugin-vite + openlist 按需未启（这是预期）
 ```
 
 ---
@@ -182,38 +214,92 @@ curl -s http://localhost:16666/__gateway/health | head -c 200
 **首次访问 :16666** → agent-tool-host 内部 `:80` register 端点 `requires_auth=true`，**普通 HTTP 请求 401 拒绝**。
 只有 `OpenPreview` 工具（IDE 内部命令）能完成 register。
 
-### 3.2 标准激活流程
+### 3.2 标准激活流程（2026-06-10 重写：直接调 OpenPreview 工具，零阻塞）
+
+> **历史反模式**（已删除）：之前 §3.2 让 agent 起一个 `command_type=web_server, blocking=true` 的 `while true; curl ...; sleep 5` 进程作为 command_id 来源。
+> 这是 §一 反模式 C 的具体实例（"阻塞 + web_server 类型假装常驻"），被 2026-06-10 用户痛批。
+> **真相**：OpenPreview 工具本身就是端口注册入口，**不需要**任何阻塞 web_server 进程。
 
 ```bash
-# Step 1: 准备 web_server 类型 command 来源
-#   openpreview-stub 已经在 :15003（pm2 守护），但工具历史里需要
-#   一个 command_type=web_server 的命令作为「来源」。
+# 1. 确认沙箱内 4 端口在线（16666 / 15003 / 2025 / 8100）
+pm2 list                              # 2 个 online (preview-gateway + openpreview-stub)
+curl -sI http://localhost:16666/      # 200 OK
+curl -s http://localhost:16666/__gateway/health | jq .ok  # true
 
-# Step 2: 启动 web_server 类型 RunCommand（阻塞但**不浪费**——它循环探测已运行的 server）
-#   命令示例:
-#     while true; do
-#       curl -s http://localhost:15003/ > /dev/null || exit 1
-#       sleep 5
-#     done
-#   command_type=web_server, blocking=true
-#   工具会把这个命令当作 web_server，拿到 command_id
+# 2. 直接调 OpenPreview 工具（agent 工具栏里有，不需阻塞进程）
+#    - command_id：取**启动 dev server** 的那条 RunCommand 的 id（pm2 start 那条 / 或任何后续 curl 健康检查的 id 都可，工具不强制）
+#    - preview_url：沙箱内统一入口 = http://localhost:16666/
+OpenPreview(
+  command_id="<RunCommand 工具历史里任一条已运行命令的 id>",
+  preview_url="http://localhost:16666/"
+)
 
-# Step 3: 调用 OpenPreview 工具
-#   OpenPreview(
-#     command_id="<Step 2 的 command_id>",
-#     preview_url="http://localhost:16666/"
-#   )
-#   完成 :16666 在 agent-tool-host 的注册
+# 3. 验证（OpenPreview 调用后，外网 :16000 才能代理到 :16666）
+curl -sI http://127.0.0.1:16000/      # 期望 200（不再 400）
+# 或：用户浏览器访问 trae 域名直接看到 UI
 ```
 
-### 3.3 错误模式
+**为什么不需要阻塞进程**：
+- OpenPreview 工具是 Trae IDE 提供的**注册工具**，调用即在 agent-tool-host 内部建立路由
+- 不依赖任何"长跑命令占位"
+- 工具调用完后立即返回，session/TTL 由 agent-tool-host 自己管理
+- 详见 [trae_web_sandbox_network.md §八](file:///workspace/.trae/rules/trae_web_sandbox_network.md) - "Preview Proxy 路由必须由 OpenPreview 工具注册"
+
+### 3.3 OpenPreview 浏览器下的服务器状态检测（2026-06-10 新增）
+
+> **根因**：trae 反代 `:16000` **不支持 WebSocket upgrade**（实测：WS handshake → 502 "WebSocket upgrade failed"）。
+> OpenPreview 浏览器（agent-tool-host 上的 mock 浏览器）下用 `new WebSocket('wss://trae.cn/ws')` → 1006 异常关闭 →
+> 误显"离线"+"Connection closed (code: 1006)"。
+
+**已修复**（提交 `a8c4e7d`）：
+
+1. **[useWebSocket.ts](file:///workspace/app/encv-mobile/src/composables/useWebSocket.ts) `connect()`** — OpenPreview 浏览器下不连 WS，直接 emit `server:status {online: true}`，不发 `connection-error`。
+2. **[useServerStatus.ts](file:///workspace/app/encv-mobile/src/composables/useServerStatus.ts)** — 新增 `transportMode` / `latencyMs` / `lastCheckedAt` / `isSandboxBrowser` 4 个 ref + `probeHttp()` 测延迟。
+3. **[useServerStatus.ts `onConnectionError`](file:///workspace/app/encv-mobile/src/composables/useServerStatus.ts)** — sandbox 浏览器下不显示 "Connection closed (code: 1006)" 误报。
+4. **[ServerDetail.vue](file:///workspace/app/encv-mobile/src/views/ServerDetail.vue)** — 状态 ion-item 美化：徽章 + 端口 + 延迟(ms) + 传输模式 + 上次检测时间 + sandbox 降级提示。
+
+**架构事实**：
+
+| 传输层 | OpenPreview 浏览器 | 沙箱本地 | APK 真机 |
+|--------|---------------------|----------|----------|
+| HTTP `/api/*` | ✅ trae 反代 | ✅ :16666 直连 | ✅ loopback |
+| WebSocket `/ws` | ❌ trae 不支持 | ✅ :16666 WS upgrade | ✅ loopback |
+| Native bridge | N/A | N/A | ✅ Capacitor |
+
+**3 档调试链路**（从弱到强）：
+1. **OpenPreview 浏览器** —— 仅 fetch /api/*，实时功能不可用
+2. **沙箱本地 `:16666`** —— 完整 API + WS
+3. **APK 真机 + adb reverse** —— 完整 + 真实性能
+
+### 3.4 错误模式
 
 | 错误 | 原因 | 修复 |
 |------|------|------|
-| `OpenPreview` 返回 401 | 命令不是 web_server 类型 | 用 `command_type: web_server` 重启 |
-| `OpenPreview` 返回 port already registered | 上一次注册过；先取消 | 检查 agent-tool-host 内部 preview-proxy 状态 |
-| `curl :16666/` 返回 502 | preview-gateway 上游不可达 | `pm2 list` 看 vite 是否 online；`curl :8100` 直连验证 |
-| `curl :16666/` 200 但浏览器白屏 | vite :8100 死了 | `pm2 restart encv-mobile-vite` |
+| `OpenPreview` 返回 401 | command_id 失效（agent-tool-host 重启过） | 重启沙箱后重调一次 OpenPreview |
+| `OpenPreview` 返回 port already registered | 上一次注册过同端口 | 等 5s 自动过期，或重启 agent-tool-host |
+| `curl :16000/` 返回 400 | 没调过 OpenPreview 或 session 过期 | 重调 OpenPreview 工具 |
+| `curl :16666/` 返回 502 | preview-gateway 子进程（encv-go / encv-mobile-vite）未就绪 | `curl :16666/__gateway/health | jq .children` 看哪个没 ready；`pm2 logs preview-gateway --lines 100` |
+| `curl :16666/` 200 但浏览器白屏 | encv-mobile-vite 子进程死了 | `pm2 restart preview-gateway`（整组重启） |
+| 浏览器报 `WebSocket error: ws://...16000/ws` | **预期行为**（§九 9.5 矩阵：沙箱浏览器模式 /ws 不可达） | 无需修复，console 日志可见诊断信息 |
+
+### 3.4 mock 浏览器约束（**沙箱架构硬约束，2026-06-08 用户承认**）
+
+> **用户通过 OpenPreview 拿到的预览浏览器是 agent-tool-host 提供的"模拟浏览器"**——
+> 沙箱架构硬约束，**无法升级为完整 Chrome DevTools**。详见 [.trae/rules/trae_web_sandbox_network.md §9.4](file:///workspace/.trae/rules/trae_web_sandbox_network.md)。
+
+| 能/不能 | 详情 |
+|---------|------|
+| ✅ 能刷新页面 | Cmd+R / Ctrl+R / 浏览器自带刷新按钮 |
+| ✅ 能查看 console 日志 | DevLogs tab（Ionic Vue 内的日志面板）可见 |
+| ❌ **没有完整 DevTools** | 不能装 React DevTools / Vue Devtools 插件 |
+| ❌ **没有 Network 面板** | 看不到 fetch 请求/响应 / status / header / CORS 错（**这是最痛的**） |
+| ❌ 没有 Application / Sources / Performance | localStorage / Cookie / 源码断点都看不到 |
+
+**对 agent 的影响**：
+- 用户报"preview 不工作"时，**第一反应**应是让用户到 DevLogs tab 把 `[probe]` 开头的日志贴过来
+- **不要**让用户"开 DevTools 看 Network"——**没有 DevTools**
+- 排查链路详见 [trae_web_sandbox_network.md §九](file:///workspace/.trae/rules/trae_web_sandbox_network.md)（含可达性矩阵、probe 失败链路、备用方案 X/Y/Z）
+- 前端代码必须把所有诊断信息打到 console（已落进 [useApiBaseProbe.ts](file:///workspace/app/encv-mobile/src/composables/useApiBaseProbe.ts)）—— 每次 probe 输出 6-13 条 `[probe] ...` 日志，agent 凭这些日志能定位链路失败在哪一步
 
 ---
 
@@ -226,61 +312,87 @@ curl -s http://localhost:16666/__gateway/health | head -c 200
 | `nohup xxx &` | `nohup node s.js &` | `pm2 start s.js --name xxx` |
 | `setsid xxx` | `setsid vite &` | `pm2 start vite --name xxx` |
 | `node server.js` blocking | 直接跑 node | `pm2 start server.js --name xxx` |
-| `vite --port N &` blocking | `vite --port 8100 &` | `pm2 start vite.js --name encv-mobile-vite -- --port 8100` |
+| `vite --port N &` blocking | `vite --port 8100 &` | `pm2 restart preview-gateway`（vite 由 gateway 内部 spawn，不需手起） |
 | 任何 `&` 启后台 | `cmd &` | `pm2 start` |
+| **`while true; curl; sleep`**（OpenPreview 来源占位） | `while true; do curl -s :15003/; sleep 5; done` (blocking, command_type=web_server) | **直接调 OpenPreview 工具**（`command_id=<任一已运行 RunCommand id>`，零阻塞） |
 | **`pnpm build`（误当作 dev 预览）** | `pnpm build` | vite dev (8100) 跑源码 + HMR，**不 build** |
 | **`pnpm preview`（vite 静态预览，孤儿前端）** | `pnpm preview --port 4173` | preview-gateway (16666) → vite dev (8100) → Go 后端 |
 | **任意 `npx serve dist` / `http-server dist`** | 静态文件服务绕开 API 反代 | preview-gateway (16666) 是唯一合法入口 |
 
 ---
 
-## 五、start-preview env 注入铁律（2026-06-05 mobile overlay 触发失败事故后写入）
+## 五、env 注入铁律（2026-06-05 mobile overlay 触发失败事故后写入；2026-06-08 方案 C 重写）
 
 > **核心原则：`ApplyMobileOverlay` 由 `ENCV_MOBILE=1` 或 `ENCV_DEV_PREVIEW=1` 触发，缺失则 servingDir 退回 `/workspace`（用户看到 `.md` / `.gitignore`，不是 mock 媒体）。**
 
-### 7.1 三层注入（缺一不可）
+### 5.1 三层注入（缺一不可）
 
 | 层 | 文件 | 作用 |
 |----|------|------|
-| **L1 pm2 注入** | `ecosystem.config.cjs` `start-preview` 块 `env` | pm2 fork 时直接注入到 bash 进程 |
-| **L2 air → encv 传递** | `.air-run.sh` `export ${X:-1}` 兜底 | air rebuild 重启 ./tmp/encv 时不会丢 env |
-| **L3 启动脚本** | `start-preview.sh` 不再 inline 设 | 不重复设，避免冲突；只注释说明 |
+| **L1 pm2 → gateway** | `ecosystem.config.cjs` `preview-gateway` 块 `env` | pm2 fork 时注入到 gateway Node 进程 |
+| **L2 gateway → air 子进程** | `app/preview-gateway/src/server.ts` `buildChildSpecs()` | gateway `child_process.spawn` air 时透传 env |
+| **L3 air → encv 传递** | `.air-run.sh` `export ${X:-1}` 兜底 | air rebuild 重启 ./tmp/encv 时不会丢 env |
+
+**数据流**：
+```
+ecosystem.config.cjs  (L1: ENCV_DEV_PREVIEW=1 / ENCV_MOBILE=1)
+  ↓ pm2 start
+preview-gateway 进程  (Node，环境变量在 process.env)
+  ↓ buildChildSpecs() spread process.env + defaults  (L2)
+air 子进程  (bash，环境变量在 air shell)
+  ↓ air exec
+.air-run.sh  (export ${X:-1} 兜底  L3)
+  ↓ exec
+./tmp/encv start  (Go，env 在 os.Getenv)
+  ↓ config.Load() → ApplyMobileOverlay 触发
+```
+
+**为什么 L2 显式 spread 不省略**：
+- `process.env` 在 Node 里有但**不会自动**被子进程继承 — 必须用 `spawn(cmd, args, { env: ... })` 显式传递
+- `buildChildSpecs` 里 `env: { ...process.env, ENCV_*: '1' }` 强制覆盖，避免用户在父 shell 里设了 `ENCV_MOBILE=0` 导致冲突
 
 **为什么不在 `start-preview.sh` 设 inline env `ENCV_DEV_PREVIEW=1 air &`**：
+- start-preview.sh 已**删除**（方案 C 大改，脚本退化为只跑 mock 生成）
 - inline env 只对 `air` 进程有效，但 air rebuild 时**不一定**透传给新的 `./tmp/encv`（air 0.x 行为）
-- pm2 restart 后，ecosystem 注入的 env 是唯一稳定来源
+- L1 + L2 + L3 三层防御才是稳定来源
 
-### 7.2 自检命令
+### 5.2 自检命令
 
 ```bash
 # 1. service-guard 必须返 envDevPreview=true
-curl -s http://localhost:2025/api/service-guard | jq '.context.envDevPreview'
+curl -s http://localhost:16666/api/service-guard | jq '.context.envDevPreview'
 # 期望：true
 
 # 2. servingDir 必须是 /storage/emulated/0
-curl -s http://localhost:2025/api/service-guard | jq '.context.servingDir'
+curl -s http://localhost:16666/api/service-guard | jq '.context.servingDir'
 # 期望："/storage/emulated/0"
 
 # 3. mock 数据落地
 ls /storage/emulated/0/01-plain-media/ | head
 # 期望：01.mp4 02.mp3 03.png 04.pdf 05.txt ...
+
+# 4. gateway children 状态（确认 air 在跑）
+curl -s http://localhost:16666/__gateway/health | jq '.children[].name'
+# 期望：["encv-go", "encv-mobile-vite"]
 ```
 
 **自检失败排查表**：
 
 | 现象 | 原因 | 修复 |
 |------|------|------|
-| `envDevPreview: false` | env 没传到 encv | 检查 L1（pm2 env）+ L2（.air-run.sh） |
+| `envDevPreview: false` | env 没传到 encv | 检查 L1（pm2 env）+ L2（gateway buildChildSpecs）+ L3（.air-run.sh） |
 | `servingDir: "/workspace"` | mobile overlay 没触发 | 同上 |
-| `servingDirExists: false` | mock 没生成 | `start-preview.sh:99-110` mkdir 兜底 |
-| air rebuild 后 env 变 false | L2 兜底缺失 | 检查 `.air-run.sh` 末尾 export |
+| `servingDirExists: false` | mock 没生成 | `gateway src/preflight.ts:ensureMockData` 兜底 |
+| air rebuild 后 env 变 false | L3 兜底缺失 | 检查 `.air-run.sh` 末尾 export |
+| gateway children 缺 encv-go | air 启动失败 / 90s 就绪超时 | `pm2 logs preview-gateway --lines 100` 看错误 |
 
-### 7.3 绝对禁止
+### 5.3 绝对禁止
 
-- ❌ 在 start-preview.sh 里设 `ENCV_DEV_PREVIEW=1 air &` inline env（已知不稳定）
-- ❌ 让 `./tmp/encv` 直接以 pm2 启动，绕过 air 监视
 - ❌ 移除 `.air-run.sh` 的 `export ${X:-1}` 兜底（被前人坑过：air rebuild 丢 env）
-- ❌ 在 `ecosystem.config.cjs` 启动时**不设** `ENCV_DEV_PREVIEW` / `ENCV_MOBILE`
+- ❌ 在 `ecosystem.config.cjs` `preview-gateway` 块 env 里**不设** `ENCV_DEV_PREVIEW` / `ENCV_MOBILE`
+- ❌ 在 `src/children.ts` `buildChildSpecs` 里删掉 `{ ...process.env, ENCV_*: ... }` 显式 spread
+- ❌ 让 `./tmp/encv` 直接以 pm2 启动，绕过 air 监视
+- ❌ 复活 start-preview.sh 里的 inline env 注入（方案 C 已删）
 
 ---
 
@@ -289,12 +401,13 @@ ls /storage/emulated/0/01-plain-media/ | head
 每次启动 dev 服务前必须确认：
 
 - [ ] pm2 已装（`which pm2`）—— 未装则 `npm install -g pm2`
-- [ ] ecosystem.config.cjs 已存在（`/workspace/ecosystem.config.cjs`）
-- [ ] 启动命令是 `pm2 start ...`，**不是** `nohup`、`&`、`sleep` 阻塞
-- [ ] 启动后 `pm2 list` 看到目标 app `online`
-- [ ] `curl :16666/` 返回 200（fallthrough 到 vite）
-- [ ] **`curl :2025/api/service-guard | jq .context.envDevPreview` = true**（mobile overlay 生效）
-- [ ] **`curl :2025/api/service-guard | jq .context.servingDir` = /storage/emulated/0**
+- [ ] ecosystem.config.cjs 已存在（`/workspace/ecosystem.config.cjs`）且 `preview-gateway/dist/server.js` 已构建（`pnpm build`）
+- [ ] 启动命令是 `pm2 start /workspace/ecosystem.config.cjs`，**不是** `nohup`、`&`、`sleep` 阻塞
+- [ ] 启动后 `pm2 list` 看到 **2 个** app `online`（preview-gateway + openpreview-stub）
+- [ ] **`curl :16666/__gateway/health | jq .ok` = true**（必检 upstream 全 alive）
+- [ ] `curl :16666/` 返回 200（fallthrough 到 vite :8100）
+- [ ] **`curl :16666/api/service-guard | jq .context.envDevPreview` = true**（mobile overlay 生效）
+- [ ] **`curl :16666/api/service-guard | jq .context.servingDir` = /storage/emulated/0**
 - [ ] `pm2 save` 持久化（sandbox 会话重置可 `pm2 resurrect`）
 
 **当用户说"重建前端 / 给我预览链接 / dev server 起一下"时，先过这一关**：
@@ -313,12 +426,176 @@ ls /storage/emulated/0/01-plain-media/ | head
 | 文件 | 作用 |
 |------|------|
 | [/workspace/ecosystem.config.cjs](file:///workspace/ecosystem.config.cjs) | pm2 完整配置（4 主 + 3 辅） |
-| [/workspace/.air-run.sh](file:///workspace/.air-run.sh) | air rebuild 时 env 兜底 export |
+| [/workspace/.air.toml](file:///workspace/.air.toml) | air 配置（go run + tee log，沙箱验证通过 2026-06-10） |
 | [/workspace/scripts/previews.sh](file:///workspace/scripts/previews.sh) | pm2 启停包装（start/stop/restart/status/logs/monit/kill） |
+| [/workspace/scripts/kill-orphan-children.sh](file:///workspace/scripts/kill-orphan-children.sh) | 沙箱 zombie 强杀（14 步 + 报告） |
 | [/workspace/scripts/openpreview-stub.js](file:///workspace/scripts/openpreview-stub.js) | OpenPreview web_server command_id 源 |
 | [/workspace/.preview-helper.js](file:///workspace/.preview-helper.js) | 早期占位（被 openpreview-stub 取代） |
 | [/workspace/app/encv-mobile/scripts/start-preview.sh](file:///workspace/app/encv-mobile/scripts/start-preview.sh) | 主预览脚本（mock 生成 + air 启动） |
+
+---
+
+## 八、go run 沙箱路径（2026-06-10 用户决策 + 实战验证）
+
+> **用户原话**：「尝试go run。你说的对，僵尸问题也必须全方位解决，否则沙箱会崩溃」
+>
+> **结论**：go run **完全可行**，关键在 tee 解决「编译沉默」+ zombie killer 全方位。
+
+### 8.1 .air.toml 配置（沙箱 go run 路径）
+
+```toml
+[build]
+  # pre_cmd 先写编译 check log（兼容 Go 1.20 以下，不依赖 go run -o）
+  pre_cmd = ["mkdir -p tmp && go build -o ./tmp/encv-go-check ./cmd/encv 2>&1 | tee ./tmp/encv-go-build.log; true"]
+  # cmd 直接 go run + tee → 沙箱外可 tail -f 看进度
+  cmd = "go run ./cmd/encv start 2>&1 | tee ./tmp/encv-go-run.log"
+  bin = "./tmp/encv start"
+  delay = 5000         # 5s 防 pipe 死锁误判
+  grace_delay = 10000  # 10s 冷编空间
+```
+
+### 8.2 关键认知
+
+| 问题 | 根因 | 解决 |
+|------|------|------|
+| **go run 编译沉默** | Go 编译期 stdout/stderr 被吞，air 看不到进度 | `tee ./tmp/encv-go-run.log` 写文件，沙箱外 `tail -f` 看 |
+| **沙箱冷编 5+ 分钟** | go mod 40+ 模块 + 沙箱 CPU 慢 | `delay=5000` + `grace_delay=10000` + `readyTimeoutMs=600000` |
+| **encv 启动需 start 子命令** | `./tmp/encv` 裸跑 → help 后 exit 0 | cmd 用 `go run ./cmd/encv start`（带 start） |
+| **Zombie 累积** | pm2 SIGKILL preview-gateway → air/go run 子进程 orphan | `kill-orphan-children.sh` 14 步清理（见 §九） |
+
+### 8.3 为什么不再用 go build + full_bin
+
+| 维度 | go build + full_bin | go run + tee |
+|------|--------------------|--------------|
+| 用户本地开发体验 | ❌ 多一步编译产物 | ✅ 一条命令 |
+| 沙箱冷编可见性 | ✅ `go build` 输出明确 | ✅ tee 写 log 文件 |
+| 编译产物 | ✅ `./tmp/encv` fixed binary | ⚠️ 临时 exe，位置不固定 |
+| Air 重启速度 | ✅ 极快（只重启 binary） | ⚠️ 重新编译（但有 cache） |
+| **结论** | 历史方案，Windows 本地也用 go run | **沙箱验证通过，2026-06-10 切换** |
+
+---
+
+## 九、沙箱 Zombie 强杀（14 步 + 报告）
+
+> **沙箱特有**：`init(1)` 不主动 reap orphan 进程 + go build/run 经常卡 Sl 状态（pipe 死锁，0% CPU 永远不醒）。
+
+### 9.1 调用
+
+```bash
+bash /workspace/scripts/kill-orphan-children.sh         # 静默
+bash /workspace/scripts/kill-orphan-children.sh --report # 报告残留
+```
+
+### 9.2 14 步清理流程
+
+| 步骤 | 目标 | 关键命令 |
+|------|------|---------|
+| 1 | pm2 监管 | `pm2 kill` |
+| 2 | air | `pkill -9 -f air` |
+| 3 | go build/run/test | `pkill -9 -f "go build\|go run\|go test"` |
+| 4 | Go compile worker | `pkill -9 -f "go-build\|/tmp/go-build"` |
+| 5 | encv 二进制 | `pkill -9 -x encv` |
+| 6 | vite (8100/5174) | `pkill -9 -f "vite/bin/vite.js"` |
+| 7 | preview-gateway + stub | `pkill -9 -f "preview-gateway\|openpreview-stub"` |
+| 8 | openlist | `pkill -9 -x openlist` |
+| 9 | PPID=1 孤儿兜底 | ps 抓 PPID=1 + 含 air/go/vite/encv 模式 |
+| 10 | Sl+0%CPU 卡死兜底 | ps 抓 stat=Sl + pcpu<1 + comm=go/air/vite |
+| 11 | Go 工具链辅助 | `pkill -9 -x compile\|asm\|cgo\|vet` |
+| 12 | **stat=Z 真 zombie** | 给 PPID 发 SIGCHLD 让 init reap |
+| 13 | pnpm/npx | `pkill -9 -f pnpm\|npx` |
+| 14 | 二次扫描 orphan | sleep 1 后再扫一次（防止新孤儿） |
+
+### 9.3 集成点
+
+| 文件 | 时机 |
+|------|------|
+| [/workspace/scripts/setup-sandbox-env.sh](file:///workspace/scripts/setup-sandbox-env.sh) | 步骤 pre-0（开头清残留）+ 末尾 --report（最终报告前清干净） |
+| [/workspace/scripts/previews.sh](file:///workspace/scripts/previews.sh) | restart / kill 子命令 |
+| 用户手动 debug | 任何时候手动跑 |
+
+### 9.4 验证（2026-06-10 实测）
+
+```
+$ pm2 start /workspace/ecosystem.config.cjs
+$ sleep 30
+$ curl -s http://127.0.0.1:16666/__gateway/health
+{
+  "ok": true,
+  "upstreams": {
+    "encv-go": { "alive": true, "latency_ms": 5 },       # go run 路径
+    "encv-mobile-vite": { "alive": true, "latency_ms": 9 },
+    "plugin-openlist-web": { "alive": false },           # 按需未启
+    "openlist-direct": { "alive": false }                # 按需未启
+  }
+}
+$ bash scripts/kill-orphan-children.sh --report
+[kill-orphan] ✅ 全部清理干净
+```
+
+### 9.5 其他相关 spec / 文件
+
+| 文件 | 作用 |
+|------|------|
 | [/workspace/app/preview-gateway/README.md](file:///workspace/app/preview-gateway/README.md) | 网关 + 路由 + 健康检查文档 |
 | [/workspace/.trae/specs/unify-sandbox-preview-port/spec.md](file:///workspace/.trae/specs/unify-sandbox-preview-port/spec.md) | 端口决策 D1-D9 原始 spec |
 | [/workspace/.trae/documents/plan-fix-sandbox-preview-env-injection.md](file:///workspace/.trae/documents/plan-fix-sandbox-preview-env-injection.md) | 本次 env 注入修复 plan（2026-06-05） |
 | [/workspace/internal/config/config.go](file:///workspace/internal/config/config.go) | `ApplyMobileOverlay` 触发条件：`ENCV_MOBILE=1 \|\| ENCV_DEV_PREVIEW=1`（L292-294） |
+
+---
+
+## 十、DOM 锚定教训（2026-06-10 用户痛批后写入）
+
+> **核心原则：用户发的 DOM 节点自带完整属性（class / slot / 子元素 / 文本），先全字段匹配再下手；不要只看 class 名推断。**
+
+### 10.1 反模式：靠"语义猜"找文件
+
+**症状**：用户发了 `ion-item` 包含 `<h3>状态</h3>` + `<ion-badge color="danger">离线</ion-badge>` + `<p class="connection-error">Connection closed (code: 1006)</p>`，**直觉**以为是 `Settings.vue`（顶层 Settings tab），结果：
+- `Settings.vue` 顶层只有一个 ion-card 状态摘要（"后端服务" 标题）
+- 真正的"状态"ion-item 在 **`ServerDetail.vue`**（详情二级页面）
+
+**根因**：
+- 用户发的 DOM 节点是**正在显示的**视图，需要找的是**当前**路由匹配的组件
+- 我**没**问 / **没**用 `route.path` 推断
+- 只看 "settings.xxx" 翻译键字符串（`'settings.status'`）→ 误以为是 Settings.vue 顶层
+
+**正确做法（按优先级）**：
+
+1. **路由推断**：DOM 在 tab "/tabs/settings/server" → ServerDetail.vue，不是 Settings.vue
+2. **完整文本匹配**："状态" h3 标题在多个文件都有，但 `<p class="connection-error">` + `class="server-controls"` 两个独有 class 唯一锁定 `ServerDetail.vue`
+3. **不要只靠翻译键**：`t('settings.status')` 字符串重复使用是设计意图（i18n 复用），不等于"只在 Settings.vue"
+
+### 10.2 DOM 锚定 checklist
+
+用户发 DOM 时：
+
+- [ ] **路由推断**：当前页 URL path → 对应 vue 组件
+- [ ] **唯一 class / slot 锚定**：`class="server-controls"` / `slot="end"` / `role="..."` 等独有属性
+- [ ] **完整文本锚定**：`<h3>状态</h3>` + 兄弟节点（不能只看 h3）
+- [ ] **不要靠** `t('settings.xxx')` 推断组件位置
+
+### 10.3 历史踩坑案例
+
+| 日期 | 错误 | 后果 |
+|------|------|------|
+| 2026-06-10 | 看到 "状态" + "离线" → 猜 Settings.vue | 找不到 `.server-controls` 样式、找不到 `connection-error` p 元素 → 改错地方 |
+| 2026-06-10 | 看到 "settings.status" 翻译键 → 猜 Settings.vue | i18n 复用不等于组件复用，**翻译键 ≠ 组件位置** |
+| 2026-06-10 | `python3 -c "..."` 测 WS upgrade | 阻塞命令 + 探到 502 才知道 trae 反代 :16000 不支持 WS（应该用持久化脚本） |
+
+### 10.4 修复本案例用的查找手法
+
+```bash
+# 1. 锚定独有 class / slot
+grep -rln "server-controls" /workspace/app/encv-mobile/src/views/   # ServerDetail.vue
+grep -rln "connection-error" /workspace/app/encv-mobile/src/      # ServerDetail.vue + useServerStatus.ts
+
+# 2. 锚定完整文本
+grep -rln "状态.*h3\|<h3>.*状态" /workspace/app/encv-mobile/src/views/  # ServerDetail.vue L30
+
+# 3. 路由路径推断
+grep -rln "tabs/settings/server\b" /workspace/app/encv-mobile/src/router/  # ServerDetail 路由
+```
+
+**绝对不能做的**：
+- ❌ `grep -rln "settings.status" src/` 找翻译键（多个文件都有）
+- ❌ "Settings 是 i18n namespace → 一定是 Settings.vue" 语义猜
+- ❌ 改完不 reload DOM 比对（用户反馈之前不发前后截图）

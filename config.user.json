@@ -27,7 +27,11 @@
   },
   "output_path": "./output",
   "password": "my-encv_key",
-  "plugin_settings": {},
+  "plugin_settings": {
+    "video": {
+      "allow_no_reencode": true
+    }
+  },
   "proxy": {
     "disable_signature_verification": false,
     "sites": {
@@ -51,6 +55,10 @@
     "port": 2025
   },
   "strict_deprecated_version": false,
+  "v4_cipher_mode": 0,
+  "v4_compression_mode": "",
+  "v4_enable_hmac": false,
+  "v4_zstd_block_size": 0,
   "webdav": {
     "dir": "./output",
     "password": "123456",

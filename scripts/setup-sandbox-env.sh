@@ -47,6 +47,20 @@ step() { echo ""; printf "${C}==>${N} %s\n" "$*"; }
 FAILED=0
 
 # ============================================================================
+# 步骤 pre-0: 清理沙箱内残留 orphan 进程（必须）
+# ============================================================================
+# 沙箱特有：上次 preview 跑过留下 zombie air / go build / vite 进程
+# 这些进程不抢 CPU 看起来无害，但：
+#   1. go build 卡 Sl 状态会无限占着 /tmp/go-build-XXX 临时目录
+#   2. preview-gateway / air 占着 :16666 / :2025 端口导致本脚本构建后无法启 pm2
+#   3. 多 zombie 累积会让 go test / go build 性能下降
+# 杀干净后才能进入正常的 install / build 流程
+if [[ -x "${SCRIPT_DIR}/kill-orphan-children.sh" ]]; then
+  log "清理沙箱 orphan 进程（kill-orphan-children.sh）..."
+  bash "${SCRIPT_DIR}/kill-orphan-children.sh" || true
+fi
+
+# ============================================================================
 # 步骤 0/5: 前置检查
 # ============================================================================
 step "0/5 前置检查（go / node / pnpm / git / curl / cmake / java）"
@@ -331,6 +345,11 @@ EOF
 
 if [[ $FAILED -gt 0 ]]; then
   warn "⚠️  共 ${FAILED} 步非致命失败，请查看上方 WARN 行"
-  exit 0
 fi
+
+# 报告前最后再清一次 orphan（install/build 过程中可能 spawn 子进程）
+if [[ -x "${SCRIPT_DIR}/kill-orphan-children.sh" ]]; then
+  bash "${SCRIPT_DIR}/kill-orphan-children.sh" --report || true
+fi
+
 ok "🎉 沙箱环境就绪"

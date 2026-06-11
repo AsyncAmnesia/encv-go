@@ -137,7 +137,7 @@
           <div class="info-grid">
             <div class="info-row">
               <span class="info-label">{{ t('fileInfo.version') }}</span>
-              <span class="info-value">V{{ containerData.version ?? '?' }}</span>
+              <span class="info-value">{{ formatContainerVersion(containerData.version) || '?' }}</span>
             </div>
             <div class="info-row">
               <span class="info-label">{{ t('fileInfo.containerId') }}</span>
@@ -196,6 +196,7 @@ import { getApiBaseUrl, formatFileSize, proxySafeEncode, getExternalStreamUrl } 
 import { predictPlugin } from '@/api/encv'
 import type { PredictPluginResponse } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
+import { formatContainerVersion } from '@/constants/containerVersion'
 import { isAlistEncrypted, loadDecodedName, getDecodedName } from '@/features/alist-encrypt/useAlistEncrypt'
 import type { FileItem } from '@/api/encv'
 

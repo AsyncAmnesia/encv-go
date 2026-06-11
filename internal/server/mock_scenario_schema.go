@@ -553,7 +553,11 @@ func (s *LoadedScenario) ConvertToMockScenario() *MockScenario {
 		Keywords:    s.Keywords,
 		Regex:       s.Regex,
 		Steps:       make([]MockStep, 0, len(s.Steps)),
+		Rounds:      s.Rounds,
+		TotalRounds: s.Rounds, // alias：spec §三.5 兼容性
 	}
+
+	// RoundContext（如未在 YAML 显式声明则保持 nil，与原 Go 字面量零值一致）
 
 	// Presets
 	for _, p := range s.Presets {

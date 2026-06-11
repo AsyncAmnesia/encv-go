@@ -3,6 +3,30 @@ import vue from '@vitejs/plugin-vue'
 import path from 'node:path'
 
 // =============================================================================
+// ⚠️ 防御机制：禁止直接 vite 启动（必须通过 PM2 → preview-gateway）
+// =============================================================================
+//
+// 本项目架构：preview-gateway(:16666) spawn vite(:8100) 作为子进程。
+// 直接运行 vite 会导致：
+//   ① ENCV_DEV_PREVIEW / ENCV_MOBILE 等 env 未注入
+//   ② Vite 自动扫描 plugin-openlist/web/index.html → 找不到 src/views/ 下文件报错
+//   ③ HMR 在沙箱环境无法工作（缺 gateway 的 dynamicHmrHostPlugin Host 头透传）
+//
+// 合法启动链路：
+//   pm2 start ecosystem.config.cjs
+//     → preview-gateway (spawn vite with SPAWN_VITE=1 env)
+//       → vite 正常启动
+//
+// 非法启动方式会被此插件拦截并抛出异常 + 给出正确用法。
+
+// ⚠️ 防御：dev 模式启动守卫
+//  - 详细逻辑见 src/lib/dev-start-guard.ts（含 build/CI 跳过规则）
+//  - 单测见 src/composables/__tests__/dev-start-guard.test.ts
+//  - 文件必须在 src/ 下 — vite 5/6/7/8 默认不 transform src/ 外的 .ts，
+//    scripts/ 下的 .ts 会被 vite 当 external → 守卫拿不到 devStartGuard 函数
+import { devStartGuard } from './src/lib/dev-start-guard'
+
+// =============================================================================
 // ENCV Mobile Vite Config
 // =============================================================================
 // D9 决策（spec/unify-sandbox-preview-port §3.1）: vite 是纯净 SPA dev server，
@@ -210,6 +234,7 @@ function dynamicHmrHostPlugin(): Plugin {
 
 export default defineConfig({
   plugins: [
+    devStartGuard(),  // ⚠️ 防御：禁止直接 vite 启动，必须通过 PM2 → preview-gateway
     vue(),
     dynamicHmrHostPlugin(),
     // ────────────────────────────────────────────────────────────────────────
@@ -260,6 +285,12 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
+      // ⚠️ 防御：显式声明入口 HTML，防止 Vite 自动扫描 plugin-openlist 等子目录的 index.html
+      // 导致去 src/views/ 找 OpenListWebView.vue 等不存在的文件（子项目有自己的 vite 配置和 @ alias）
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        'debug-decrypt': path.resolve(__dirname, 'public/debug-decrypt.html'),
+      },
       output: {
         // Vite 8 (rolldown) requires manualChunks to be a function, not an object.
         manualChunks(id: string) {

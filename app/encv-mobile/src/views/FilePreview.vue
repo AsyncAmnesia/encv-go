@@ -96,7 +96,7 @@
             <div class="info-grid" v-if="containerInfo && !containerInfo.error">
               <div class="info-row">
                 <span class="info-label">{{ t('fileInfo.version') }}</span>
-                <span class="info-value">V{{ containerInfo.version ?? '?' }}</span>
+                <span class="info-value">{{ formatContainerVersion(containerInfo.version) || '?' }}</span>
               </div>
               <div class="info-row">
                 <span class="info-label">{{ t('fileInfo.containerId') }}</span>
@@ -163,6 +163,7 @@ import {
 import { getFileStreamUrl, getFileCategory, getFileExtension, formatFileSize, fetchTextPreviewExts, getApiBaseUrl, getFilePreviewUrl, proxySafeEncode } from '@/api/encv'
 import { openPlayer, isNative } from '@/plugins/GoProcess'
 import { useI18n } from '@/composables/useI18n'
+import { formatContainerVersion } from '@/constants/containerVersion'
 
 type PreviewType = 'image' | 'pdf' | 'text' | 'container' | 'unsupported'
 

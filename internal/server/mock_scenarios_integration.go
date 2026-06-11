@@ -53,11 +53,9 @@ func (s *Server) loadScenariosFromAgentConfig() {
 	s.scenariosDir = dir
 
 	loader := NewScenarioLoader(dir)
-	// Go 字面量 fallback：dir 不存在 / 空 / 全无效时返回 builtin 剧本
-	loader.GoFallback = func() []*MockScenario {
-		eng := NewMockEngine()
-		return eng.AllScenarios()
-	}
+	// Go 字面量 fallback 已废弃：剧本现在来自 mock_scenario_embedded.go 的 mockScenariosBuiltin。
+	// 不再设置 GoFallback —— 若 YAML dir 加载失败 / 目录为空，loader.LoadAll 内部走 nil fallback 路径。
+	_ = loader // loader 留作未来 Go fallback 重新注入用
 	if err := loader.LoadAll(context.Background()); err != nil {
 		slog.Error("mock scenarios: LoadAll failed, keeping builtin", "dir", dir, "error", err)
 		return

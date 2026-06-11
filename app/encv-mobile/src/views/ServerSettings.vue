@@ -252,10 +252,13 @@ const isManualValid = computed(() => {
 })
 
 function sourceLabel(s: ProbeResult['source']): string {
+  // 覆盖 ProbeResult['source'] 的全部 4 个 union 值 + default 兜底（TS2366）
   switch (s) {
     case 'cached': return t('settings.server.sourceCached') || '已缓存'
+    case 'current-origin': return t('settings.server.sourceCurrentOrigin') || '当前页面'
     case 'loopback': return t('settings.server.sourceLoopback') || 'loopback'
     case 'lan-candidate': return t('settings.server.sourceLan') || '局域网'
+    default: return s
   }
 }
 

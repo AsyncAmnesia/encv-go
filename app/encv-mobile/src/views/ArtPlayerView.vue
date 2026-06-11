@@ -18,26 +18,24 @@
       </div>
 
       <div v-else-if="error" class="error-state">
-        <ion-icon :icon="alertCircle" class="error-icon"></ion-icon>
-        <h3>{{ error }}</h3>
-        <ion-button @click="retryPlay">
-          <ion-icon :icon="refresh" slot="start"></ion-icon>
-          {{ t('player.retryPlay') }}
-        </ion-button>
+        <ErrorStateCard
+          :error-type="errorType"
+          :title="error"
+          :details="errorDetails"
+          @retry="retryPlay"
+        />
       </div>
 
       <div v-else class="player-container">
         <div v-if="!playerError" ref="artContainer" class="video-player"></div>
 
         <div v-if="playerError" class="player-error">
-          <ion-icon :icon="alertCircle" class="error-icon"></ion-icon>
-          <h3>{{ t('player.playError') }}</h3>
-          <p>{{ playerErrorMsg }}</p>
-          <p v-if="streamUrl" class="debug-url">{{ streamUrl }}</p>
-          <ion-button @click="retryPlay">
-            <ion-icon :icon="refresh" slot="start"></ion-icon>
-            {{ t('player.retryPlay') }}
-          </ion-button>
+          <ErrorStateCard
+            :error-type="playerErrorType"
+            :title="t('player.playError')"
+            :details="playerErrorDetails"
+            @retry="retryPlay"
+          />
         </div>
 
         <div v-if="!playerError && !isFullscreen" class="video-info">
@@ -67,11 +65,12 @@ import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton,
   IonIcon, IonContent, IonChip, IonSpinner,
 } from '@ionic/vue'
-import { arrowBack, alertCircle, refresh, resize, time } from 'ionicons/icons'
+import { arrowBack, resize, time } from 'ionicons/icons'
 import { getFileStreamUrl, getAlistEncryptStreamUrl } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
 import { isNative } from '@/plugins/GoProcess'
+import ErrorStateCard, { type ErrorType, type ErrorDetailItem } from '@/components/ErrorStateCard.vue'
 
 const TAG = '[ArtPlayer]'
 
@@ -81,6 +80,8 @@ const { t } = useI18n()
 
 const loading = ref(true)
 const error = ref('')
+const errorType = ref<ErrorType>('unknown')
+const errorDetails = ref<ErrorDetailItem[]>([])
 const filePath = ref('')
 const fileName = ref('')
 const overrideStreamUrl = ref('')
@@ -88,10 +89,14 @@ const alistPath = ref('')
 const alistPassword = ref('')
 const playerError = ref(false)
 const playerErrorMsg = ref('')
+const playerErrorType = ref<ErrorType>('playback_failed')
+const playerErrorDetails = ref<ErrorDetailItem[]>([])
 const isFullscreen = ref(false)
 const mediaInfo = ref({ duration: '', resolution: '' })
 const artContainer = ref<HTMLDivElement | null>(null)
 let art: Artplayer | null = null
+let initRetryCount = 0
+const MAX_INIT_RETRY = 4
 
 const streamUrl = computed(() => {
   if (overrideStreamUrl.value) return overrideStreamUrl.value
@@ -165,34 +170,120 @@ async function handleFullscreenExit() {
   }
 }
 
+/**
+ * 构建错误详情数组 —— 给 ErrorStateCard 渲染调试信息
+ * 包含：URL、文件路径、媒体类型猜测、当前网络状态、readyState、错误阶段
+ */
+function buildPlayerErrorDetails(networkState?: number, readyState?: number, src?: string, stage?: string): ErrorDetailItem[] {
+  const items: ErrorDetailItem[] = []
+  if (fileName.value) items.push({ label: '文件名', value: fileName.value })
+  if (filePath.value) items.push({ label: '容器路径', value: filePath.value })
+  items.push({ label: '媒体类型', value: detectMediaType(filePath.value) })
+  if (streamUrl.value) items.push({ label: '流地址', value: streamUrl.value, copyable: true })
+  if (src) items.push({ label: 'video.src', value: src })
+  if (networkState !== undefined) {
+    items.push({ label: 'networkState', value: networkStateToText(networkState) })
+  }
+  if (readyState !== undefined) {
+    items.push({ label: 'readyState', value: readyStateToText(readyState) })
+  }
+  if (stage) items.push({ label: '错误阶段', value: stage })
+  items.push({ label: '时间戳', value: new Date().toISOString() })
+  return items
+}
+
+/**
+ * 推断错误类型
+ * - networkState=3 NETWORK_NO_SOURCE → network_error（HTML fallback / 404 / 网关拦截）
+ * - readyState=0 + network error → network_error
+ * - mp4 解码错 → format_error
+ * - trae 网关 401/HTML 响应 → gateway_error
+ */
+function detectErrorType(networkState?: number, readyState?: number): ErrorType {
+  if (networkState === 3 || (readyState === 0 && networkState === 3)) {
+    return 'network_error'
+  }
+  if (networkState === 2) return 'format_error'
+  if (readyState === 0) return 'network_error'
+  return 'playback_failed'
+}
+
+function networkStateToText(n: number): string {
+  return [
+    '0 NETWORK_EMPTY（尚未初始化）',
+    '1 NETWORK_IDLE（空闲）',
+    '2 NETWORK_LOADING（加载中）',
+    '3 NETWORK_NO_SOURCE（找不到资源）',
+  ][n] || `${n} (未知)`
+}
+
+function readyStateToText(r: number): string {
+  return [
+    '0 HAVE_NOTHING（无数据）',
+    '1 HAVE_METADATA（有元数据）',
+    '2 HAVE_CURRENT_DATA（当前帧可用）',
+    '3 HAVE_FUTURE_DATA（未来帧可用）',
+    '4 HAVE_ENOUGH_DATA（数据充足）',
+  ][r] || `${r} (未知)`
+}
+
+function detectMediaType(path: string): string {
+  if (!path) return '未知'
+  const ext = path.split('.').pop()?.toLowerCase() || ''
+  const map: Record<string, string> = {
+    mp4: 'video/mp4',
+    m4v: 'video/x-m4v',
+    webm: 'video/webm',
+    mov: 'video/quicktime',
+    mkv: 'video/x-matroska',
+    avi: 'video/x-msvideo',
+    ts: 'video/mp2t',
+    mp3: 'audio/mpeg',
+    m4a: 'audio/mp4',
+    aac: 'audio/aac',
+    wav: 'audio/wav',
+    flac: 'audio/flac',
+    ogg: 'audio/ogg',
+  }
+  return map[ext] || `${ext || '(无后缀)'} (未识别)`
+}
+
 async function initArtPlayer() {
-  console.info(TAG, 'initArtPlayer called')
+  console.info(TAG, 'initArtPlayer called, retry=', initRetryCount)
   const { default: Artplayer } = await import('artplayer')
-  console.info(TAG, 'artContainer:', artContainer.value ? `exists (${artContainer.value.clientWidth}x${artContainer.value.clientHeight})` : 'null')
-  console.info(TAG, 'streamUrl:', streamUrl.value || '(empty)')
-  console.info(TAG, 'filePath:', filePath.value || '(empty)')
 
-  const styleEl = document.getElementById('artplayer-style')
-  console.info(TAG, 'artplayer-style element:', styleEl ? `exists (${styleEl.textContent?.length ?? 0} chars)` : 'NOT FOUND')
-
+  // ★ 关键：artContainer 必须有真实 DOM 节点。Vue 嵌套 v-if + nextTick 偶发失败，
+  // 这里加重试机制确保万无一失。
   if (!artContainer.value) {
-    console.error(TAG, 'initArtPlayer: artContainer is null, cannot init')
+    if (initRetryCount < MAX_INIT_RETRY) {
+      initRetryCount++
+      const delay = [50, 150, 350, 800][initRetryCount - 1] ?? 500
+      console.warn(TAG, `artContainer is null, retry ${initRetryCount}/${MAX_INIT_RETRY} in ${delay}ms`)
+      await new Promise((r) => setTimeout(r, delay))
+      return initArtPlayer()
+    }
+    // 实在拿不到 → 显示错误
+    console.error(TAG, 'initArtPlayer: artContainer is null after retries, cannot init')
     playerError.value = true
+    playerErrorType.value = 'init_failed'
     playerErrorMsg.value = '播放器容器未就绪'
+    playerErrorDetails.value = buildPlayerErrorDetails(undefined, undefined, undefined, 'init:artContainer-null')
     return
   }
 
   if (!streamUrl.value) {
     console.error(TAG, 'initArtPlayer: streamUrl is empty, cannot init')
     playerError.value = true
+    playerErrorType.value = 'init_failed'
     playerErrorMsg.value = '播放地址为空'
+    playerErrorDetails.value = buildPlayerErrorDetails(undefined, undefined, undefined, 'init:empty-streamUrl')
     return
   }
 
   const containerWidth = artContainer.value.clientWidth || window.innerWidth
   artContainer.value.style.minHeight = '200px'
   artContainer.value.style.maxHeight = `${window.innerHeight - 56}px`
-  console.info(TAG, 'container size:', containerWidth)
+  console.info(TAG, 'container size:', containerWidth, '| streamUrl:', streamUrl.value)
 
   try {
     art = new Artplayer({
@@ -229,7 +320,9 @@ async function initArtPlayer() {
   } catch (e: any) {
     console.error(TAG, 'Artplayer constructor failed:', e?.message || String(e))
     playerError.value = true
+    playerErrorType.value = 'init_failed'
     playerErrorMsg.value = `ArtPlayer 初始化失败: ${e?.message || String(e)}`
+    playerErrorDetails.value = buildPlayerErrorDetails(undefined, undefined, undefined, `init:throw:${e?.name || 'Error'}`)
     return
   }
 
@@ -286,7 +379,9 @@ async function initArtPlayer() {
     const currentSrc = video?.currentSrc
     console.error(TAG, 'Artplayer error event, networkState:', networkState, 'readyState:', readyState, 'src:', src, 'currentSrc:', currentSrc)
     playerError.value = true
-    playerErrorMsg.value = `播放失败 (network=${networkState}, ready=${readyState})`
+    playerErrorType.value = detectErrorType(networkState, readyState)
+    playerErrorMsg.value = `播放失败 (network=${networkState ?? '?'}, ready=${readyState ?? '?'})`
+    playerErrorDetails.value = buildPlayerErrorDetails(networkState, readyState, currentSrc || src, 'play:error-event')
     showToast({ message: t('player.playFailed', { name: fileName.value }), duration: 3000, color: 'danger' })
   })
 
@@ -319,7 +414,9 @@ function retryPlay() {
   console.info(TAG, 'retryPlay called')
   playerError.value = false
   playerErrorMsg.value = ''
+  playerErrorDetails.value = []
   mediaInfo.value = { duration: '', resolution: '' }
+  initRetryCount = 0
   destroyArtPlayer()
   nextTick(() => initArtPlayer())
 }
@@ -333,6 +430,7 @@ async function startPlayback() {
   loading.value = false
   playerError.value = false
   playerErrorMsg.value = ''
+  playerErrorDetails.value = []
   mediaInfo.value = { duration: '', resolution: '' }
   await nextTick()
   console.info(TAG, 'startPlayback: nextTick done, artContainer:', artContainer.value ? 'exists' : 'null')
@@ -353,6 +451,11 @@ onMounted(() => {
 
   if (!filePath.value && !overrideStreamUrl.value && !alistPath.value) {
     error.value = 'No file provided'
+    errorType.value = 'init_failed'
+    errorDetails.value = [
+      { label: '错误阶段', value: 'mount:no-input' },
+      { label: 'route.query', value: JSON.stringify(route.query) },
+    ]
     loading.value = false
     return
   }
@@ -418,10 +521,9 @@ onBeforeUnmount(async () => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100%;
-  padding: 24px;
-  text-align: center;
-  color: var(--encv-text-secondary);
+  min-height: 100%;
+  padding: 24px 16px;
+  background: linear-gradient(180deg, transparent 0%, var(--ion-background-color, #fff) 100%);
 }
 
 .player-container {
@@ -460,24 +562,8 @@ onBeforeUnmount(async () => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 30vh;
-  padding: 24px;
-  text-align: center;
-  color: var(--encv-text-secondary);
-}
-
-.debug-url {
-  font-size: 11px;
-  color: var(--encv-text-secondary);
-  word-break: break-all;
-  margin-top: 8px;
-  opacity: 0.7;
-}
-
-.error-icon {
-  font-size: 64px;
-  margin-bottom: 16px;
-  color: var(--ion-color-danger);
-  opacity: 0.7;
+  min-height: 50vh;
+  padding: 24px 16px;
+  width: 100%;
 }
 </style>

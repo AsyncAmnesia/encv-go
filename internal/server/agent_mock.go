@@ -165,27 +165,16 @@ func (e *MockEngine) SetRealExecutor(fn func(ctx context.Context, toolName, args
 // 构造函数 + 辅助方法
 // ════════════════════════════════════════════════════════════════
 
-// NewMockEngine 返回预加载 12 个内置剧本的引擎。
+// NewMockEngine 返回预加载所有内置剧本的引擎（v1 + v2 共 20 个，编译期从 YAML 嵌入）。
+//
+// 单一数据源：剧本只存在于 internal/server/mock_scenarios/builtin/*.yaml，
+// 通过 //go:embed 在编译期嵌入二进制。Go 字面量剧本已废弃（硬编码路径/大小/计数是反模式）。
+//
 // v2 场景（mockScenariosV2）由 MockEngineV2 路径消费，**不**追加到 builtinScenarios
-// （保持 v1 场景数 = 12 不变，避免破坏现有 v1 测试）。
+// （保持 builtin 集合 v1+v2 各自有清晰边界；测试可独立断言）。
 func NewMockEngine() *MockEngine {
 	e := &MockEngine{}
-	e.builtinScenarios = []*MockScenario{
-		// 按优先级排序：精确 > 关键词 > 正则，但同优先级内顺序无影响（Match 按规则重排）
-		scenarioDefaultFriendly(),
-		scenarioListFilesQuery(),
-		scenarioEncryptVideo(),
-		scenarioReadAndSummarize(),
-		scenarioMultiStepSearch(),
-		scenarioStreamingError(),
-		scenarioTruncationLongText(),
-		scenarioReasoningChain(),
-		scenarioToolCallWithArgs(),
-		scenarioMultiToolParallel(),
-		scenarioContextExhausted(),
-		scenarioChineseGreeting(),
-		scenarioComplexWorkflow(),
-	}
+	e.builtinScenarios = append(e.builtinScenarios, mockScenariosBuiltin...)
 	e.rebuildIndex()
 	return e
 }
@@ -317,14 +306,19 @@ func (e *MockEngine) fallbackForMode(mode string) *MockScenario {
 }
 
 // defaultFriendly 返回内置 default_friendly 剧本（不存在则 panic — 配置错误）。
+//
+// 依赖：NewMockEngine 从 mockScenariosBuiltin 填充 builtinScenarios，
+// 而 mockScenariosBuiltin 在 init() 期从 mock_scenarios/builtin/*.yaml 加载，
+// 其中 01_default_friendly.yaml 必含 id="default_friendly"。
+// 如果 YAML 集合未含此剧本 → init() 已 panic（embed 文件系统错误或 YAML 解析失败）。
 func (e *MockEngine) defaultFriendly() *MockScenario {
 	for _, sc := range e.builtinScenarios {
 		if sc.ID == "default_friendly" {
 			return sc
 		}
 	}
-	// 不会发生：NewMockEngine 必定包含 default_friendly
-	return scenarioDefaultFriendly()
+	// 不会发生：mockScenariosBuiltin 必含 default_friendly
+	panic("mock engine: builtin scenarios missing 'default_friendly' (YAML 01_default_friendly.yaml 缺失或解析失败)")
 }
 
 // matchInList 在剧本列表中按优先级匹配（精确 > 关键词 > 正则）。

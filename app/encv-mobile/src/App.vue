@@ -18,13 +18,90 @@
       onErrorCaptured 捕获子组件的错误 → 置 rootError=true → 渲染 fallback
       注意：service-guard-blocked 优先（service guard 是更上游的拦截）
     -->
-    <div v-else-if="rootError" class="root-error-fallback">
+    <div v-else-if="rootError" class="root-error-fallback error-state">
       <div class="error-content">
         <ion-icon :icon="bugOutline" class="error-icon"></ion-icon>
         <h2>组件渲染错误</h2>
         <p class="error-message">某个子组件崩溃了。请截图上报给开发者。</p>
-        <code class="error-detail">{{ rootErrorMessage }}</code>
-        <pre v-if="rootErrorStack" class="error-hint">{{ rootErrorStack }}</pre>
+
+        <!--
+          🆕 错误 UI 拆两栏（2026-06-08 重构）：
+            - 上（红色）error-detail-panel：详细摘要 + 上下文（错误类型 / info / 时间戳 /
+              浏览器模式 / baseUrl 状态），一眼看出错误场景
+            - 下（灰色）error-stack-panel：原始堆栈 + 沙箱排错辅助信息链接
+          拆两栏但**不**显示 message 和 stack 的内容重叠：
+            - error-detail 显示 "summary + trace"（来自 splitErrorMessage）
+            - error-stack 显示 "raw stack + 沙箱文档链接"（独立信息）
+        -->
+
+        <!-- 上：红色 detail 区域（详细信息） -->
+        <section class="error-detail-panel">
+          <header class="error-detail-header">
+            <ion-icon :icon="alertCircleOutline" class="error-detail-icon"></ion-icon>
+            <span class="error-detail-title">错误摘要</span>
+            <button class="copy-btn" @click="copyErrorSummary" aria-label="复制摘要">
+              <ion-icon :icon="copyOutline"></ion-icon>
+            </button>
+          </header>
+          <div class="error-detail-body">
+            <div class="error-summary-line">
+              <span class="error-summary-label">类型</span>
+              <code class="error-summary-value">{{ rootErrorSummary }}</code>
+            </div>
+            <div class="error-summary-line">
+              <span class="error-summary-label">触发阶段</span>
+              <code class="error-summary-value">{{ rootErrorInfo }}</code>
+            </div>
+            <div class="error-summary-line" v-if="rootErrorTime">
+              <span class="error-summary-label">时间</span>
+              <code class="error-summary-value">{{ rootErrorTime }}</code>
+            </div>
+            <div class="error-summary-line">
+              <span class="error-summary-label">运行模式</span>
+              <code class="error-summary-value">{{ rootErrorContext.mode }}</code>
+            </div>
+            <div class="error-summary-line" v-if="rootErrorContext.location">
+              <span class="error-summary-label">当前 origin</span>
+              <code class="error-summary-value">{{ rootErrorContext.location }}</code>
+            </div>
+            <!-- 探测链 trace（来自 useApiBaseProbe " | trace: " 拆分） -->
+            <div v-if="rootErrorDetails" class="error-trace-block">
+              <div class="error-trace-label">探测链 trace</div>
+              <pre class="error-trace-body">{{ rootErrorDetails }}</pre>
+            </div>
+          </div>
+        </section>
+
+        <!-- 下：灰色 stack 区域（原始堆栈 + 排错文档） -->
+        <section class="error-stack-panel">
+          <header class="error-stack-header">
+            <ion-icon :icon="codeSlashOutline" class="error-stack-icon"></ion-icon>
+            <span class="error-stack-title">原始堆栈</span>
+            <button class="copy-btn" @click="copyErrorStack" aria-label="复制堆栈">
+              <ion-icon :icon="copyOutline"></ion-icon>
+            </button>
+          </header>
+          <pre v-if="rootErrorStack" class="error-stack-body">{{ rootErrorStack }}</pre>
+          <p v-else class="error-stack-empty">（无堆栈）</p>
+
+          <footer class="error-stack-footer">
+            <div class="error-stack-hints">
+              <strong>排错指引</strong>
+              <ul>
+                <li v-if="rootErrorContext.mode === 'mock-browser'">
+                  <span class="hint-tag">preview-only</span>
+                  你正在 <code>mock 浏览器</code>（trae 网关层 mock）里查看，<strong>API 调用不通是预期</strong>。
+                  trae 网关层（沙箱外）拦截 <code>/api/*</code> 和 <code>/health</code> 返回 <code>401 missing session token</code>，沙箱内不可绕过。
+                  完整功能请在 <strong>Android 真机</strong> 或 <strong>本地 dev</strong>（<code>localhost:16666</code>）测试。
+                </li>
+                <li>沙箱外网访问限制见 <code>trae_web_sandbox_network.md §9.1</code>（mock 浏览器无 Network 面板）</li>
+                <li>401 区分铁律：<code>text/html</code> = trae 网关，<code>application/json</code> = 业务端（见 <code>§9.1.2</code>）</li>
+                <li>把以上"原始堆栈"和"错误摘要"完整截图给开发者</li>
+              </ul>
+            </div>
+          </footer>
+        </section>
+
         <ion-button @click="reloadPage" class="error-reload-btn">
           <ion-icon :icon="refreshOutline" slot="start"></ion-icon>
           重新加载
@@ -38,9 +115,9 @@
 <script setup lang="ts">
 import { ref, onMounted, onErrorCaptured, onUnmounted } from 'vue'
 import { IonApp, IonRouterOutlet, IonIcon, IonButton } from '@ionic/vue'
-import { warningOutline, refreshOutline, bugOutline } from 'ionicons/icons'
+import { warningOutline, refreshOutline, bugOutline, alertCircleOutline, codeSlashOutline, copyOutline } from 'ionicons/icons'
 import { useTheme } from '@/composables/useTheme'
-import { useWebSocket } from '@/composables/useWebSocket'
+import { useRealtimeTransport } from '@/composables/useRealtimeTransport'
 import { isNative, requestNotificationPermission, requestStoragePermission } from '@/plugins/GoProcess'
 import { hijackConsole } from '@/composables/useFrontendLogs'
 import { autoInitVConsole } from '@/composables/useDevTools'
@@ -53,7 +130,8 @@ import { initHighRefreshRate } from '@/composables/useHighRefreshRate'
 
 const { initTheme, detectP3Support } = useTheme()
 const { t } = useI18n()
-const { connect, disconnect } = useWebSocket()
+const transport = useRealtimeTransport()
+const { connect, disconnect } = transport
 
 const serviceGuardBlocked = ref(false)
 const serviceGuardDetail = ref('')
@@ -61,8 +139,67 @@ const serviceGuardHint = ref('')
 
 // ============ Vue 错误边界 ============
 const rootError = ref(false)
-const rootErrorMessage = ref('')
-const rootErrorStack = ref('')
+const rootErrorSummary = ref('')
+const rootErrorDetails = ref('')
+const rootErrorInfo = ref('')           // 触发阶段：'mounted hook' / 'render function' / ...
+const rootErrorTime = ref('')           // ISO 时间戳，方便用户截图给 agent 时同步时间
+const rootErrorStack = ref('')          // 原始堆栈（独立显示在下方 stack panel）
+const rootErrorContext = ref<{ mode: string; location: string }>({
+  mode: 'unknown',
+  location: '',
+})
+
+/**
+ * 把 `err.message` 拆成 "summary + details" 两部分，避免 UI 上下两栏内容重复。
+ *
+ * 拆分规则（匹配 useApiBaseProbe throw 的格式）：
+ *   "all-candidates-failed | trace: [1] skip | [1.5] result: ok=false err=... | [4] all-failed"
+ *     ↳ summary  = "all-candidates-failed"
+ *     ↳ details  = "[1] skip | [1.5] result: ok=false err=... | [4] all-failed"
+ *
+ * 没找到 " | trace: " 标记时，details 为空（普通错误只显示 summary）。
+ */
+function splitErrorMessage(msg: string): { summary: string; details: string } {
+  const MARKER = ' | trace: '
+  const idx = msg.indexOf(MARKER)
+  if (idx < 0) return { summary: msg, details: '' }
+  return {
+    summary: msg.slice(0, idx),
+    details: msg.slice(idx + MARKER.length),
+  }
+}
+
+/**
+ * 探测当前运行模式 + location，给错误 UI 提供上下文
+ * 模式：capacitor / browser-dev / browser-prod / mock-browser（trae 模拟）
+ *
+ * 关键判定：
+ *   - mock-browser 的最可靠特征 = host 含 'agent-sandbox'（trae 给每个 agent
+ *     沙箱分配的预览域名唯一特征：run-agent-<id>-<hash>-preview.agent-sandbox-
+ *     <region>-<gw>.trae.cn）。UA 含 'Trae'/'Volo' 是辅助信号但不可靠
+ *     （mock 浏览器可能伪装 UA）
+ *   - 优先级：mock-browser > capacitor > browser-dev > browser-prod
+ */
+function detectErrorContext(): { mode: string; location: string } {
+  let mode = 'unknown'
+  if (typeof window !== 'undefined') {
+    const proto = window.location.protocol
+    const host = window.location.host || ''
+    const ua = navigator.userAgent || ''
+    const isTraeMockHost = /agent-sandbox.*\.trae\.cn$/i.test(host) || /run-agent-.*\.trae\.cn$/i.test(host)
+    const isCapacitor = proto === 'capacitor:' || proto === 'file:' || proto === 'cdvfile:'
+    const uaHintsMock = ua.includes('Trae') || ua.includes('Volo')
+    if (isTraeMockHost || (uaHintsMock && proto === 'https:')) {
+      mode = 'mock-browser'
+    } else if (isCapacitor) {
+      mode = 'capacitor'
+    } else if (proto === 'http:' || proto === 'https:') {
+      mode = 'browser-dev'
+    }
+  }
+  const location = (typeof window !== 'undefined') ? window.location.origin : ''
+  return { mode, location }
+}
 
 onErrorCaptured((err: any, _instance: unknown, info: string) => {
   // 防止无限递归：如果已经是 error 状态，不再捕获（fallback 自己崩了）
@@ -70,11 +207,75 @@ onErrorCaptured((err: any, _instance: unknown, info: string) => {
 
   console.error('[App] Vue error captured:', err, '| info:', info)
   rootError.value = true
-  rootErrorMessage.value = err?.message || String(err) || 'Unknown render error'
+  // 🆕 拆 message：summary 简短显示，details（trace）作为 hint 单独成行
+  // —— 避免 UI 上下两栏内容重复
+  const rawMsg = err?.message || String(err) || 'Unknown render error'
+  const { summary, details } = splitErrorMessage(rawMsg)
+  rootErrorSummary.value = summary
+  rootErrorDetails.value = details
+  rootErrorInfo.value = info || 'unknown'
+  rootErrorTime.value = new Date().toISOString()
   rootErrorStack.value = err?.stack || ''
-  // 不阻止冒泡：让 Vue 仍然 console.error，方便 DevTools 调试
+  rootErrorContext.value = detectErrorContext()
+  // 不阻止冒泡：让 Vue 仍然 console.error（包含完整 stack），方便 DevTools 调试
   return false
 })
+
+/**
+ * Task 9: 错误状态页 viewport meta 锁死
+ *
+ * 关键认知：android webview 默认 user-scalable=yes 时
+ *   - 双指捏合 → 整页缩放（破坏错误页布局）
+ *   - 双击 → 放大（阻碍用户复制错误详情）
+ *
+ * 解决：index.html 已默认锁死 user-scalable=no + maximum-scale=1.0，
+ *       正常页 / 错误页都保持此设置（不再做动态切换——避免与默认行为冲突）。
+ */
+
+/**
+ * 复制到剪贴板：让用户在 mock 浏览器里一键粘贴错误摘要 / 堆栈给 agent
+ * mock 浏览器无 Network 面板，截图+文本是唯一能贴出诊断信息的途径
+ */
+async function copyToClipboard(text: string): Promise<void> {
+  if (!text) return
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      // fallback：textarea + execCommand（兼容旧 mock 浏览器）
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.left = '-9999px'
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+    }
+  } catch (e) {
+    console.warn('[App] copyToClipboard failed:', e)
+  }
+}
+
+function copyErrorSummary() {
+  const ctx = rootErrorContext.value
+  const lines = [
+    `类型: ${rootErrorSummary.value}`,
+    `触发阶段: ${rootErrorInfo.value}`,
+    `时间: ${rootErrorTime.value}`,
+    `模式: ${ctx.mode} @ ${ctx.location}`,
+    rootErrorDetails.value ? `trace: ${rootErrorDetails.value}` : '',
+  ].filter(Boolean)
+  copyToClipboard(lines.join('\n'))
+}
+
+function copyErrorStack() {
+  const lines = [
+    `STACK (${rootErrorSummary.value} @ ${rootErrorTime.value}):`,
+    rootErrorStack.value,
+  ]
+  copyToClipboard(lines.join('\n'))
+}
 
 function reloadPage() {
   if (typeof window !== 'undefined') {
@@ -102,7 +303,8 @@ async function runServiceGuard(): Promise<void> {
     if (e?.code === 'SERVICE_GUARD_BLOCKED' || e instanceof ServiceGuardError) {
       const payload: ServiceGuardResult = e.payload || {}
       serviceGuardDetail.value = payload.detail || e.message || 'Unknown guard error'
-      serviceGuardHint.value = payload.hint || ''
+      // 2026-06-10 改造：service-guard 不再返回 hint 字段（remediation 是结构化数组，不是单 string）
+      serviceGuardHint.value = ''
       serviceGuardBlocked.value = true
       throw e
     }
@@ -261,11 +463,26 @@ onUnmounted(() => {
   width: 100%;
   background: var(--ion-background-color);
   padding: 24px;
+  overflow-y: auto;
+}
+
+/* Task 9: 错误状态页 touch-action / user-select
+   关键认知：android webview 默认 user-scalable=yes 时
+     - 双指捏合 → 整页缩放（破坏错误页布局）
+     - 双击 → 放大（阻碍用户复制错误详情）
+   修复：touch-action: manipulation 禁用双击缩放 + 允许 pan/tap
+        user-select: text 允许选择错误堆栈文本（用户复制给 agent 看）
+   同步：viewport meta 在 index.html 已默认锁死 user-scalable=no + maximum-scale=1.0 */
+.error-state {
+  touch-action: manipulation;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .error-content {
   text-align: center;
-  max-width: 480px;
+  max-width: 560px;
+  width: 100%;
 }
 
 .error-icon {
@@ -284,41 +501,217 @@ onUnmounted(() => {
 .error-message {
   font-size: 14px;
   color: var(--encv-text-secondary);
-  margin: 0 0 16px;
+  margin: 0 0 20px;
   line-height: 1.5;
 }
 
-.error-detail {
-  display: block;
-  font-size: 12px;
-  color: var(--ion-color-danger);
+/* ===== 上：红色 detail 区域（详细信息） ===== */
+.error-detail-panel {
   background: rgba(var(--ion-color-danger-rgb), 0.08);
+  border-left: 3px solid var(--ion-color-danger);
   border-radius: 8px;
-  padding: 10px 14px;
+  padding: 12px 14px;
   margin: 0 0 12px;
   text-align: left;
-  word-break: break-all;
-  white-space: pre-wrap;
-  font-family: ui-monospace, Menlo, monospace;
 }
 
-.error-hint {
-  display: block;
+.error-detail-header,
+.error-stack-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(var(--ion-color-medium-rgb), 0.15);
+}
+
+.error-detail-icon {
+  font-size: 16px;
+  color: var(--ion-color-danger);
+}
+
+.error-detail-title,
+.error-stack-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ion-color-danger);
+  flex: 1;
+}
+
+.copy-btn {
+  background: transparent;
+  border: 1px solid rgba(var(--ion-color-medium-rgb), 0.3);
+  border-radius: 4px;
+  padding: 2px 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  color: var(--encv-text-secondary);
+  font-size: 11px;
+  transition: background 0.15s;
+}
+
+.copy-btn:hover {
+  background: rgba(var(--ion-color-medium-rgb), 0.1);
+}
+
+.copy-btn ion-icon {
+  font-size: 14px;
+}
+
+.error-detail-body {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
+}
+
+.error-summary-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 4px 0;
+  line-height: 1.4;
+}
+
+.error-summary-label {
+  flex: 0 0 64px;
+  font-size: 11px;
+  color: var(--encv-text-secondary);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding-top: 1px;
+}
+
+.error-summary-value {
+  flex: 1;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--ion-color-danger);
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
+.error-trace-block {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(var(--ion-color-danger-rgb), 0.2);
+}
+
+.error-trace-label {
+  font-size: 11px;
+  color: var(--encv-text-secondary);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.error-trace-body {
+  font-family: ui-monospace, Menlo, monospace;
   font-size: 10.5px;
-  color: var(--ion-color-medium);
+  color: var(--ion-color-danger);
+  background: rgba(var(--ion-color-danger-rgb), 0.04);
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin: 0;
+  word-break: break-all;
+  white-space: pre-wrap;
+  max-height: 25vh;
+  overflow-y: auto;
+}
+
+/* ===== 下：灰色 stack 区域（原始堆栈 + 排错文档） ===== */
+.error-stack-panel {
   background: rgba(var(--ion-color-medium-rgb), 0.06);
-  border-radius: 6px;
-  padding: 8px 12px;
-  margin: 0 0 20px;
+  border-left: 3px solid var(--ion-color-medium);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 0 0 16px;
   text-align: left;
+}
+
+.error-stack-icon {
+  font-size: 16px;
+  color: var(--encv-text-secondary);
+}
+
+.error-stack-title {
+  color: var(--encv-text-secondary);
+}
+
+.error-stack-body {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10.5px;
+  color: var(--encv-text-secondary);
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin: 0 0 10px;
+  word-break: break-all;
   white-space: pre-wrap;
   max-height: 30vh;
   overflow-y: auto;
+  line-height: 1.45;
+}
+
+.error-stack-empty {
+  font-size: 11px;
+  color: var(--encv-text-secondary);
+  font-style: italic;
+  margin: 0 0 10px;
+}
+
+.error-stack-footer {
+  border-top: 1px solid rgba(var(--ion-color-medium-rgb), 0.15);
+  padding-top: 8px;
+}
+
+.error-stack-hints {
+  font-size: 11px;
+  color: var(--encv-text-secondary);
+  line-height: 1.5;
+}
+
+.error-stack-hints strong {
+  display: block;
+  font-size: 11px;
+  color: var(--encv-text-secondary);
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.error-stack-hints ul {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.error-stack-hints li {
+  margin: 2px 0;
+}
+
+.error-stack-hints code {
+  background: rgba(var(--ion-color-medium-rgb), 0.12);
+  padding: 0 4px;
+  border-radius: 2px;
+  font-size: 10.5px;
   font-family: ui-monospace, Menlo, monospace;
+}
+
+.hint-tag {
+  display: inline-block;
+  background: var(--ion-color-warning);
+  color: #000;
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-right: 4px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  vertical-align: 1px;
 }
 
 .error-reload-btn {
   --border-radius: 8px;
+  margin-top: 4px;
 }
 </style>
 

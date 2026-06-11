@@ -162,6 +162,7 @@ func CreateV4Fixture(t testing.TB, dataSize int64, segCount int) *V4ContainerFix
 
 	salt, _ := crypto.GenerateSalt_v2(types.SaltSize_v2)
 	key := crypto.GenerateKey(fixturePassword, salt, types.KeySize_v2)
+	macKey := crypto.DeriveMACKey(fixturePassword, bytes.Repeat([]byte{0xAB}, crypto.MACSaltLength))
 
 	segSize := dataSize / int64(segCount)
 	if segSize == 0 {
@@ -182,7 +183,7 @@ func CreateV4Fixture(t testing.TB, dataSize int64, segCount int) *V4ContainerFix
 		segData := RandomBytes(size)
 		allOriginalData = append(allOriginalData, segData...)
 
-		encResult, err := crypto.EncryptSegment(segData, key, uint32(i))
+		encResult, err := crypto.EncryptSegment(segData, key, macKey, uint32(i), crypto.CompressionModeNone)
 		if err != nil {
 			t.Fatalf("CreateV4Fixture: EncryptSegment %d failed: %v", i, err)
 		}

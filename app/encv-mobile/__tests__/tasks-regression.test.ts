@@ -107,21 +107,40 @@ describe('Tasks.vue 防护性回归测试', () => {
       expect(hasPluginUI).toBe(true)
     })
 
-    it('NewTaskModal 必须包含文件浏览按钮', () => {
+    it('NewTaskModal 不应包含独立的浏览按钮（去重，源文件浏览由 EncryptBody/DecryptBody 内部 InputWithHistory 提供）', () => {
       const fs = require('fs')
       const source = fs.readFileSync(
         require('path').resolve(__dirname, '../src/components/NewTaskModal.vue'),
         'utf-8'
       )
 
-      // 必须引用 FilePickerModal
-      expect(source).toMatch(/FilePickerModal/)
+      // 不应有独立"browse-row"块（曾经存在导致两个源文件输入的重复 UI）
+      expect(source).not.toMatch(/browse-row/)
+      expect(source).not.toMatch(/browse-btn/)
+      expect(source).not.toMatch(/browse-hint/)
 
-      // 必须有浏览相关函数（handleBrowse）
-      expect(source).toMatch(/handleBrowse/)
+      // 不应再直接 import FilePickerModal（浏览能力已下沉到 EncryptBody/DecryptBody）
+      expect(source).not.toMatch(/import FilePickerModal/)
+      expect(source).not.toMatch(/handleBrowse/)
+    })
 
-      // 模板中必须有浏览按钮
-      expect(source).toMatch(/browse-btn|folderOpen|@click="handleBrowse/)
+    it('EncryptBody/DecryptBody 必须提供源/目标文件的浏览按钮（InputWithHistory browsable）', () => {
+      const fs = require('fs')
+      const encryptSource = fs.readFileSync(
+        require('path').resolve(__dirname, '../src/components/EncryptBody.vue'),
+        'utf-8'
+      )
+      const decryptSource = fs.readFileSync(
+        require('path').resolve(__dirname, '../src/components/DecryptBody.vue'),
+        'utf-8'
+      )
+
+      // EncryptBody 应使用 InputWithHistory + browsable
+      expect(encryptSource).toMatch(/InputWithHistory/)
+      expect(encryptSource).toMatch(/browsable/)
+      // DecryptBody 同理
+      expect(decryptSource).toMatch(/InputWithHistory/)
+      expect(decryptSource).toMatch(/browsable/)
     })
   })
 })

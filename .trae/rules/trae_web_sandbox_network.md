@@ -432,7 +432,228 @@ start-preview.sh 是个普通 bash 脚本，没有 `OpenPreview` 工具的访问
 
 ---
 
-## 九、跨文档引用
+## 九、Preview 链路实际可达性矩阵（2026-06-08 实战实测）
+
+> 沙箱 dev 链路：外网浏览器 → `:16000` (agent-tool-host) → `:16666` (preview-gateway) → `:8100` (vite) / `:2025` (encv-go)
+> 本节是 §八 "只能注册一个端口 / 路径" 的**实测补充**——明确告诉 agent "哪些能成 / 哪些必失败"。
+
+### 9.1 实测可达性矩阵（**2026-06-08 二次校正**）
+
+> 沙箱 dev 链路：外网浏览器 → `:16000` (agent-tool-host) → `:16666` (preview-gateway) → `:8100` (vite) / `:2025` (encv-go)
+> 本节是 §八 "只能注册一个端口 / 路径" 的**实测补充**——明确告诉 agent "哪些能成 / 哪些必失败"。
+
+| 调用方 | 目标路径 | `:16000` 是否转发到 `:16666` | 经 gateway 后真正落点 | 状态 |
+|--------|----------|----------------------------|---------------------|------|
+| 浏览器加载 SPA | `/` | ✅ | `:8100` index.html | ✅ 200 |
+| Vite 拉模块 | `/@vite/client` | ✅ | `:8100` /@vite/client | ✅ 200（hmr:false 也注入脚本） |
+| Vite 拉源码 | `/src/main.ts` | ✅ | `:8100` /src/main.ts | ✅ 200 |
+| **前端 fetch API** | **`/api/config`** | ✅ **转发**（agent-tool-host 日志确认） | `:2025` encv-go | ✅ 200（沙箱内 curl 复测） |
+| **前端 fetch API** | **`/api/service-guard`** | ✅ **转发** | `:2025` encv-go | ✅ 200 |
+| **WebSocket** | **`/ws`** | ✅ **转发** | `:2025` encv-go | ⚠️ **转发但握手后 WS 协议可能不升级成功**——见 §九.1.1 |
+| Vite HMR client | `@vite/client` 内的 WS URL | ✅ | `:8100` WS 端 | ❌ `[vite] failed to connect to websocket`（预期降级，hmr:false） |
+
+**关键更正**（2026-06-08 实测推翻 §九 v1 假设）：
+- ❌ **错误假设**（§九 v1 表格曾写）："agent-tool-host (:16000) 只把 `/` 转发到注册端口，子路径 `/api/*` 不转发"
+- ✅ **实测结论**：agent-tool-host **转发所有请求**到 16666，由 preview-gateway 按路由表分发
+  - agent-tool-host 日志：`[preview-proxy] Proxying /api/config to port 16666` ✅
+  - agent-tool-host 日志：`[preview-proxy] Proxying /ws to port 16666` ✅
+  - 沙箱内 `curl :16000/api/config` / `curl :16666/api/config` / `curl :2025/api/config` **三段都 200**
+- **但 401 偶发**：用户浏览器 trace 出现 `[1.5] result: ok=false err=status 401`，latency=339ms（外网 RTT，非超时）
+  - 401 不是 encv-go 返的（`handleGetConfigGin` 只返 200/404/500，无 auth 路径，详见 [internal/server/server_config_api.go:19](file:///workspace/internal/server/server_config_api.go#L19-L50)）
+  - 401 不是 preview-gateway 返的（无 auth 中间件，详见 [app/preview-gateway/src/server.ts](file:///workspace/app/preview-gateway/src/server.ts)）
+  - agent-tool-host 日志**没有** 401 / Unauthorized 记录
+  - 推测：trae 域名外网调用路径上 agent-tool-host 偶发 session/cookie 缺失返回 401，loopback curl 不触发
+  - 改进：useApiBaseProbe 现在会把 401 响应的 `content-type` + `body preview` 一起塞进 err，让用户在 mock 浏览器能看到 401 响应到底是 trae auth 页还是 encv-go 错误
+
+#### 9.1.1 WebSocket 升级细节（2026-06-08 实测）
+
+- agent-tool-host **接受** WS upgrade 请求并转发到 16666（日志确认）
+- 16666 端 `server.on('upgrade', ...)` 用 `http-proxy.ws()` 转发到 2025
+- 但用户浏览器 trace 仍持续报 `[ENCV-WS] WebSocket error: readyState=3`——
+  - 可能是 trae 域 TLS termination + WS upgrade 时序问题
+  - 可能是 encv-go 端 WS handler 拒绝（业务层 close）
+  - **不可修复**——这是沙箱架构 + 业务 WS 协议组合决定的硬约束
+- 应对：`useWebSocket` 已有 scheduleReconnect / heartbeat 机制，前端**只显示离线状态**，不 throw 阻塞 UI
+
+#### 9.1.2 401 真实源头诊断（2026-06-08 收敛结论）
+
+> 401 不是 encv-go 也不是 preview-gateway 也不是 agent-tool-host 返的——是 trae 外网边缘网关（agent-tool-host 之前的那一层）返的。
+
+**证据链 1：encv-go 自身无 401 路径**
+
+- `internal/server/server_config_api.go:19-L50` 中 `handleGetConfigGin` 仅返 200/404/500，**没有 auth/401 路径**
+- 全局 `grep -rn "401\|Unauthorized" internal/` 在 encv-go 业务代码中无匹配
+
+**证据链 2：preview-gateway 无 auth 中间件**
+
+- `app/preview-gateway/src/server.ts` 仅 `http-proxy` 反代，**没有 auth/401 路径**
+- 沙箱内 `curl http://localhost:16666/api/config` 永远 200
+
+**证据链 3：agent-tool-host 日志无 401**
+
+- `grep "401\|Unauthorized" /var/log/tool/agent-tool-host.stdout.log` 无匹配
+- 沙箱内 `curl http://127.0.0.1:16000/api/config`（loopback）永远 200
+- 但**外网浏览器** trace 出现 401 → 401 一定在 agent-tool-host 之前生成
+
+**收敛结论：401 来自 trae 域名外网边缘网关**
+
+- trae 给每个 agent 沙箱分配 `https://run-agent-xxx.trae.cn/<端口路径>` 域名
+- 该域名经过 trae 自家边缘网关（带 session/cookie 鉴权 + rate limit）才到 agent-tool-host
+- 当浏览器缺 session cookie / 鉴权过期 / 触发 rate limit → 边缘网关直接 401
+- **沙箱内 loopback 永远复现不了**（不走外网网关）
+- 401 响应 body 通常是 trae 自家 HTML 登录页（`content-type: text/html`），不是 encv-go JSON
+
+**应对策略**：
+
+- ❌ 不要在 encv-go 加 auth 头绕过——401 来自网关，encv-go 拿不到这个请求
+- ❌ 不要在 preview-gateway 加 auth 头——401 在它之前
+- ✅ 前端要识别 401 响应的 content-type：`text/html` = trae 网关错（给用户"请重新登录 trae"提示）；`application/json` = 业务错（按业务逻辑处理）
+- ✅ `useApiBaseProbe` 已把 content-type + body preview 一起塞进 err，agent 在 mock 浏览器 console 就能区分是 trae 网关 401 还是 encv-go 业务 401
+
+### 9.2 后果：useApiBaseProbe 全失败链路（2026-06-08 校正版）
+
+`useApiBaseProbe.ts` 的探测链：
+1. `[1] cached` —— localStorage 缓存
+2. `[1.5] current origin` —— `window.location.origin`（`<public-url>/api/config`）
+3. `[2] loopback` —— `http://127.0.0.1:2025`
+4. `[3] LAN` —— 通过 baseUrl 拉 `/api/network/lan-access`
+
+**沙箱浏览器实际表现**（用户 2026-06-08 trace）：
+
+| 步骤 | 用户看到 | 真实原因 |
+|------|---------|---------|
+| `[1] no cached URL, skip` | 第一次访问 localStorage 空 → skip | 正常 |
+| `[1.5] try current origin: https://run-agent-xxx.trae.cn` | 触发 | fetch 发出 |
+| **`[1.5] result: ok=false err=status 401`** | **外网 trae 域名偶发 401** | **agent-tool-host 转发后 trae 网关层 401（loopback curl 不复现）** |
+| `[2] try loopback: http://127.0.0.1:2025` | 触发 | 浏览器在用户机器上，127.0.0.1:2025 不存在 |
+| `[2] result: ok=false err=Failed to fetch` | 浏览器端网络错 | net::ERR_CONNECTION_REFUSED |
+| `[4] all-candidates-failed` | 抛出 | — |
+
+→ `App.vue:33 mounted hook` 捕获 → `[error] [App] Vue error captured: Error: all-candidates-failed | trace: ...`（**新版已把 trace 透出，agent 能看到失败在哪一步**）。
+
+**与之前假设的关键区别**：
+- ❌ **旧假设**（§九 v1）："`[1.5]` 因为 agent-tool-host 不转发 /api/* 而失败"
+- ✅ **新事实**：agent-tool-host **转发**了 /api/*；偶发 401 是 trae 网关层的问题（推测 session/cookie 缺失或 rate-limit）
+
+### 9.3 备用方案（按改动量从小到大）
+
+#### 方案 X：把 :2025 单独注册成外网入口（**最简单**）
+
+让 OpenPreview 注册 `:2025` 而非 `:16666`。外网用户访问 trae 域名 → :16000 → :2025 (encv-go)。然后前端用绝对 URL `https://run-agent-...trae.cn/api/...`（这时代理自动适配到 :2025）。
+
+**代价**：encv-go 必须自带静态文件 serve（embed 前端 dist）—— 但**沙箱 dev 模式不 build**，所以 vite :8100 的 HMR 体验就没了。
+
+#### 方案 Y：方案 C 改造 —— 把 :2025 (encv-go) 注册，gateway (:16666) 只在沙箱内做反代（**不推荐**）
+
+让 preview-gateway 仅作"沙箱内部使用"的反向代理，外部通过注册的 :2025 走 API。浏览器 fetch `https://.../api/...` 实际代理到 :2025。但 SPA 静态资源要由 encv-go serve（Vite 不参与），失去 HMR。
+
+#### 方案 Z：accept & document 当前行为（**当前做法**）
+
+承认沙箱浏览器模式下 API + WS 不可用，**让前端在 probe 失败时优雅降级**：
+- 不要 throw 阻塞 `App.vue mounted`
+- 改用 `useUiErrorBanner` 显示 "API 连接失败，请到 Settings 手动设置服务器地址"
+- WS 失败时静默重试（已部分实现）
+
+**代价**：浏览器模式下 `Files` / `Tasks` / `Settings` 等所有依赖 API 的功能不可用。用户要么切到本地 dev (`pm2 start ...` + `vite --port 8100` + 自访问 `:8100`)，要么用 APK 真机调试。
+
+### 9.4 调试手段：mock 浏览器（**无 Network 面板**）
+
+> **沙箱架构硬约束（2026-06-08 用户承认）：**
+> 用户**只能在 agent-tool-host 提供的指定模拟浏览器里**预览（OpenPreview 工具激活）。
+> 该浏览器：
+> - ✅ **可以** 刷新页面（Cmd+R / Ctrl+R）
+> - ✅ **可以** 查看 console 日志（DevLogs tab 可见）
+> - ❌ **没有** 完整 DevTools
+> - ❌ **没有** Network 面板（看不到 fetch 请求/响应 / status / header / CORS 错）
+> - ❌ **没有** Application / Sources / Performance 面板
+>
+> → **诊断时只能靠 console 日志**，所有关键路径必须把 trace 打到 console。
+
+#### 9.4.1 前端必做的日志规范
+
+> 凡是 agent 排查时需要看到的链路，**必须** `console.info` 一行带 `[probe]` 前缀的日志。
+> 全部走 `console.info`（**不**用 debug——DevLogs 默认隐藏 debug）。
+
+`useApiBaseProbe` 每次探测的日志模板（已落到 `useApiBaseProbe.ts`）：
+
+| 时机 | console.info 模板 | 示例 |
+|------|------------------|------|
+| 入口 | `[probe] start origin=<o> cached=<c> force=<f>` | `[probe] start origin=https://run-agent-xxx.trae.cn cached=(empty) force=false` |
+| [1] 缓存 | `[probe] step [1] try cached: <url>` / `[probe] step [1] result: ok=false err=...` | `[probe] step [1] no cached URL, skip` |
+| [1.5] current origin | `[probe] step [1.5] try current origin: <o>` / `result: ok=false err=non-JSON response (content-type: "text/html")` | — |
+| [2] loopback | `[probe] step [2] try loopback: <url>` / `result: ok=false err=...` | `[probe] step [2] result: ok=false latency=12ms err=TypeError: Failed to fetch` |
+| [expand] | `[probe] step [expand] try N lan candidates (port P)` | — |
+| [lan] 每个候选 | `[probe] step [lan] try <url>` / `result: ok=false err=...` | — |
+| 命中 / 提交 | `[probe] commit baseUrl=<u> source=<s> latency=<L>ms` | `[probe] commit baseUrl=https://run-agent-xxx.trae.cn source=current-origin latency=143ms` |
+| 全部失败 | `[probe] step [4] no candidates available, all-failed` + `[probe] FAIL all-candidates-failed \| trace: ...` | — |
+
+**用户在 mock 浏览器看到 N 条 `[probe]` 日志（典型 6-13 条）= 一次完整探测链的 trace。**
+
+#### 9.4.2 错误抛出规范
+
+**❌ 错误**：只 throw 一个 `"all-candidates-failed"`——mock 浏览器没有 Network 面板，agent 拿不到 fetch 细节。
+
+**✅ 正确**：把整条 `log[]` 数组串成单行 error message 抛出：
+
+```ts
+const trace = log.join(' | ')
+throw new Error(`all-candidates-failed | trace: ${trace}`)
+```
+
+这样上游 `App.vue` 捕获后能直接看到 `[1] no cached URL, skip | [1.5] result: ok=false err=non-JSON... | [2] result: ok=false err=TypeError: Failed to fetch | [4] no candidates available, all-failed`。
+
+#### 9.4.3 其它 API 调用失败的日志规范
+
+| 场景 | 日志模板 | 等级 |
+|------|---------|------|
+| 关键 API 失败 | `[api] POST /api/chat failed: status=502 content-type=text/html body=<前 200 字符>` | `console.error` |
+| **trae 网关 401** | `[api] /api/config failed: status=401 content-type=text/html body="<html>...登录页..."` → 100% 是 trae 网关层，**不是 encv-go**（见 §9.1.2） | `console.warn` |
+| **encv-go 业务 401** | `[api] /api/auth failed: status=401 content-type=application/json body="{\"error\":\"missing session token\"}"` → 看 §9.1.2 收敛结论 | `console.error` |
+| WebSocket 断连 | `[ws] disconnect code=1006 reason= wsUrl=<url> readyState=3` | `console.warn` |
+| WebSocket 业务层拒绝 | `[ws] upgrade handshake OK but server-side close: code=1008 reason=<text>` | `console.warn` |
+| mock 浏览器无 network 警告 | `[browser] mock browser has no DevTools Network panel — see trae_web_sandbox_network.md §9.4` | `console.info`（首次启动时打一次） |
+
+**401 区分铁律**（agent 看到 401 第一时间做）：
+- 看 response `content-type`
+  - `text/html` = trae 外网网关错（用户"请重新登录 trae"）
+  - `application/json` = 业务端 401（业务 error code）
+- 看 response `body`
+  - 包含 `<html>` `<title>登录</title>` 之类 = trae 网关
+  - 包含 `{"error":"..."}` = 业务端
+
+#### 9.4.4 agent 必做
+
+- 看到 `[error]` 开头的日志 → 在用户报告里贴完整堆栈 + 上下文 `[probe]` 日志
+- 不要假设 "看到 502 = 反代挂了"——可能是 CORS / 网络错 / Content-Type 不符 / 401 鉴权
+- 如果 `useApiBaseProbe` 没打 `[probe]` 日志 → 用户浏览器是**旧代码**，让用户硬刷新（Cmd+Shift+R / Ctrl+F5）
+- mock 浏览器报错时**不要**让用户"开 DevTools 看 Network"——**没有 DevTools**，只能让他把 console 日志贴过来
+- 用户报"preview 不工作"时第一反应应是"在 mock 浏览器 DevLogs tab 找到 [probe] 行，贴过来"
+
+### 9.5 沙箱外 / 本地 dev 的真链路
+
+| 环境 | 前端访问地址 | API 地址 | WS 地址 |
+|------|--------------|----------|---------|
+| **沙箱浏览器（OpenPreview）** | `https://run-agent-...trae.cn/` | ✅ 同源 `/api/*`（trae 反代 → :16000 → :16666 → :2025，2026-06-10 修复：preview-gateway proxyReq 改写 Origin=`:16666` + 前端 baseUrl 同源化） | ⚠️ `/ws` 不可达（沙箱浏览器不支持 WS 代理） |
+| **沙箱本地（PM2 启 :16666）** | `http://localhost:16666/` | `http://localhost:16666/api/*` ✅ | `ws://localhost:16666/ws` ✅ |
+| **沙箱 dev 直连 vite** | `http://localhost:8100/` | ❌ vite 不代理 /api（设计决策 D9） | ❌ vite HMR 关 |
+| **APK 真机 + adb reverse** | `capacitor://localhost` | `http://127.0.0.1:2025` ✅ | `ws://127.0.0.1:2025/ws` ✅ |
+
+→ **沙箱 dev 模式下完整端到端调试链路有 3 档**（从弱到强）：
+> 1. **沙箱浏览器（OpenPreview）**（API ✅，WS ⚠️）——**适合**所有 fetch /api/* 的功能（Files/Tasks/Settings 等）
+> 2. **沙箱本地访问 `:16666`**（API ✅，WS ✅）——**适合**完整功能调试（含 DevLogs 实时流、agent 流式 chat）
+> 3. **APK 真机 + adb reverse**（API ✅，WS ✅）——**完整** dev 链路，真机性能最真实
+
+### 9.6 绝对禁止
+
+- ❌ 假设 OpenPreview 模式下能**完整**功能调试——见 9.5（API 2026-06-10 已修复，WS 仍受沙箱浏览器限制）
+- ❌ 让前端 throw 阻塞 `mounted` hook 不带 console.info 兜底——见 9.4
+- ❌ 试图注册多个 OpenPreview——§八.4 已禁止，agent-tool-host 用最后一次的端口
+- ❌ 让 vite 加回 `/api` proxy——决策 D9 已固化
+- ❌ 在 mock 浏览器里让用户"开 DevTools 看 Network"——**没有 DevTools**
+
+---
+
+## 十、跨文档引用
 
 | 主题 | 文档 |
 |------|------|

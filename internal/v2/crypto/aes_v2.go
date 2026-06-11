@@ -34,10 +34,69 @@ const (
 	Iterations_v2 = 100000
 )
 
+// CipherMode_v4 标识 v4 容器使用的 AES 密钥长度（CTR 模式）。
+//
+// 字段值定义（与 v4 Header.CipherMode 直接对应）：
+//   - CipherModeAES128CTR = 0：使用 16 字节密钥（AES-128-CTR），v4 新容器默认
+//   - CipherModeAES256CTR = 1：使用 32 字节密钥（AES-256-CTR），v4 可选加强档
+//
+// 历史背景：v4 早期版本硬编码 32 字节（AES-256）。引入此枚举后
+// 默认改为 AES-128，与 WinZip / RAR / 7-Zip 行业惯例对齐。
+type CipherMode_v4 uint16
+
+const (
+	// CipherModeAES128CTR AES-128-CTR（16 字节密钥），v4 默认
+	CipherModeAES128CTR CipherMode_v4 = 0
+	// CipherModeAES256CTR AES-256-CTR（32 字节密钥），v4 可选
+	CipherModeAES256CTR CipherMode_v4 = 1
+)
+
+// KeySize_v4_* 给出 v4 容器不同 CipherMode 对应的密钥长度（字节）。
+//
+// 关系：
+//   - KeySize_v4_128 = aes.BlockSize = 16
+//   - KeySize_v4_256 = 2 * aes.BlockSize = 32
+//
+// 与 aes.NewCipher 的合法输入一致（16/24/32 字节），故现有的
+// EncryptStream_v2 / DecryptStream_v2 无需修改即可直接接收 16 字节 key。
+const (
+	KeySize_v4_128 = aes.BlockSize      // 16
+	KeySize_v4_256 = 2 * aes.BlockSize  // 32
+)
+
+// KeySizeForCipherMode_v4 根据 CipherMode 枚举返回对应的密钥长度（字节）。
+// 未知 / 越界值 fallback 到 AES-128-CTR（与 v4 Header 默认一致）。
+func KeySizeForCipherMode_v4(mode CipherMode_v4) int {
+	switch mode {
+	case CipherModeAES256CTR:
+		return KeySize_v4_256
+	default:
+		return KeySize_v4_128
+	}
+}
+
 // GenerateKey 使用 PBKDF2 从密码和盐派生密钥
 func GenerateKey(password string, salt []byte, keyLen int) []byte {
 	if keyLen <= 0 {
 		keyLen = KeySize_v2 // 默认 AES-256
+	}
+	return pbkdf2.Key([]byte(password), salt, 100000, keyLen, sha256.New)
+}
+
+// GenerateKey_v4 是 v4 容器专用的密钥派生函数。
+//
+// 与 GenerateKey 的关系：本函数是 GenerateKey 的 v4 命名别名，
+// 签名与算法完全一致（PBKDF2-SHA256, 100000 iter），便于调用方
+// 按 v4 spec 命名引用，同时保留 v2 旧 API 的可用性。
+//
+// 支持的 keyLen 取值（与 CipherMode_v4 一一对应）：
+//   - 16 → AES-128-CTR（CipherModeAES128CTR）
+//   - 32 → AES-256-CTR（CipherModeAES256CTR）
+//
+// keyLen <= 0 或其他值统一 fallback 到 16 字节（v4 默认 AES-128）。
+func GenerateKey_v4(password string, salt []byte, keyLen int) []byte {
+	if keyLen <= 0 {
+		keyLen = KeySize_v4_128 // v4 默认 AES-128
 	}
 	return pbkdf2.Key([]byte(password), salt, 100000, keyLen, sha256.New)
 }

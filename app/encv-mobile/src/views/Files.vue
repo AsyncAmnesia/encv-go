@@ -1038,17 +1038,18 @@ async function handleLongPress(file: FileItem) {
   })
 
   // ===== Section 4: 危险操作 =====
-  if (!file.isDirectory) {
-    buttons.push({
-      text: t('files.delete'),
-      icon: trash,
-      role: 'destructive',
-      cssClass: 'action-section-danger',
-      handler: () => {
-        handleDeleteFile(file)
-      },
-    })
-  }
+  // 🆕 2026-06-10 修复：文件夹长按菜单缺少删除操作
+  // 历史 bug：line 1041 `if (!file.isDirectory)` 阻止文件夹删除
+  // 修复：去掉 !file.isDirectory 条件 — 文件 / 文件夹都能删除
+  buttons.push({
+    text: t('files.delete'),
+    icon: trash,
+    role: 'destructive',
+    cssClass: 'action-section-danger',
+    handler: () => {
+      handleDeleteFile(file)
+    },
+  })
 
   buttons.push({
     text: t('files.cancelSelect'),
@@ -1212,29 +1213,63 @@ async function loadFileTagsForCurrentDir() {
 }
 
 async function handleDeleteFile(file: FileItem) {
-  const alert = await alertController.create({
-    header: t('files.delete'),
-    message: t('files.deleteConfirm', { name: file.name }),
-    buttons: [
-      {
-        text: t('files.cancelSelect'),
-        role: 'cancel',
-      },
-      {
-        text: t('files.delete'),
-        role: 'destructive',
-        handler: async () => {
-          try {
-            await deleteFile(file.path)
-            await loadFiles()
-          } catch {
-            showToast({ message: t('files.deleteFailed'), duration: 2000, color: 'danger' })
-          }
-        },
-      },
-    ],
-  })
-  await alert.present()
+  // 🆕 2026-06-10 修复 #1：删除安全防御
+  //   1) 根目录客户端拦截
+  //   2) 文件夹二次确认（防误删整目录）
+  //   3) 文件夹删除前先 list 一次，让用户看到"包含 N 个文件 + M 个子目录"
+  //   4) 详细错误 toast（把后端 error 透传给用户）
+  if (file.path === '/' || file.path === '') {
+    showToast({ message: '不能删除根目录', duration: 2000, color: 'danger' })
+    return
+  }
+
+  if (file.isDirectory) {
+    // 🆕 删除文件夹前先 list 一次，让用户在确认前看到包含多少内容
+    let detail = '此操作不可撤销'
+    try {
+      const list = await listFiles(file.path)
+      const filesInDir = list.filter((f: FileItem) => !f.isDirectory).length
+      const subDirs = list.filter((f: FileItem) => f.isDirectory).length
+      detail = `包含 ${filesInDir} 个文件 + ${subDirs} 个子目录，此操作不可撤销。`
+    } catch (e) {
+      // list 失败：仍允许删除（用户可能想强制删一个无法 list 的目录）
+      console.warn('[Files] list directory failed before delete:', file.path, e)
+    }
+    const dirAlert = await alertController.create({
+      header: t('files.delete'),
+      subHeader: `📁 ${file.name}`,
+      message: `确认删除文件夹 "${file.name}" 及其所有内容？\n\n${detail}`,
+      buttons: [
+        { text: t('files.cancelSelect'), role: 'cancel' },
+        { text: t('files.delete'), role: 'destructive', handler: () => doDelete(file) },
+      ],
+    })
+    await dirAlert.present()
+  } else {
+    // 文件删除用普通 alert
+    const alert = await alertController.create({
+      header: t('files.delete'),
+      message: t('files.deleteConfirm', { name: file.name }),
+      buttons: [
+        { text: t('files.cancelSelect'), role: 'cancel' },
+        { text: t('files.delete'), role: 'destructive', handler: () => doDelete(file) },
+      ],
+    })
+    await alert.present()
+  }
+}
+
+async function doDelete(file: FileItem) {
+  try {
+    await deleteFile(file.path)
+    await loadFiles()
+    showToast({ message: `已删除 ${file.name}`, duration: 1500, color: 'success' })
+  } catch (e) {
+    // 🆕 把后端 error message 完整透传给用户（不只说"删除失败"）
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error('[Files] deleteFile failed:', file.path, msg)
+    showToast({ message: `${t('files.deleteFailed')}: ${msg}`, duration: 3500, color: 'danger' })
+  }
 }
 
 function onFileChange() {
