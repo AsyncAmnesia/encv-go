@@ -302,6 +302,11 @@ function goWebDavTests() {
   router.push('/tabs/settings/devtools/webdav-tests')
 }
 
+// 🆕 2026-06-11：ECv4 容量边界测试入口（sparse 虚拟容器，验证 physical_used ≪ virtual_total）
+function goSparseContainerTest() {
+  router.push('/tabs/settings/devtools/sparse-container-test')
+}
+
 function handleVConsoleToggle(event: CustomEvent) {
   toggleVConsole(event.detail.checked)
 }

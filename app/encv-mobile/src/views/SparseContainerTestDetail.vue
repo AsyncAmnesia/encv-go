@@ -200,7 +200,7 @@ import { ref, computed, onMounted } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton,
   IonContent, IonList, IonListHeader, IonItem, IonLabel, IonInput,
-  IonButton, IonIcon, IonSpinner, IonBadge, alertController,
+  IonIcon, IonSpinner, IonBadge, alertController,
 } from '@ionic/vue'
 import {
   createOutline, searchOutline, trashOutline,

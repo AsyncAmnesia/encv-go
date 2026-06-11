@@ -49,7 +49,7 @@
 
       <!-- 账号配置面板（折叠，避免干扰测试视图） -->
       <ion-list>
-        <ion-item button @click="showAuthPanel = !showAuthPanel" detail="false">
+        <ion-item button @click="showAuthPanel = !showAuthPanel" :detail="false">
           <ion-icon :icon="keyOutline" slot="start" color="medium"></ion-icon>
           <ion-label>
             <h3>{{ t('devtools.webdavAuth.title') }}</h3>
@@ -142,7 +142,7 @@
           <ion-label>{{ t('devtools.testCases') }}</ion-label>
         </ion-list-header>
         <ion-item
-          v-for="(testCase, idx) in WEBDAV_TEST_CASES"
+          v-for="(testCase, _idx) in WEBDAV_TEST_CASES"
           :key="testCase.id"
           :class="['webdav-test-row', `status-${getStatus(testCase.id)}`, `category-${testCase.category}`]"
         >

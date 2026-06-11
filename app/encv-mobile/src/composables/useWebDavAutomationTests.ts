@@ -338,7 +338,7 @@ export function useWebDavAutomationTests() {
       startedAt,
     }
     // 任务系统适配：标记这个 testId 属于当前 run group
-    setTaskMetadata(testCase.id, 'automation', currentRunId.value)
+    setTaskMetadata(testCase.id, 'automation', currentRunId.value ?? undefined)
     try {
       const auth = buildAuthHeaders(loadWebDavCreds())
       const result = await executeWebDavTest(testCase, baseUrl.value, timeoutMs, auth)
@@ -388,7 +388,7 @@ export function useWebDavAutomationTests() {
     const startedAt = currentRunStartedAt.value
     // 任务系统适配：所有 test 共享同一个 runId
     for (const c of WEBDAV_TEST_CASES) {
-      setTaskMetadata(c.id, 'automation', currentRunId.value)
+      setTaskMetadata(c.id, 'automation', currentRunId.value ?? undefined)
     }
     persistCurrentRun()
     // 顺序跑（webdav 操作有依赖：PUT 后才能 GET，MOVE 后才能 DELETE；并行会冲突）

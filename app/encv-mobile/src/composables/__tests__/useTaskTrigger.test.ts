@@ -62,11 +62,11 @@ describe('useTaskTrigger — 容量上限', () => {
     for (let i = 0; i < 600; i++) {
       recordTriggeredBy(`task-${i}`, 'automation')
     }
-    const map = _getAllForTesting()
-    expect(Object.keys(map).length).toBe(500)
-    // 最新的 task-599 应该存在
+    // 用 public API 验证：最新的 task-599 保留，最早的 task-0 已被裁剪（返 user fallback）
     expect(getTriggeredBy('task-599')).toBe('automation')
-    // 最早的 task-0 已被裁剪
+    expect(getTriggeredBy('task-100')).toBe('automation')
+    // 最早的 100 条已被裁剪（capacity=500，从 task-100 起步，task-0..99 没了）
+    expect(getTriggeredBy('task-99')).toBe('user')
     expect(getTriggeredBy('task-0')).toBe('user')
   })
 })

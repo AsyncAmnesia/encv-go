@@ -237,7 +237,7 @@
           <ion-item
             v-else-if="item.kind === 'sub_section_header'"
             button
-            detail="false"
+            :detail="false"
             @click="toggleSubSection(item.subKey)"
             :class="['sub-section-header', `sub-dim-${item.meta.dimension}`, `sub-tone-${item.meta.tone}`, { 'is-sticky': true, 'is-collapsed': item.isCollapsed }]"
             :lines="'none'"
@@ -436,7 +436,7 @@ import { showToast } from '@/composables/useToast'
 import { useNewTaskModal } from '@/composables/useNewTaskModal'
 import { useTasksList } from '@/composables/useTasksList'
 import { useTaskEventBridge } from '@/composables/useTaskEventBridge'
-import { getTriggeredBy, getRunIdForTask, clearTriggeredBy } from '@/composables/useTaskTrigger'
+import { getTriggeredBy, getRunIdForTask } from '@/composables/useTaskTrigger'
 import { formatContainerVersion } from '@/constants/containerVersion'
 
 const { t } = useI18n()

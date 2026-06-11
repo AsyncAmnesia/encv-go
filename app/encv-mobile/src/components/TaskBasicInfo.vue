@@ -97,10 +97,6 @@
         <span class="info-label">{{ t('tasks.containerVersion') }}</span>
         <span class="info-value container-version-pill">{{ formatContainerVersion(task.containerVersion) }}</span>
       </div>
-      <div class="info-item" v-if="task.version">
-        <span class="info-label">{{ t('tasks.workflowVersion') }}</span>
-        <span class="info-value">v{{ task.version }}</span>
-      </div>
       <div class="info-item" v-if="runId">
         <span class="info-label">{{ t('tasks.workflowRunId') }}</span>
         <span class="info-value task-id-mono clickable" @click="copyRunId" title="Click to copy">
@@ -156,10 +152,6 @@ const fileName = computed(() => {
 
 const triggeredBy = computed(() => props.task.triggeredBy ?? getTriggeredBy(props.task.id))
 const runId = computed(() => props.task.runId ?? getRunIdForTask(props.task.id))
-const triggeredByColor = computed(() => {
-  const v = triggeredBy.value
-  return v === 'automation' ? 'primary' : v === 'ai_agent' ? 'secondary' : 'medium'
-})
 const triggeredByIcon = computed(() => {
   const v = triggeredBy.value
   return v === 'automation' ? cogOutline : v === 'ai_agent' ? hardwareChipOutline : person
@@ -175,7 +167,10 @@ const sectionMeta = computed(() => {
   return { dimension: 'none' as const, value: '__none__', label: t('tasks.sectionOther') }
 })
 const sectionIcon = computed(() => {
-  switch (sectionMeta.value.dimension) {
+  // 当前 sectionMeta 仅返回 'plugin' | 'none' 两个维度（type / category 留给 Tasks.vue 派生）
+  // 为兼容历史 case 分支不报错，这里也覆盖 'type' | 'category'
+  const dim = sectionMeta.value.dimension as 'plugin' | 'type' | 'category' | 'none'
+  switch (dim) {
     case 'plugin': return extensionPuzzle
     case 'type': return swapVertical
     case 'category': return folderOutline
@@ -183,7 +178,8 @@ const sectionIcon = computed(() => {
   }
 })
 const sectionDimensionLabel = computed(() => {
-  switch (sectionMeta.value.dimension) {
+  const dim = sectionMeta.value.dimension as 'plugin' | 'type' | 'category' | 'none'
+  switch (dim) {
     case 'plugin': return t('tasks.dimensionPlugin')
     case 'type': return t('tasks.dimensionType')
     case 'category': return t('tasks.dimensionCategory')

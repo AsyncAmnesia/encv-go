@@ -216,6 +216,7 @@ export function useTasksList() {
       tasks.value[idx] = {
         ...tasks.value[idx],
         ...data,  // 🆕 spread 整个 data（防 pluginName 丢失）
+        type: data.type as TaskType,
         status: data.status as TaskStatus,
         progress: data.progress,
       }
@@ -266,7 +267,8 @@ export function useTasksList() {
         type: data.type as TaskType,
         sourcePath: data.sourcePath,
         pluginName: data.pluginName,  // 🆕 关键字段：保持插件识别
-        version: data.version,
+        // 🆕 v4：data.version 是后端 container version 字段，前端 EncvTask 命名是 containerVersion
+        containerVersion: data.version,
         targetPath: data.targetPath,
         status: data.status ?? 'queued',
         progress: data.progress ?? 0,

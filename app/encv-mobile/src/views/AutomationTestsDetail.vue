@@ -211,6 +211,7 @@ import {
 } from '@/api/encv'
 import { generateMockFilesViaBackend, resetMockFilesViaBackend } from '@/api/mockGenerator'
 import { DEFAULT_AUTOMATION_SOURCE } from '@/composables/useAutomationTests'
+import { formatContainerVersion } from '@/constants/containerVersion'
 import { useWorkflowEngine } from '@/composables/useWorkflowEngine'
 import type { WorkflowDefinition, WorkflowRun, JobRun, StepRun, StepDefinition } from '@/lib/workflow/types'
 import TestReportHeader from '@/components/automation/TestReportHeader.vue'
