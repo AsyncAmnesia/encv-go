@@ -339,7 +339,8 @@ import { fetchWebDavLocalInfo, type WebDavLocalInfo } from '@/api/encv'
 const { t } = useI18n()
 const {
   results, summary, isRunning, currentRunId, baseUrl,
-  runAllCases, cancelRun, refreshBaseUrl, getPersistedRuns, clearPersistedRuns,
+  runAllCases, cancelRun, refreshBaseUrl, refreshCredsFromBackend,
+  getPersistedRuns, clearPersistedRuns,
 } = useWebDavAutomationTests()
 
 const showHistory = ref(false)
@@ -353,6 +354,9 @@ onMounted(async () => {
   //        → fallback 硬编码 /webdav → 即使 webdav_root 配成 /dav 也错
   await loadWebDavLocalInfo()
   await refreshBaseUrl()  // 🆕 同步 baseUrl → 模板里 {{ baseUrl }} 显示真实 endpoint
+  // 🆕 v2 修复：composable 也要拉后端 creds 缓存
+  // 历史 bug：composable 内硬编码 'encv'/'encv-webdav' → 401
+  await refreshCredsFromBackend()
   checkWebDavHealth()
 })
 

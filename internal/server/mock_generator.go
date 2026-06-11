@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/Soltus/encv-go/internal/utils/ffmpeg"
 	"github.com/gin-gonic/gin"
@@ -231,6 +232,7 @@ func (s *Server) handleMockGenerateGin(c *gin.Context) {
 	enc := json.NewEncoder(c.Writer)
 
 	count := 0
+	skipped := 0
 	var totalSize int64
 	for _, sp := range specs {
 		fullPath := filepath.Join(root, sp.relativePath)
@@ -238,6 +240,16 @@ func (s *Server) handleMockGenerateGin(c *gin.Context) {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			emitSseEvent(c.Writer, flusher, "error", fmt.Sprintf(`{"error": "mkdir %s: %s"}`, dir, err.Error()))
 			return
+		}
+		// 🆕 2026-06-11 v4 修复：ffmpegGenerate 返回 nil（真机 ffmpeg build 没编该 encoder）
+		//   旧逻辑：os.WriteFile(fullPath, nil, 0644) → 静默写 0 字节文件 + 报 success
+		//   后果：用户在前端看到"成功"但 mp3/flac 是 0 字节 → 后续流程全挂 + 用户分不清
+		//   新逻辑：跳过 nil + emit 单独 error event + done 事件带 skipped 计数
+		if len(sp.data) == 0 {
+			skipped++
+			slog.Warn("[mock] skip nil data", "relativePath", sp.relativePath, "reason", "ffmpegGenerate returned nil (likely encoder not compiled in this ffmpeg build)")
+			emitSseEvent(c.Writer, flusher, "error", fmt.Sprintf(`{"skipped": true, "relativePath": %q, "reason": "ffmpeg 不可用/未编该 encoder (真机常见：libmp3lame/flac 等)"}`, sp.relativePath))
+			continue
 		}
 		if err := os.WriteFile(fullPath, sp.data, 0644); err != nil {
 			emitSseEvent(c.Writer, flusher, "error", fmt.Sprintf(`{"error": "write %s: %s"}`, sp.relativePath, err.Error()))
@@ -249,7 +261,8 @@ func (s *Server) handleMockGenerateGin(c *gin.Context) {
 		// SSE event: progress
 		writeSseEvent(c.Writer, flusher, "progress", fmt.Sprintf(`{"relativePath": %q, "size": %d}`, sp.relativePath, len(sp.data)))
 	}
-	writeSseEvent(c.Writer, flusher, "done", fmt.Sprintf(`{"count": %d, "totalSize": %d}`, count, totalSize))
+	// 🆕 done 事件带 skipped 字段（前端可显示"X 个格式因 ffmpeg build 限制跳过"）
+	writeSseEvent(c.Writer, flusher, "done", fmt.Sprintf(`{"count": %d, "skipped": %d, "totalSize": %d}`, count, skipped, totalSize))
 }
 
 // mockResetRequest 是 POST /api/mock/reset 的请求体
@@ -429,7 +442,16 @@ func ffmpegGenerate(ext string) []byte {
 	args = append(args, "-y", "-loglevel", "error", dstPath)
 
 	// 5. 跑 ffmpeg
-	ctx := context.Background()
+	// 🆕 2026-06-11 v4：10s context timeout（**仅记录意图，cgo dlopen 实际不响应**）
+	// ⚠️ 已知限制：CallFFmpegNative 是阻塞 cgo call（ffmpeg_dlopen.go L200）
+	//   cgo 不会检查 ctx.Done()，这个 timeout 只能影响 ctx 相关的 Go 逻辑
+	//   真正防止 gin handler hang 靠的是：
+	//     ① 前端 30s AbortController 超时（src/api/mockGenerator.ts timeoutMs）→ abort fetch
+	//        → reader.read() reject → catch → inline error UI
+	//     ② 未来重构：把 ffmpeg 调 subprocess 化（cgo 隔离，子进程崩不挂主进程）
+	//   当前架构下，cgo 卡死会让此 goroutine 泄漏，但**用户感知 30s 后看到错误**。
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	_, stderr, exitCode, err := ffmpeg.RunWithOutput(ctx, args...)
 	if err != nil || exitCode != 0 {
 		// 典型 stderr："Unknown encoder 'libmp3lame'" / "Encoder not found"

@@ -400,31 +400,57 @@ async function handleGenerateMock() {
   mockStats.value = null
   let lastCount = 0
   let lastSize = 0
+  // 🆕 2026-06-11 v4：跟踪被跳过的文件（real device 上 ffmpeg 没编 mp3/flac encoder 常见）
+  const skippedFiles: { relativePath: string; reason: string }[] = []
   try {
     const result = await generateMockFilesViaBackend({
       root: mockRoot.value,
       type: 'all',
+      // 🆕 v4：30s 硬超时。后端 hang 时主动 abort → catch 块 → inline error UI
+      // 历史 bug：real device 偶发 cgo dlopen 阻塞 → gin SSE 不响应 → spinner 永远转 → 体感"崩溃"
+      timeoutMs: 30000,
       onProgress: (p) => {
         lastCount++
         lastSize += p.size
         generateProgressText.value = `(${lastCount}) ${p.relativePath}`
       },
+      onSkipped: (info) => {
+        skippedFiles.push(info)
+        generateProgressText.value = `⚠️ 跳过 ${info.relativePath}（${info.reason}）`
+        console.warn('[mock-gen] skipped', info)
+      },
     })
     mockStats.value = { count: result.count || lastCount, totalSize: result.totalSize || lastSize }
     mockGenerated.value = true
-    showToast({ message: `${t('devtools.generateMock')}: ${mockStats.value.count}`, color: 'success', duration: 1500 })
+    // 🆕 v4：如果有 skipped 文件，inline error card 显示（warning 风格而非 error）
+    if (result.skipped > 0 || skippedFiles.length > 0) {
+      const reasonList = skippedFiles.map((s) => `  - ${s.relativePath}: ${s.reason}`).join('\n')
+      setInlineError({
+        source: 'mockGenerate',
+        title: `Mock 生成完成（${result.count} 成功 / ${result.skipped} 跳过）`,
+        message: `以下 ${result.skipped} 个文件因 ffmpeg build 限制被跳过（real device 常见：mp3/flac encoder 未编入 libffmpeg.so）：\n${reasonList}`,
+        hint: '此为 warning，不是 fatal error。mp4/mkv 仍可用。继续跑自动化测试可只勾选支持格式。',
+      })
+    } else {
+      showToast({ message: `${t('devtools.generateMock')}: ${mockStats.value.count}`, color: 'success', duration: 1500 })
+    }
   } catch (e) {
     // 🆕 2026-06-11 修复：用 inline error card 替代 toast
     // 历史：真机 mock 生成 ffmpeg 失败 + 后端崩溃 → toast 2.5s 一闪就消失，用户看不到根因
     const errMsg = e instanceof Error ? e.message : String(e)
+    const isTimeout = /timeout/i.test(errMsg)
     const isBackendCrash = /502|503|504|connection.*refused|network.*error/i.test(errMsg)
+    let hint = '检查 mockRoot 路径权限 / 后端 SSE 响应 / 后端 mock_generator.go 日志'
+    if (isTimeout) {
+      hint = '超过 30s 未完成（后端可能 hang 在 ffmpeg cgo 调用上）。请检查 adb logcat / pm2 logs encv-go，重启后端再试。'
+    } else if (isBackendCrash) {
+      hint = '后端可能已崩溃（502/网络拒绝）。请检查后端日志（pm2 logs encv-go），重启后再试。'
+    }
     setInlineError({
       source: 'mockGenerate',
-      title: 'Mock 数据生成失败',
+      title: isTimeout ? 'Mock 生成超时（30s）' : 'Mock 数据生成失败',
       message: errMsg,
-      hint: isBackendCrash
-        ? '后端可能已崩溃（502/网络拒绝）。请检查后端日志（pm2 logs encv-go），重启后再试。'
-        : '检查 mockRoot 路径权限 / 后端 SSE 响应 / 后端 mock_generator.go 日志',
+      hint,
     })
     // 不弹 toast（饱和调试原则：禁用 Toast），错误卡已持久显示
   } finally {

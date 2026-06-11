@@ -79,6 +79,8 @@ module.exports = {
         // (internal/config/config.go:292-294)
         ENCV_DEV_PREVIEW: '1',
         ENCV_MOBILE: '1',
+        // ── air binary 路径（gateway 子进程要 spawn air 监视 encv-go）──
+        AIR_BIN: '/root/.local/share/mise/installs/go/1.25.1/bin/air',
       },
       // 网关本体轻量；子进程会跑出来几百 MB（Go 编译 + Vite + node_modules）
       max_memory_restart: '256M',

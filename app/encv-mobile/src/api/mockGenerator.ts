@@ -24,11 +24,28 @@ export interface MockGenerateOptions {
   root: string
   type?: MockFileType
   onProgress?: (p: MockProgress) => void
+  /**
+   * 🆕 2026-06-11 v4：被跳过的文件（通常是 ffmpeg build 没编该 encoder）
+   *   例如：real device 没 libmp3lame/flac → mp3/flac 生成会 emit "skipped" error 事件
+   *   区别于 fatal error（fatal 会 throw 中断流，skipped 仅 warning）
+   */
+  onSkipped?: (info: { relativePath: string; reason: string }) => void
   signal?: AbortSignal
+  /**
+   * 🆕 2026-06-11 v4：超时（毫秒）。默认 30s。超过后 abort 请求，promise reject → catch 块 → inline error UI
+   * 历史 bug：real device 偶发 cgo dlopen 阻塞 → gin SSE 不响应 → 用户看到 spinner 转圈 → 体感"崩溃"
+   * ⚠️ 注意：后端 cgo 阻塞无法被 context 取消（CallFFmpegNative 阻塞 cgo call 不响应 ctx.Done）
+   *   因此 abort 只会断开 SSE 连接 + 触发 catch 块显示错误，**后端 goroutine 可能继续泄漏**
+   *   但用户感知 30s 内能看到 inline error UI，不会再"静默失败"
+   * 未来重构：把 ffmpeg 调 subprocess 化彻底解决
+   */
+  timeoutMs?: number
 }
 
 export interface MockGenerateResult {
   count: number
+  /** 🆕 2026-06-11 v4：因 ffmpeg build 限制被跳过的文件数（real device 上 mp3/flac 常见） */
+  skipped: number
   totalSize: number
 }
 
@@ -39,21 +56,35 @@ export interface MockResetResult {
 /**
  * 通过 SSE 流式拉取生成进度。
  * 后端的事件格式：`data: {"relativePath": "...", "size": 1234}\n\n`
- * 结束时事件：`event: done\ndata: {"count": N, "totalSize": M}\n\n`
+ * 结束时事件：`event: done\ndata: {"count": N, "skipped": K, "totalSize": M}\n\n`
  */
 export async function generateMockFilesViaBackend(opts: MockGenerateOptions): Promise<MockGenerateResult> {
   const baseUrl = getApiBaseUrl()
-  const res = await fetch(`${baseUrl}/api/mock/generate`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'text/event-stream',
-      'X-Confirm-Mock-Mutation': 'yes', // 🆕 2026-06-10：显式意图确认（防擅自生成）
-    },
-    body: JSON.stringify({ root: opts.root, type: opts.type ?? 'all' }),
-    signal: opts.signal,
-  })
+  // 🆕 v4：硬超时（30s），避免后端 hang 时前端 spinner 永远转
+  const timeoutMs = opts.timeoutMs ?? 30000
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(new Error('mock generate timeout')), timeoutMs)
+  // 兼容外部 signal：若外部 abort 也带过来
+  opts.signal?.addEventListener('abort', () => ctrl.abort(opts.signal!.reason))
+
+  let res: Response
+  try {
+    res = await fetch(`${baseUrl}/api/mock/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
+        'X-Confirm-Mock-Mutation': 'yes', // 🆕 2026-06-10：显式意图确认（防擅自生成）
+      },
+      body: JSON.stringify({ root: opts.root, type: opts.type ?? 'all' }),
+      signal: ctrl.signal,
+    })
+  } catch (e) {
+    clearTimeout(timer)
+    throw e
+  }
   if (!res.ok || !res.body) {
+    clearTimeout(timer)
     const txt = await res.text().catch(() => '')
     throw new Error(`Mock generate failed (${res.status}): ${txt}`)
   }
@@ -61,33 +92,58 @@ export async function generateMockFilesViaBackend(opts: MockGenerateOptions): Pr
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
-  let final: MockGenerateResult = { count: 0, totalSize: 0 }
+  // 🆕 v4：默认 skipped: 0（兼容旧后端不返回该字段）
+  let final: MockGenerateResult = { count: 0, skipped: 0, totalSize: 0 }
 
-  while (true) {
-    const { value, done } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
+  try {
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
 
-    // 按 SSE 协议分割（\n\n）
-    let idx
-    while ((idx = buffer.indexOf('\n\n')) >= 0) {
-      const eventBlock = buffer.slice(0, idx)
-      buffer = buffer.slice(idx + 2)
-      const parsed = parseSseEvent(eventBlock)
-      if (!parsed) continue
-      if (parsed.event === 'progress') {
-        try {
-          const data = JSON.parse(parsed.data) as MockProgress
-          opts.onProgress?.(data)
-        } catch {}
-      } else if (parsed.event === 'done') {
-        try {
-          final = JSON.parse(parsed.data) as MockGenerateResult
-        } catch {}
-      } else if (parsed.event === 'error') {
-        throw new Error(parsed.data)
+      // 按 SSE 协议分割（\n\n）
+      let idx
+      while ((idx = buffer.indexOf('\n\n')) >= 0) {
+        const eventBlock = buffer.slice(0, idx)
+        buffer = buffer.slice(idx + 2)
+        const parsed = parseSseEvent(eventBlock)
+        if (!parsed) continue
+        if (parsed.event === 'progress') {
+          try {
+            const data = JSON.parse(parsed.data) as MockProgress
+            opts.onProgress?.(data)
+          } catch {}
+        } else if (parsed.event === 'done') {
+          try {
+            final = JSON.parse(parsed.data) as MockGenerateResult
+            // 兼容旧后端（没有 skipped 字段）
+            if (typeof final.skipped !== 'number') final.skipped = 0
+          } catch {}
+        } else if (parsed.event === 'error') {
+          // 🆕 v4：区分 skipped（信息）vs fatal error（中断流）
+          //   backend emit 格式：{"skipped": true, "relativePath": "...", "reason": "..."} → 走 onSkipped
+          //   backend emit 格式：{"error": "..."} → 走 fatal throw
+          try {
+            const errObj = JSON.parse(parsed.data) as Record<string, unknown>
+            if (errObj && errObj.skipped === true) {
+              opts.onSkipped?.({
+                relativePath: String(errObj.relativePath ?? '?'),
+                reason: String(errObj.reason ?? 'unknown'),
+              })
+              continue
+            }
+            // fatal error
+            throw new Error(parsed.data)
+          } catch (e) {
+            // JSON 解析失败 → 当 fatal 处理
+            if (e instanceof Error && e.message === parsed.data) throw e
+            throw new Error(parsed.data)
+          }
+        }
       }
     }
+  } finally {
+    clearTimeout(timer)
   }
 
   return final

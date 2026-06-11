@@ -28,11 +28,16 @@ import { setTaskMetadata } from './useTaskTrigger'
 import { fetchWebDavLocalInfo } from '@/api/encv'
 
 // ============= WebDAV Basic Auth =============
-// 🆕 2026-06-11：避免 fetch 收到 401 触发浏览器原生弹窗，统一注入 Authorization header
-// 来源优先级：
-//   1) localStorage 'encv_webdav_creds_v1'（用户在 UI 面板配置）
-//   2) 内置默认值（与后端 cfg.Webdav 默认账号保持一致）
-//   3) 后端未启用 auth（username/password 为空）→ 返回 undefined → 不带 Authorization
+// 🆕 2026-06-11 v2：auth 凭证必须从后端 local-info 拉
+// 来源优先级（runAllCases 入口统一处理，runOneCase 只读缓存）：
+//   1) 后端 /api/webdav/local-info 返回的 username/password（与后端 cfg.Webdav 对齐）
+//   2) localStorage 'encv_webdav_creds_v1'（用户在 UI 面板手动覆盖过）
+//   3) 内置默认值（仅做兜底，理论上不会命中）
+//   4) 后端未启用 auth（username/password 都为空）→ 不带 Authorization
+//
+// 关键修复：之前硬编码 'encv'/'encv-webdav' → 后端实际配 admin/123456 → 401
+//   旧代码虽然调了 fetchWebDavLocalInfo，但只取 webdavPath/serverBaseUrl，
+//   **完全没用返回的 username/password** → 致命 bug
 const WEBDAV_CREDS_STORAGE_KEY = 'encv_webdav_creds_v1'
 const WEBDAV_DEFAULT_USERNAME = 'encv'
 const WEBDAV_DEFAULT_PASSWORD = 'encv-webdav'
@@ -40,21 +45,47 @@ const WEBDAV_DEFAULT_PASSWORD = 'encv-webdav'
 interface WebDavCreds {
   username: string
   password: string
+  /** 来源：用于调试栏展示 */
+  source: 'backend-local-info' | 'localStorage' | 'default'
 }
 
-function loadWebDavCreds(): WebDavCreds {
+/**
+ * 从 localStorage 读用户手动配置的 creds（不一定有）
+ */
+function readStoredCreds(): WebDavCreds | null {
   try {
     const raw = localStorage.getItem(WEBDAV_CREDS_STORAGE_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw) as Partial<WebDavCreds>
-      if (typeof parsed.username === 'string' && typeof parsed.password === 'string') {
-        return { username: parsed.username, password: parsed.password }
-      }
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<WebDavCreds>
+    if (typeof parsed.username === 'string' && typeof parsed.password === 'string') {
+      return { username: parsed.username, password: parsed.password, source: 'localStorage' }
     }
   } catch {
     // ignore
   }
-  return { username: WEBDAV_DEFAULT_USERNAME, password: WEBDAV_DEFAULT_PASSWORD }
+  return null
+}
+
+function defaultCreds(): WebDavCreds {
+  return { username: WEBDAV_DEFAULT_USERNAME, password: WEBDAV_DEFAULT_PASSWORD, source: 'default' }
+}
+
+/** 缓存从后端拉到的 creds（runAllCases 入口刷新） */
+let cachedBackendCreds: WebDavCreds | null = null
+
+/**
+ * 实际拿 creds 的地方：先看 backend 缓存（runAllCases 时填充）→ 再看 localStorage → 最后兜底默认
+ */
+function resolveCreds(): WebDavCreds {
+  // 1) 后端缓存
+  if (cachedBackendCreds && cachedBackendCreds.username) {
+    return cachedBackendCreds
+  }
+  // 2) localStorage 用户配置
+  const stored = readStoredCreds()
+  if (stored) return stored
+  // 3) 兜底
+  return defaultCreds()
 }
 
 /**
@@ -329,6 +360,28 @@ export function useWebDavAutomationTests() {
     baseUrl.value = await detectBaseUrl()
   }
 
+  /**
+   * 🆕 2026-06-11 v2 修复：从后端拉 creds 并缓存到模块级 cachedBackendCreds
+   * view 应当在 onMounted + 每次"修改后端 webdav 配置后"调用
+   * @returns 拉到的 creds（或 null，fetch 失败时）
+   */
+  async function refreshCredsFromBackend(): Promise<WebDavCreds | null> {
+    try {
+      const info = await fetchWebDavLocalInfo()
+      if (info && info.username) {
+        cachedBackendCreds = {
+          username: info.username,
+          password: info.password ?? '',
+          source: 'backend-local-info',
+        }
+        return cachedBackendCreds
+      }
+    } catch (err) {
+      console.warn('[webdav] refreshCredsFromBackend failed', err)
+    }
+    return null
+  }
+
   /** 初始化结果列表（pending） */
   function initResults(): void {
     results.value = WEBDAV_TEST_CASES.map((c) => ({
@@ -363,7 +416,8 @@ export function useWebDavAutomationTests() {
     // 任务系统适配：标记这个 testId 属于当前 run group
     setTaskMetadata(testCase.id, 'automation', currentRunId.value ?? undefined)
     try {
-      const auth = buildAuthHeaders(loadWebDavCreds())
+      // 🆕 v2：用 resolveCreds()（后端缓存 > localStorage > 默认）而不是硬编码默认
+      const auth = buildAuthHeaders(resolveCreds())
       const result = await executeWebDavTest(testCase, baseUrl.value, timeoutMs, auth)
       const completedAt = new Date().toISOString()
       const durationMs = new Date(completedAt).getTime() - new Date(startedAt).getTime()
@@ -406,6 +460,11 @@ export function useWebDavAutomationTests() {
     isRunning.value = true
     initResults()
     baseUrl.value = await detectBaseUrl()  // 🆕 2026-06-11：async，调用后端 local-info API
+    // 🆕 v2 修复：跑测试前先从后端拉 creds（对齐后端 cfg.Webdav 配置）
+    // 历史 bug：硬编码 'encv'/'encv-webdav' → 后端实际 admin/123456 → 401
+    await refreshCredsFromBackend()
+    const resolvedCreds = resolveCreds()
+    console.info('[webdav] using creds', { source: resolvedCreds.source, username: resolvedCreds.username })
     currentRunId.value = `webdav-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
     currentRunStartedAt.value = new Date().toISOString()
     const startedAt = currentRunStartedAt.value
@@ -517,6 +576,7 @@ export function useWebDavAutomationTests() {
     runAllCases,
     cancelRun,
     refreshBaseUrl,  // 🆕 2026-06-11：让 view onMounted 主动对齐 webdav 真实 baseUrl
+    refreshCredsFromBackend,  // 🆕 v2：让 view onMounted 主动对齐后端 webdav 真实 creds
     getPersistedRuns,
     getPersistedRun,
     clearPersistedRuns,
