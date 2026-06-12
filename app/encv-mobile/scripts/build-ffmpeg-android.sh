@@ -4,8 +4,6 @@ set -euo pipefail
 FFMPEG_VERSION="8.0"
 X264_VERSION="stable"
 LAME_VERSION="3.100"
-OGG_VERSION="1.3.5"
-FLAC_VERSION="1.5.0"
 NDK_VERSION="26.1.10909125"
 API_LEVEL=24
 ABI="arm64-v8a"
@@ -63,8 +61,6 @@ fi
 
 X264_INSTALL="${BUILD_DIR}/x264-install"
 LAME_INSTALL="${BUILD_DIR}/lame-install"
-OGG_INSTALL="${BUILD_DIR}/ogg-install"
-FLAC_INSTALL="${BUILD_DIR}/flac-install"
 if [ ! -f "${X264_INSTALL}/lib/libx264.a" ]; then
     if [ ! -d "x264" ]; then
         echo "Downloading x264..."
@@ -97,28 +93,32 @@ fi
 # === Build libmp3lame (LGPL 2.1, MP3 encoder) ===
 # MP3 encoding patents expired 2017-04-16 (Fraunhofer IIS last to surrender).
 # Lame 3.100+ is safe for both static & dynamic linking in commercial products.
-# NOTE: lame 3.100 configure does NOT support --disable-decoder or --enable-debug=no.
-#   Only use options that `./configure --help` actually lists.
+#
+# Why external build is required for lame (only):
+#   aac / alac / flac are all ffmpeg native encoders (`A....D` codec flag in
+#   `ffmpeg -encoders` output). They are compiled IN from the ffmpeg source
+#   tree itself, no external library needed.
+#   MP3 has NO native encoder in ffmpeg (patent reasons); only `libmp3lame`
+#   and `libshine` exist, both external libs. So we build lame, then link
+#   it into ffmpeg via --enable-libmp3lame.
+#
+# lame 3.100 configure does NOT support --disable-decoder or --enable-debug=no.
+# Only use options that `./configure --help` actually lists.
 if [ ! -f "${LAME_INSTALL}/lib/libmp3lame.a" ]; then
+    cd "${BUILD_DIR}"
     echo "Downloading libmp3lame ${LAME_VERSION}..."
     curl -fSL "https://sourceforge.net/projects/lame/files/lame/${LAME_VERSION}/lame-${LAME_VERSION}.tar.gz/download" \
         -o lame.tar.gz || { echo "❌ Failed to download libmp3lame"; exit 1; }
     tar xzf lame.tar.gz && rm lame.tar.gz || { echo "❌ Failed to extract libmp3lame"; exit 1; }
-    # Find actual extracted directory
-    LAME_SRC_DIR=$(find . -maxdepth 1 -type d -name "*lame*" ! -name ".*" | head -1)
+    LAME_SRC_DIR=$(find "${BUILD_DIR}" -maxdepth 1 -type d -name "*lame*" | head -1)
     if [ -z "$LAME_SRC_DIR" ]; then
         echo "❌ libmp3lame source directory not found after extraction"
-        ls -la
+        ls -la "${BUILD_DIR}"
         exit 1
     fi
 
     echo "=== Building libmp3lame (source: ${LAME_SRC_DIR}) ==="
-    cd "${BUILD_DIR}/${LAME_SRC_DIR}"
-
-    # lame 3.100 needs a few patches for Android NDK r26:
-    # 1. Replace <sys/time.h> include guards (conflicts with NDK headers)
-    # 2. Fix nasm detection (NDK doesn't ship nasm; use --disable-nasm)
-    # 3. Fix gettext detection (Android lacks libintl; use --disable-nls)
+    cd "${LAME_SRC_DIR}"
 
     CC="$CC" AR="$AR" RANLIB="$RANLIB" STRIP="$STRIP" \
     ./configure \
@@ -151,129 +151,6 @@ if [ ! -f "${LAME_INSTALL}/lib/libmp3lame.a" ]; then
     echo "✅ libmp3lame built and installed"
 else
     echo "✅ libmp3lame already built, skipping"
-fi
-
-# === Build libogg (BSD 3-clause, required by libFLAC) ===
-if [ ! -f "${OGG_INSTALL}/lib/libogg.a" ]; then
-    cd "${BUILD_DIR}"
-    echo "Downloading libogg ${OGG_VERSION}..."
-    curl -fSL "https://ftp.osuosl.org/pub/xiph/releases/ogg/libogg-${OGG_VERSION}.tar.gz" \
-        -o ogg.tar.gz || { echo "❌ Failed to download libogg"; exit 1; }
-    tar xzf ogg.tar.gz && rm ogg.tar.gz || { echo "❌ Failed to extract libogg"; exit 1; }
-    # Find actual extracted directory (inside BUILD_DIR)
-    OGG_SRC_DIR=$(find "${BUILD_DIR}" -maxdepth 1 -type d -name "*ogg*" | head -1)
-    if [ -z "$OGG_SRC_DIR" ]; then
-        echo "❌ libogg source directory not found after extraction"
-        ls -la "${BUILD_DIR}"
-        exit 1
-    fi
-    echo "=== Building libogg (source: ${OGG_SRC_DIR}) ==="
-    cd "${OGG_SRC_DIR}"
-    CC="$CC" AR="$AR" RANLIB="$RANLIB" STRIP="$STRIP" \
-    ./configure \
-        --host=${ARCH}-linux-android \
-        --prefix="${OGG_INSTALL}" \
-        --enable-static \
-        --disable-shared \
-        > "${LOG_DIR}/ogg-configure.log" 2>&1 || {
-        echo "❌ ogg configure failed (see ${LOG_DIR}/ogg-configure.log)"
-        tail -30 "${LOG_DIR}/ogg-configure.log"
-        exit 1
-    }
-    make -j$(nproc) > "${LOG_DIR}/ogg-make.log" 2>&1 || {
-        echo "❌ ogg make failed (see ${LOG_DIR}/ogg-make.log)"
-        tail -30 "${LOG_DIR}/ogg-make.log"
-        exit 1
-    }
-    make install > "${LOG_DIR}/ogg-install.log" 2>&1 || {
-        echo "❌ ogg install failed (see ${LOG_DIR}/ogg-install.log)"
-        tail -30 "${LOG_DIR}/ogg-install.log"
-        exit 1
-    }
-    echo "✅ libogg built and installed"
-else
-    echo "✅ libogg already built, skipping"
-fi
-
-# === Build libFLAC (BSD 3-clause, FLAC encoder, depends on libogg) ===
-if [ ! -f "${FLAC_INSTALL}/lib/libFLAC.a" ]; then
-    cd "${BUILD_DIR}"
-    echo "Downloading libFLAC ${FLAC_VERSION}..."
-    curl -fSL "https://ftp.osuosl.org/pub/xiph/releases/flac/flac-${FLAC_VERSION}.tar.xz" \
-        -o flac.tar.xz || { echo "❌ Failed to download libFLAC"; exit 1; }
-    tar xJf flac.tar.xz && rm flac.tar.xz || { echo "❌ Failed to extract libFLAC"; exit 1; }
-    # Find actual extracted directory
-    FLAC_SRC_DIR=$(find "${BUILD_DIR}" -maxdepth 1 -type d -name "*flac*" | head -1)
-    if [ -z "$FLAC_SRC_DIR" ]; then
-        echo "❌ libFLAC source directory not found after extraction"
-        ls -la "${BUILD_DIR}"
-        exit 1
-    fi
-
-    echo "=== Building libFLAC (source: ${FLAC_SRC_DIR}) ==="
-    cd "${FLAC_SRC_DIR}"
-    # FLAC 1.5.0 uses cmake by default; fall back to autotools if available.
-    # cmake is more reliable for Android NDK cross-compilation.
-    if [ -f "CMakeLists.txt" ] && command -v cmake >/dev/null 2>&1; then
-        echo "Using cmake for libFLAC..."
-        mkdir -p build && cd build
-        cmake .. \
-            -DCMAKE_TOOLCHAIN_FILE="${NDK_PATH}/build/cmake/android.toolchain.cmake" \
-            -DANDROID_ABI=${ABI} \
-            -DANDROID_PLATFORM=android-${API_LEVEL} \
-            -DCMAKE_INSTALL_PREFIX="${FLAC_INSTALL}" \
-            -DBUILD_SHARED_LIBS=OFF \
-            -DBUILD_TESTING=OFF \
-            -DWITH_OGG=ON \
-            -DOGG_INCLUDE_DIR="${OGG_INSTALL}/include" \
-            -DOGG_LIBRARY="${OGG_INSTALL}/lib/libogg.a" \
-            -DCMAKE_C_FLAGS="-fPIC" \
-            > "${LOG_DIR}/flac-cmake.log" 2>&1 || {
-            echo "❌ flac cmake failed (see ${LOG_DIR}/flac-cmake.log)"
-            tail -30 "${LOG_DIR}/flac-cmake.log"
-            exit 1
-        }
-        make -j$(nproc) > "${LOG_DIR}/flac-make.log" 2>&1 || {
-            echo "❌ flac make failed (see ${LOG_DIR}/flac-make.log)"
-            tail -30 "${LOG_DIR}/flac-make.log"
-            exit 1
-        }
-        make install > "${LOG_DIR}/flac-install.log" 2>&1 || {
-            echo "❌ flac install failed (see ${LOG_DIR}/flac-install.log)"
-            tail -30 "${LOG_DIR}/flac-install.log"
-            exit 1
-        }
-    else
-        echo "Using autotools for libFLAC..."
-        PKG_CONFIG_PATH="${OGG_INSTALL}/lib/pkgconfig" \
-        CC="$CC" AR="$AR" RANLIB="$RANLIB" STRIP="$STRIP" \
-        ./configure \
-            --host=${ARCH}-linux-android \
-            --prefix="${FLAC_INSTALL}" \
-            --enable-static \
-            --disable-shared \
-            --disable-xmms-plugin \
-            --disable-oggtest \
-            --disable-doxygen-docs \
-            > "${LOG_DIR}/flac-configure.log" 2>&1 || {
-            echo "❌ flac configure failed (see ${LOG_DIR}/flac-configure.log)"
-            tail -30 "${LOG_DIR}/flac-configure.log"
-            exit 1
-        }
-        make -j$(nproc) > "${LOG_DIR}/flac-make.log" 2>&1 || {
-            echo "❌ flac make failed (see ${LOG_DIR}/flac-make.log)"
-            tail -30 "${LOG_DIR}/flac-make.log"
-            exit 1
-        }
-        make install > "${LOG_DIR}/flac-install.log" 2>&1 || {
-            echo "❌ flac install failed (see ${LOG_DIR}/flac-install.log)"
-            tail -30 "${LOG_DIR}/flac-install.log"
-            exit 1
-        }
-    fi
-    echo "✅ libFLAC built and installed"
-else
-    echo "✅ libFLAC already built, skipping"
 fi
 
 echo "=== Patching ffmpeg source ==="
@@ -357,14 +234,13 @@ if ! command -v pkg-config &>/dev/null; then
     apt-get update -qq && apt-get install -y -qq pkg-config
 fi
 
-echo "Fixing x264.pc / flac.pc for Android (remove -lpthread -ldl)..."
+echo "Fixing x264.pc for Android (remove -lpthread -ldl)..."
 sed -i 's/-lpthread//g; s/-ldl//g' "${X264_INSTALL}/lib/pkgconfig/x264.pc" 2>/dev/null || true
-sed -i 's/-lpthread//g; s/-ldl//g' "${FLAC_INSTALL}/lib/pkgconfig/flac.pc" 2>/dev/null || true
 
 cat > "${BUILD_DIR}/pkg-config-wrapper" << PCEOF
 #!/bin/bash
-export PKG_CONFIG_PATH="${X264_INSTALL}/lib/pkgconfig:${FLAC_INSTALL}/lib/pkgconfig"
-export PKG_CONFIG_LIBDIR="${X264_INSTALL}/lib/pkgconfig:${FLAC_INSTALL}/lib/pkgconfig"
+export PKG_CONFIG_PATH="${X264_INSTALL}/lib/pkgconfig"
+export PKG_CONFIG_LIBDIR="${X264_INSTALL}/lib/pkgconfig"
 export PKG_CONFIG_ALLOW_SYSTEM_CFLAGS=1
 export PKG_CONFIG_ALLOW_SYSTEM_LIBS=1
 exec pkg-config "\$@"
@@ -373,7 +249,6 @@ chmod +x "${BUILD_DIR}/pkg-config-wrapper"
 
 echo "Verifying external libs via wrapper:"
 "${BUILD_DIR}/pkg-config-wrapper" --cflags --libs x264 || echo "⚠️  x264 not found via wrapper"
-"${BUILD_DIR}/pkg-config-wrapper" --cflags --libs flac || echo "⚠️  flac not found via wrapper"
 
 echo "=== Configuring ffmpeg ==="
 ./configure \
@@ -408,17 +283,14 @@ echo "=== Configuring ffmpeg ==="
     --enable-small \
     --enable-libx264 \
     --enable-libmp3lame \
-    --enable-libflac \
     --enable-gpl \
     --disable-resource-compression \
     --pkg-config="${BUILD_DIR}/pkg-config-wrapper" \
     --extra-cflags="-fPIC -ffunction-sections -fdata-sections -DANDROID \
         -I${X264_INSTALL}/include \
-        -I${LAME_INSTALL}/include \
-        -I${FLAC_INSTALL}/include \
-        -I${OGG_INSTALL}/include" \
-    --extra-ldflags="-L${X264_INSTALL}/lib -L${LAME_INSTALL}/lib -L${FLAC_INSTALL}/lib -L${OGG_INSTALL}/lib -lm" \
-    --extra-libs="-lm -lFLAC -logg" || {
+        -I${LAME_INSTALL}/include" \
+    --extra-ldflags="-L${X264_INSTALL}/lib -L${LAME_INSTALL}/lib -lm" \
+    --extra-libs="-lm" || {
     echo "=== ffmpeg configure FAILED ==="
     echo "=== Last 80 lines of config.log ==="
     tail -80 ffbuild/config.log 2>/dev/null || echo "(no config.log found)"
@@ -485,10 +357,8 @@ CFLAGS="-std=c11 -fPIC -ffunction-sections -fdata-sections -DANDROID -D_POSIX_C_
   -I${FFMPEG_SRC}/fftools/graph \
   -I${FFMPEG_SRC}/fftools/resources \
   -I${X264_INSTALL}/include \
-  -I${LAME_INSTALL}/include \
-  -I${FLAC_INSTALL}/include \
-  -I${OGG_INSTALL}/include"
-LDFLAGS="-L${FFMPEG_INSTALL}/lib -L${X264_INSTALL}/lib -L${LAME_INSTALL}/lib -L${FLAC_INSTALL}/lib -L${OGG_INSTALL}/lib"
+  -I${LAME_INSTALL}/include"
+LDFLAGS="-L${FFMPEG_INSTALL}/lib -L${X264_INSTALL}/lib -L${LAME_INSTALL}/lib"
 
 STATIC_LIBS=""
 for lib in libavformat libavcodec libavutil libswresample libswscale libavfilter libavdevice; do
@@ -570,8 +440,6 @@ $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffmpeg.so" \
     $STATIC_LIBS \
     ${X264_INSTALL}/lib/libx264.a \
     ${LAME_INSTALL}/lib/libmp3lame.a \
-    ${FLAC_INSTALL}/lib/libFLAC.a \
-    ${OGG_INSTALL}/lib/libogg.a \
     -lm -lz -llog \
     -Wl,-u,ffmpeg_run \
     -Wl,-u,ffmpeg_reset \
@@ -593,8 +461,6 @@ $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffprobe.so" \
     $STATIC_LIBS \
     ${X264_INSTALL}/lib/libx264.a \
     ${LAME_INSTALL}/lib/libmp3lame.a \
-    ${FLAC_INSTALL}/lib/libFLAC.a \
-    ${OGG_INSTALL}/lib/libogg.a \
     -lm -lz -llog \
     -Wl,-u,ffprobe_run \
     -Wl,-u,ffprobe_reset \
@@ -660,11 +526,7 @@ cat > "${OUTPUT_DIR}/build-info.json" << BIEOF
   "x264_version": "${X264_VERSION}",
   "x264_configure_opts": "--enable-static --enable-pic --disable-cli --disable-opencl",
   "lame_version": "${LAME_VERSION}",
-  "lame_configure_opts": "--enable-static --disable-shared --disable-frontend --disable-decoder",
-  "libogg_version": "${OGG_VERSION}",
-  "libogg_configure_opts": "--enable-static --disable-shared",
-  "libflac_version": "${FLAC_VERSION}",
-  "libflac_configure_opts": "--enable-static --disable-shared --disable-xmms-plugin --disable-oggtest --disable-doxygen-docs",
+  "lame_configure_opts": "--enable-static --disable-shared --disable-frontend --disable-nasm --disable-nls",
   "ndk_version": "${NDK_VERSION}",
   "api_level": ${API_LEVEL},
   "abi": "${ABI}",
@@ -690,8 +552,7 @@ cat > "${OUTPUT_DIR}/build-info.json" << BIEOF
   "ffmpeg_license": "GPL v2+",
   "x264_license": "GPL v2",
   "lame_license": "LGPL 2.1",
-  "libogg_license": "BSD 3-clause",
-  "libflac_license": "BSD 3-clause",
+  "encoder_source_summary": "aac/alac/flac are ffmpeg native (no external lib); libx264/libmp3lame are external",
   "validation": {
     "all_required_decoders_present": true,
     "all_required_encoders_present": true,
