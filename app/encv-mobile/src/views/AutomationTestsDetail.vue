@@ -155,6 +155,10 @@
                     :color="entry.status === 'failed' ? 'danger' : entry.status === 'ok' ? 'success' : 'medium'"
                   ></ion-icon>
                 </span>
+                <!-- 🆕 2026-06-12：runner 标识（mediacodec=⚡硬件 / ffmpeg=⚙软件 / static=📄静态） -->
+                <span class="mock-gen-log-runner" :class="`mock-gen-log-runner--${entry.runner}`">
+                  {{ entry.runner === 'mediacodec' ? '⚡' : entry.runner === 'static' ? '📄' : '⚙' }}
+                </span>
                 <span class="mock-gen-log-idx">[{{ entry.index }}/{{ entry.total }}]</span>
                 <span class="mock-gen-log-path">{{ entry.relativePath }}</span>
                 <span class="mock-gen-log-encoder">{{ entry.encoder }}</span>
@@ -351,6 +355,13 @@ interface MockGenLogEntry {
   relativePath: string
   status: 'ok' | 'failed' | 'pending'
   encoder: string
+  /**
+   * 🆕 2026-06-12：runner 标识
+   *   - "ffmpeg": 软件编（沙箱 / 真机兜底）
+   *   - "mediacodec": 硬件编（Phase 3.3 实装，UI 显示 ⚡）
+   *   - "static": 静态字节（PNG/JPEG/PDF/TXT 等，UI 显示 📄）
+   */
+  runner: 'ffmpeg' | 'mediacodec' | 'static' | string
   ffmpegArgs: string[]
   exitCode: number
   stderr: string
@@ -542,6 +553,7 @@ async function handleGenerateMock() {
           relativePath: diag.relativePath,
           status: diag.status,
           encoder: diag.encoder,
+          runner: diag.runner, // 🆕 2026-06-12
           ffmpegArgs: diag.ffmpegArgs,
           exitCode: diag.exitCode,
           stderr: diag.stderr,
@@ -571,6 +583,7 @@ async function handleGenerateMock() {
           relativePath: diag.relativePath,
           status: 'pending',
           encoder: diag.encoder,
+          runner: diag.runner, // 🆕 2026-06-12
           ffmpegArgs: diag.ffmpegArgs,
           exitCode: 0,
           stderr: '',
@@ -674,6 +687,7 @@ function copyMockGenLog() {
   for (const e of mockGenLog.value) {
     const status = e.status === 'ok' ? '✓' : e.status === 'failed' ? '✗' : '◌'
     lines.push(`[${status}] [${e.index}/${e.total}] ${e.relativePath}`)
+    lines.push(`    runner: ${e.runner}  (mediacodec=硬件⚡ / ffmpeg=软件⚙ / static=静态📄)`)
     lines.push(`    encoder: ${e.encoder}`)
     lines.push(`    ffmpeg args: ${e.ffmpegArgs.length > 0 ? e.ffmpegArgs.join(' ') : '(静态字节 - 无 ffmpeg 调用)'}`)
     lines.push(`    exit code: ${e.exitCode}`)
@@ -1284,6 +1298,32 @@ onUnmounted(() => {
 .mock-gen-log-idx { color: #6B7280; font-weight: 600; }
 .mock-gen-log-path { color: #E0E0E0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mock-gen-log-encoder { color: #8B5CF6; font-size: 10.5px; }
+
+/* 🆕 2026-06-12：runner 标识（mediacodec=硬件 / ffmpeg=软件 / static=静态） */
+.mock-gen-log-runner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: bold;
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+.mock-gen-log-runner--ffmpeg {
+  background: rgba(139, 92, 246, 0.15);
+  color: #8B5CF6;
+}
+.mock-gen-log-runner--mediacodec {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22C55E;
+}
+.mock-gen-log-runner--static {
+  background: rgba(100, 116, 139, 0.15);
+  color: #64748B;
+}
 .mock-gen-log-exitcode { color: #FCA5A5; font-weight: 600; font-size: 10.5px; }
 .mock-gen-log-row ion-icon:last-child { font-size: 12px; color: #6B7280; }
 

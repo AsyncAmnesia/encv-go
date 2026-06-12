@@ -39,6 +39,13 @@ export interface MockSpecDiag {
   relativePath: string
   status: 'pending' | 'ok' | 'failed'
   encoder: string
+  /**
+   * 🆕 2026-06-12：runner 标识
+   *   - "ffmpeg": 走 ffmpeg.RunWithOutput（沙箱 / 真机兜底）
+   *   - "mediacodec": 走 Android MediaCodec 硬编（Phase 3.3 实装）
+   *   - "static": 静态字节直接写盘（PNG/JPEG/PDF/TXT/AE 等）
+   */
+  runner: 'ffmpeg' | 'mediacodec' | 'static' | string
   ffmpegArgs: string[]
   exitCode: number
   stderr: string
@@ -192,7 +199,7 @@ export async function generateMockFilesViaBackend(opts: MockGenerateOptions): Pr
             // 前端用这个更新 mockGenLogTotal
             opts.onSpecPlan?.({
               index: 0, total: data.total, relativePath: '__starting__', status: 'pending',
-              encoder: '', ffmpegArgs: [], exitCode: 0, stderr: data.root,
+              encoder: '', runner: 'static', ffmpegArgs: [], exitCode: 0, stderr: data.root,
             })
           } catch {}
         } else if (parsed.event === 'progress') {

@@ -139,7 +139,7 @@ type mockFileSpec struct {
 	relativePath string
 	// data 在 planMockSpecs 阶段为 nil；handler 跑 ffmpeg 后填
 	data []byte
-	// ffmpegArgs 仅在 ffmpegGenerate 调用过的 spec 上有值（mp4/mkv/mp3/flac）
+	// ffmpegArgs 仅在 ffmpegGenerate 调用过的 spec 上有值（mp4/mkv/mp3/flac/m4a）
 	// PNG/JPEG/PDF/TXT/AE/SCCV 等硬编码字节的 spec 留空
 	ffmpegArgs []string
 	// stderr 是 ffmpeg stderr 全文（含 ffmpeg 头部 + Unknown encoder 等关键信息）
@@ -150,8 +150,12 @@ type mockFileSpec struct {
 	// encoderHint 是源码层面推断的 encoder（mp4=h264, mkv=h264, mp3=libmp3lame, flac=flac）
 	// 失败时前端可直接对比 manifest 看该 encoder 是否在 ffmpeg build 里
 	encoderHint string
-	// 静态字节 spec 标志（planMockSpecs 直接填 data，不走 ffmpeg）
+	// 🆕 2026-06-12：区分 codec 用途（m4a lossy vs m4a lossless 走不同 encoder）
+	//   静态字节 spec 标志（planMockSpecs 直接填 data，不走 ffmpeg）
 	isStatic bool
+	// 🆕 2026-06-12：runner 标识（ffmpeg / mediacodec / static）
+	//   Phase 3.3 MediaCodec 实装后填 'mediacodec'；当前固定 'ffmpeg'
+	runner string
 }
 
 // generateMockSpecs 返回指定 type 的所有文件 specs
@@ -163,15 +167,17 @@ type mockFileSpec struct {
 //   目的：真机 cgo 阻塞 mp4 时，前端已看到「接下来 mp3/flac/pdf」流程结构
 func generateMockSpecs(typeName string) []mockFileSpec {
 	plainSpecs := []mockFileSpec{
-		{relativePath: "01-plain-media/image/photo.jpg", data: minimalJPEG(), encoderHint: "JPEG (static)", isStatic: true},
-		{relativePath: "01-plain-media/image/screenshot.png", data: minimalPNG(), encoderHint: "PNG (static)", isStatic: true},
+		{relativePath: "01-plain-media/image/photo.jpg", data: minimalJPEG(), encoderHint: "JPEG (static)", isStatic: true, runner: "static"},
+		{relativePath: "01-plain-media/image/screenshot.png", data: minimalPNG(), encoderHint: "PNG (static)", isStatic: true, runner: "static"},
 		planMP4(),
 		planMKV(),
+		planM4A(),        // 🆕 2026-06-12 m4a 容器 + aac 编（lossy，零成本，manifest 已有）
+		planM4ALossless(), // 🆕 2026-06-12 m4a 容器 + alac 编（lossless，ffmpeg 内置 encoder）
 		planMP3(),
 		planFLAC(),
-		{relativePath: "01-plain-media/document/report.pdf", data: minimalPDF(), encoderHint: "PDF (static)", isStatic: true},
-		{relativePath: "01-plain-media/document/notes.txt", data: []byte("ENCV Mock Notes\n中文测试\n日本語テスト\n한국어 테스트\n"), encoderHint: "TXT (static)", isStatic: true},
-		{relativePath: "01-plain-media/document/data.csv", data: []byte("id,name,size\n1,photo.jpg,107\n2,sample.mp4,45056\n"), encoderHint: "CSV (static)", isStatic: true},
+		{relativePath: "01-plain-media/document/report.pdf", data: minimalPDF(), encoderHint: "PDF (static)", isStatic: true, runner: "static"},
+		{relativePath: "01-plain-media/document/notes.txt", data: []byte("ENCV Mock Notes\n中文测试\n日本語テスト\n한국어 테스트\n"), encoderHint: "TXT (static)", isStatic: true, runner: "static"},
+		{relativePath: "01-plain-media/document/data.csv", data: []byte("id,name,size\n1,photo.jpg,107\n2,sample.mp4,45056\n"), encoderHint: "CSV (static)", isStatic: true, runner: "static"},
 	}
 	aeSpecs := []mockFileSpec{
 		{relativePath: "02-alist-encrypt/secret.ae", data: makeAEFile("secret.ae", 4096), encoderHint: "AE (static)", isStatic: true},
@@ -303,8 +309,8 @@ func (s *Server) handleMockGenerateGin(c *gin.Context) {
 	}
 	for i, sp := range specs {
 		diagData := fmt.Sprintf(
-			`{"index": %d, "total": %d, "relativePath": %q, "status": "pending", "encoder": %q, "ffmpegArgs": %s, "exitCode": 0, "stderr": ""}`,
-			i+1, len(specs), sp.relativePath, sp.encoderHint, jsonEscapeStringSlice(sp.ffmpegArgs),
+			`{"index": %d, "total": %d, "relativePath": %q, "status": "pending", "encoder": %q, "runner": %q, "ffmpegArgs": %s, "exitCode": 0, "stderr": ""}`,
+			i+1, len(specs), sp.relativePath, sp.encoderHint, sp.runner, jsonEscapeStringSlice(sp.ffmpegArgs),
 		)
 		if err := writeSseEvent(c.Writer, flusher, "spec_plan", diagData); err != nil {
 			slog.Warn("[mock_gen] SSE plan write failed (client gone?)", "err", err, "relativePath", sp.relativePath)
@@ -384,8 +390,8 @@ func (s *Server) handleMockGenerateGin(c *gin.Context) {
 				}
 			}
 			diagData := fmt.Sprintf(
-				`{"index": %d, "total": %d, "relativePath": %q, "status": %q, "encoder": %q, "ffmpegArgs": %s, "exitCode": %d, "stderr": %q}`,
-				idx, len(specs), sp.relativePath, diagStatus, sp.encoderHint,
+				`{"index": %d, "total": %d, "relativePath": %q, "status": %q, "encoder": %q, "runner": %q, "ffmpegArgs": %s, "exitCode": %d, "stderr": %q}`,
+				idx, len(specs), sp.relativePath, diagStatus, sp.encoderHint, sp.runner,
 				jsonEscapeStringSlice(sp.ffmpegArgs),
 				sp.exitCode, sp.stderr,
 			)
@@ -629,16 +635,22 @@ func ffmpegGenerate(ext string) (data []byte, stderr string, exitCode int, err e
 	var srcName string
 	var srcArgs []string // ffmpeg -i src
 	switch ext {
-	case "mp4", "mkv":
+	case "mp4", "mkv", "m4a":
+		// 🆕 2026-06-12：m4a 复用 source.mp4（-c copy，零编码成本）
 		srcBytes = sourceMP4Bytes
 		srcName = fmt.Sprintf("encv-mock-src-%d-%d.mp4", os.Getpid(), seq)
 		srcArgs = []string{"-i", ""} // placeholder, set after WriteFile
+	case "m4a-lossless":
+		// m4a-lossless 必须用 wav 源（因为要从 wav 编码成 alac）
+		srcBytes = sourceWAVBytes
+		srcName = fmt.Sprintf("encv-mock-src-%d-%d.wav", os.Getpid(), seq)
+		srcArgs = []string{"-i", ""}
 	case "mp3", "flac":
 		srcBytes = sourceWAVBytes
 		srcName = fmt.Sprintf("encv-mock-src-%d-%d.wav", os.Getpid(), seq)
 		srcArgs = []string{"-i", ""}
 	default:
-		return nil, fmt.Sprintf("unknown ext: %q (only mp4/mkv/mp3/flac supported)", ext), -1, fmt.Errorf("unknown ext: %q", ext)
+		return nil, fmt.Sprintf("unknown ext: %q (only mp4/mkv/mp3/flac/m4a/m4a-lossless supported)", ext), -1, fmt.Errorf("unknown ext: %q", ext)
 	}
 	srcPath := filepath.Join(os.TempDir(), srcName)
 	if werr := os.WriteFile(srcPath, srcBytes, 0644); werr != nil {
@@ -648,7 +660,12 @@ func ffmpegGenerate(ext string) (data []byte, stderr string, exitCode int, err e
 	srcArgs[1] = srcPath
 
 	// 2. 输出 tmp（同样用 seq 唯一化）
-	dstPath := filepath.Join(os.TempDir(), fmt.Sprintf("encv-mock-dst-%d-%d.%s", os.Getpid(), seq, ext))
+	// 🆕 2026-06-12：m4a-lossless 实际输出 .m4a（ext 字段是 m4a-lossless 仅用于编码区分）
+	dstExt := ext
+	if ext == "m4a-lossless" {
+		dstExt = "m4a"
+	}
+	dstPath := filepath.Join(os.TempDir(), fmt.Sprintf("encv-mock-dst-%d-%d.%s", os.Getpid(), seq, dstExt))
 	defer func() { _ = os.Remove(dstPath) }()
 
 	// 3. ffmpeg args
@@ -660,6 +677,12 @@ func ffmpegGenerate(ext string) (data []byte, stderr string, exitCode int, err e
 	case "mkv":
 		// source.mp4 -c copy → .mkv（h264+aac → matroska container）
 		encodeArgs = []string{"-c", "copy"}
+	case "m4a":
+		// 🆕 2026-06-12：source.mp4 -c copy → .m4a（mp4 容器，ffmpeg 自动用 ipod/mp4 muxer）
+		encodeArgs = []string{"-c", "copy"}
+	case "m4a-lossless":
+		// 🆕 2026-06-12：source.wav -c:a alac → .m4a（alac 编码，ffmpeg 内置 encoder）
+		encodeArgs = []string{"-c:a", "alac"}
 	case "mp3":
 		// 沙箱有 libmp3lame；真机没编 → 真机返回 nil
 		encodeArgs = []string{"-c:a", "libmp3lame", "-b:a", "128k"}
@@ -704,8 +727,12 @@ func ffmpegGenerate(ext string) (data []byte, stderr string, exitCode int, err e
 func planMockSpec(ext, relPath, encoderHint string) mockFileSpec {
 	var srcExt string
 	switch ext {
-	case "mp4", "mkv":
+	case "mp4", "mkv", "m4a":
+		// m4a 复用 source.mp4（已含 aac）-c copy → 实际上 m4a 容器会改用 ipod/mp4 muxer
 		srcExt = "mp4"
+	case "m4a-lossless":
+		// m4a-lossless 用 source.wav + alac 编码（不能 -c copy，因为 source 是 wav 不是 m4a）
+		srcExt = "wav"
 	case "mp3", "flac":
 		srcExt = "wav"
 	default:
@@ -719,7 +746,12 @@ func planMockSpec(ext, relPath, encoderHint string) mockFileSpec {
 
 	seq := mockFfmpegSeq.Add(1)
 	srcPath := filepath.Join(os.TempDir(), fmt.Sprintf("encv-mock-src-%d-%d.%s", os.Getpid(), seq, srcExt))
-	dstPath := filepath.Join(os.TempDir(), fmt.Sprintf("encv-mock-dst-%d-%d.%s", os.Getpid(), seq, ext))
+	// 🆕 2026-06-12：m4a-lossless 实际输出 .m4a（ext 字段是 m4a-lossless 仅用于编码区分）
+	dstExt := ext
+	if ext == "m4a-lossless" {
+		dstExt = "m4a"
+	}
+	dstPath := filepath.Join(os.TempDir(), fmt.Sprintf("encv-mock-dst-%d-%d.%s", os.Getpid(), seq, dstExt))
 
 	var encodeArgs []string
 	switch ext {
@@ -727,6 +759,12 @@ func planMockSpec(ext, relPath, encoderHint string) mockFileSpec {
 		encodeArgs = []string{"-c", "copy"}
 	case "mkv":
 		encodeArgs = []string{"-c", "copy"}
+	case "m4a":
+		// 复用 source.mp4 的 aac 流，容器改 m4a（ipod/mp4 muxer）
+		encodeArgs = []string{"-c", "copy"}
+	case "m4a-lossless":
+		// wav → alac → m4a（ffmpeg 内置 alac encoder，无外部依赖）
+		encodeArgs = []string{"-c:a", "alac"}
 	case "mp3":
 		encodeArgs = []string{"-c:a", "libmp3lame", "-b:a", "128k"}
 	case "flac":
@@ -740,6 +778,7 @@ func planMockSpec(ext, relPath, encoderHint string) mockFileSpec {
 		relativePath: relPath,
 		ffmpegArgs:   args,
 		encoderHint:  encoderHint,
+		runner:       "ffmpeg", // Phase 3.3 后可换 "mediacodec"
 	}
 }
 
@@ -828,6 +867,22 @@ func planMP4() mockFileSpec {
 
 func planMKV() mockFileSpec {
 	return planMockSpec("mkv", "01-plain-media/video/comedy.mkv", "h264+aac (-c copy) → matroska")
+}
+
+// 🆕 2026-06-12 m4a 容器 + AAC 有损编码
+// 零成本实现：ffmpeg manifest 已有 aac encoder + ipod muxer
+// 命令：-i source.mp4 -c:a aac -b:a 128k out.m4a
+// 验证：ffprobe out.m4a → "Audio: aac (LC), 44100 Hz, mono" + ISO BMFF container
+func planM4A() mockFileSpec {
+	return planMockSpec("m4a", "01-plain-media/audio/podcast.m4a", "aac (m4a 容器, 有损)")
+}
+
+// 🆕 2026-06-12 m4a 容器 + ALAC 无损编码（Apple Lossless Audio Codec）
+// ffmpeg 内置 alac encoder（无需外部库）—— 完全满足"用户：m4a 有无损"
+// 命令：-i source.wav -c:a alac out.m4a
+// 验证：ffprobe out.m4a → "Audio: alac, 44100 Hz, mono, s16, 1 ch" + ISO BMFF container
+func planM4ALossless() mockFileSpec {
+	return planMockSpec("m4a-lossless", "01-plain-media/audio/concert.m4a", "alac (m4a 容器, 无损)")
 }
 
 func planMP3() mockFileSpec {

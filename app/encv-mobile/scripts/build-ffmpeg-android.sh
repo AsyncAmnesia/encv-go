@@ -59,6 +59,9 @@ if [ ! -d "ffmpeg-${FFMPEG_VERSION}" ]; then
 fi
 
 X264_INSTALL="${BUILD_DIR}/x264-install"
+LAME_INSTALL="${BUILD_DIR}/lame-install"
+OGG_INSTALL="${BUILD_DIR}/ogg-install"
+FLAC_INSTALL="${BUILD_DIR}/flac-install"
 if [ ! -f "${X264_INSTALL}/lib/libx264.a" ]; then
     if [ ! -d "x264" ]; then
         echo "Downloading x264..."
@@ -86,6 +89,107 @@ if [ ! -f "${X264_INSTALL}/lib/libx264.a" ]; then
     echo "✅ x264 built and installed"
 else
     echo "✅ x264 already built, skipping"
+fi
+
+# === Build libmp3lame (LGPL 2.1, MP3 encoder) ===
+# MP3 encoding patents expired 2017-04-16 (Fraunhofer IIS last to surrender).
+# Lame 3.100+ is safe for both static & dynamic linking in commercial products.
+# `--disable-decoder` cuts binary ~30% (we only need encoder for mock mp3 gen).
+if [ ! -f "${LAME_INSTALL}/lib/libmp3lame.a" ]; then
+    if [ ! -d "lame-${LAME_VERSION}" ]; then
+        echo "Downloading libmp3lame ${LAME_VERSION}..."
+        curl -sL "https://sourceforge.net/projects/lame/files/lame/${LAME_VERSION}/lame-${LAME_VERSION}.tar.gz/download" \
+            -o lame.tar.gz
+        tar xzf lame.tar.gz
+        rm lame.tar.gz
+    fi
+
+    echo "=== Building libmp3lame ==="
+    cd "${BUILD_DIR}/lame-${LAME_VERSION}"
+    CC="$CC" AR="$AR" RANLIB="$RANLIB" STRIP="$STRIP" \
+    ./configure \
+        --host=${ARCH}-linux-android \
+        --prefix="${LAME_INSTALL}" \
+        --enable-static \
+        --disable-shared \
+        --disable-frontend \
+        --disable-decoder \
+        --enable-debug=no \
+        --cross-prefix="${TOOLCHAIN}/bin/llvm-" \
+        --extra-cflags="-fPIC" \
+        > "${LOG_DIR}/lame-configure.log" 2>&1
+    echo "lame configure done (log: ${LOG_DIR}/lame-configure.log)"
+
+    make -j$(nproc) > "${LOG_DIR}/lame-make.log" 2>&1
+    make install > "${LOG_DIR}/lame-install.log" 2>&1
+    echo "✅ libmp3lame built and installed"
+else
+    echo "✅ libmp3lame already built, skipping"
+fi
+
+# === Build libogg (BSD 3-clause, required by libFLAC) ===
+if [ ! -f "${OGG_INSTALL}/lib/libogg.a" ]; then
+    if [ ! -d "libogg-${OGG_VERSION}" ]; then
+        echo "Downloading libogg ${OGG_VERSION}..."
+        curl -sL "https://ftp.osuosl.org/pub/xiph/releases/ogg/libogg-${OGG_VERSION}.tar.gz" \
+            -o ogg.tar.gz
+        tar xzf ogg.tar.gz
+        rm ogg.tar.gz
+    fi
+
+    echo "=== Building libogg ==="
+    cd "${BUILD_DIR}/libogg-${OGG_VERSION}"
+    CC="$CC" AR="$AR" RANLIB="$RANLIB" STRIP="$STRIP" \
+    ./configure \
+        --host=${ARCH}-linux-android \
+        --prefix="${OGG_INSTALL}" \
+        --enable-static \
+        --disable-shared \
+        --cross-prefix="${TOOLCHAIN}/bin/llvm-" \
+        --extra-cflags="-fPIC" \
+        > "${LOG_DIR}/ogg-configure.log" 2>&1
+    echo "ogg configure done (log: ${LOG_DIR}/ogg-configure.log)"
+
+    make -j$(nproc) > "${LOG_DIR}/ogg-make.log" 2>&1
+    make install > "${LOG_DIR}/ogg-install.log" 2>&1
+    echo "✅ libogg built and installed"
+else
+    echo "✅ libogg already built, skipping"
+fi
+
+# === Build libFLAC (BSD 3-clause, FLAC encoder, depends on libogg) ===
+if [ ! -f "${FLAC_INSTALL}/lib/libFLAC.a" ]; then
+    if [ ! -d "flac-${FLAC_VERSION}" ]; then
+        echo "Downloading libFLAC ${FLAC_VERSION}..."
+        curl -sL "https://ftp.osuosl.org/pub/xiph/releases/flac/flac-${FLAC_VERSION}.tar.xz" \
+            -o flac.tar.xz
+        tar xJf flac.tar.xz
+        rm flac.tar.xz
+    fi
+
+    echo "=== Building libFLAC ==="
+    cd "${BUILD_DIR}/flac-${FLAC_VERSION}"
+    PKG_CONFIG_PATH="${OGG_INSTALL}/lib/pkgconfig" \
+    CC="$CC" AR="$AR" RANLIB="$RANLIB" STRIP="$STRIP" \
+    ./configure \
+        --host=${ARCH}-linux-android \
+        --prefix="${FLAC_INSTALL}" \
+        --enable-static \
+        --disable-shared \
+        --disable-xmms-plugin \
+        --disable-oggtest \
+        --disable-doxygen-docs \
+        --cross-prefix="${TOOLCHAIN}/bin/llvm-" \
+        --extra-cflags="-fPIC -I${OGG_INSTALL}/include" \
+        --extra-ldflags="-L${OGG_INSTALL}/lib" \
+        > "${LOG_DIR}/flac-configure.log" 2>&1
+    echo "flac configure done (log: ${LOG_DIR}/flac-configure.log)"
+
+    make -j$(nproc) > "${LOG_DIR}/flac-make.log" 2>&1
+    make install > "${LOG_DIR}/flac-install.log" 2>&1
+    echo "✅ libFLAC built and installed"
+else
+    echo "✅ libFLAC already built, skipping"
 fi
 
 echo "=== Patching ffmpeg source ==="
@@ -169,21 +273,23 @@ if ! command -v pkg-config &>/dev/null; then
     apt-get update -qq && apt-get install -y -qq pkg-config
 fi
 
-echo "Fixing x264.pc for Android (remove -lpthread -ldl)..."
+echo "Fixing x264.pc / flac.pc for Android (remove -lpthread -ldl)..."
 sed -i 's/-lpthread//g; s/-ldl//g' "${X264_INSTALL}/lib/pkgconfig/x264.pc" 2>/dev/null || true
+sed -i 's/-lpthread//g; s/-ldl//g' "${FLAC_INSTALL}/lib/pkgconfig/flac.pc" 2>/dev/null || true
 
 cat > "${BUILD_DIR}/pkg-config-wrapper" << PCEOF
 #!/bin/bash
-export PKG_CONFIG_PATH="${X264_INSTALL}/lib/pkgconfig"
-export PKG_CONFIG_LIBDIR="${X264_INSTALL}/lib/pkgconfig"
+export PKG_CONFIG_PATH="${X264_INSTALL}/lib/pkgconfig:${FLAC_INSTALL}/lib/pkgconfig"
+export PKG_CONFIG_LIBDIR="${X264_INSTALL}/lib/pkgconfig:${FLAC_INSTALL}/lib/pkgconfig"
 export PKG_CONFIG_ALLOW_SYSTEM_CFLAGS=1
 export PKG_CONFIG_ALLOW_SYSTEM_LIBS=1
 exec pkg-config "\$@"
 PCEOF
 chmod +x "${BUILD_DIR}/pkg-config-wrapper"
 
-echo "Verifying x264 via wrapper:"
+echo "Verifying external libs via wrapper:"
 "${BUILD_DIR}/pkg-config-wrapper" --cflags --libs x264 || echo "⚠️  x264 not found via wrapper"
+"${BUILD_DIR}/pkg-config-wrapper" --cflags --libs flac || echo "⚠️  flac not found via wrapper"
 
 echo "=== Configuring ffmpeg ==="
 ./configure \
@@ -217,12 +323,18 @@ echo "=== Configuring ffmpeg ==="
     --enable-filter="$FILTERS" \
     --enable-small \
     --enable-libx264 \
+    --enable-libmp3lame \
+    --enable-libflac \
     --enable-gpl \
     --disable-resource-compression \
     --pkg-config="${BUILD_DIR}/pkg-config-wrapper" \
-    --extra-cflags="-fPIC -ffunction-sections -fdata-sections -DANDROID -I${X264_INSTALL}/include" \
-    --extra-ldflags="-L${X264_INSTALL}/lib -lm" \
-    --extra-libs="-lm" || {
+    --extra-cflags="-fPIC -ffunction-sections -fdata-sections -DANDROID \
+        -I${X264_INSTALL}/include \
+        -I${LAME_INSTALL}/include \
+        -I${FLAC_INSTALL}/include \
+        -I${OGG_INSTALL}/include" \
+    --extra-ldflags="-L${X264_INSTALL}/lib -L${LAME_INSTALL}/lib -L${FLAC_INSTALL}/lib -L${OGG_INSTALL}/lib -lm" \
+    --extra-libs="-lm -lFLAC -logg" || {
     echo "=== ffmpeg configure FAILED ==="
     echo "=== Last 80 lines of config.log ==="
     tail -80 ffbuild/config.log 2>/dev/null || echo "(no config.log found)"
@@ -288,8 +400,11 @@ CFLAGS="-std=c11 -fPIC -ffunction-sections -fdata-sections -DANDROID -D_POSIX_C_
   -I${FFMPEG_SRC}/fftools/textformat \
   -I${FFMPEG_SRC}/fftools/graph \
   -I${FFMPEG_SRC}/fftools/resources \
-  -I${X264_INSTALL}/include"
-LDFLAGS="-L${FFMPEG_INSTALL}/lib -L${X264_INSTALL}/lib"
+  -I${X264_INSTALL}/include \
+  -I${LAME_INSTALL}/include \
+  -I${FLAC_INSTALL}/include \
+  -I${OGG_INSTALL}/include"
+LDFLAGS="-L${FFMPEG_INSTALL}/lib -L${X264_INSTALL}/lib -L${LAME_INSTALL}/lib -L${FLAC_INSTALL}/lib -L${OGG_INSTALL}/lib"
 
 STATIC_LIBS=""
 for lib in libavformat libavcodec libavutil libswresample libswscale libavfilter libavdevice; do
@@ -370,6 +485,9 @@ $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffmpeg.so" \
     $FFMPEG_OBJS \
     $STATIC_LIBS \
     ${X264_INSTALL}/lib/libx264.a \
+    ${LAME_INSTALL}/lib/libmp3lame.a \
+    ${FLAC_INSTALL}/lib/libFLAC.a \
+    ${OGG_INSTALL}/lib/libogg.a \
     -lm -lz -llog \
     -Wl,-u,ffmpeg_run \
     -Wl,-u,ffmpeg_reset \
@@ -390,6 +508,9 @@ $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffprobe.so" \
     $FFPROBE_OBJS \
     $STATIC_LIBS \
     ${X264_INSTALL}/lib/libx264.a \
+    ${LAME_INSTALL}/lib/libmp3lame.a \
+    ${FLAC_INSTALL}/lib/libFLAC.a \
+    ${OGG_INSTALL}/lib/libogg.a \
     -lm -lz -llog \
     -Wl,-u,ffprobe_run \
     -Wl,-u,ffprobe_reset \
@@ -454,11 +575,17 @@ cat > "${OUTPUT_DIR}/build-info.json" << BIEOF
   "ffmpeg_codename": "Huffman",
   "x264_version": "${X264_VERSION}",
   "x264_configure_opts": "--enable-static --enable-pic --disable-cli --disable-opencl",
+  "lame_version": "${LAME_VERSION}",
+  "lame_configure_opts": "--enable-static --disable-shared --disable-frontend --disable-decoder",
+  "libogg_version": "${OGG_VERSION}",
+  "libogg_configure_opts": "--enable-static --disable-shared",
+  "libflac_version": "${FLAC_VERSION}",
+  "libflac_configure_opts": "--enable-static --disable-shared --disable-xmms-plugin --disable-oggtest --disable-doxygen-docs",
   "ndk_version": "${NDK_VERSION}",
   "api_level": ${API_LEVEL},
   "abi": "${ABI}",
   "build_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "manifest_version": "1",
+  "manifest_version": "2",
   "manifest_checksum": "${MANIFEST_CSUM}",
   "enabled_decoders": [$(echo "$DECODERS" | tr ',' '\n' | while read -r d; do printf "\"%s\"," "$d"; done | sed 's/,$//')],
   "enabled_encoders": [$(echo "$ENCODERS" | tr ',' '\n' | while read -r d; do printf "\"%s\"," "$d"; done | sed 's/,$//')],
@@ -478,6 +605,9 @@ cat > "${OUTPUT_DIR}/build-info.json" << BIEOF
   "cflags": "-std=c11 -fPIC -DANDROID -D_POSIX_C_SOURCE=200809L -include time.h",
   "ffmpeg_license": "GPL v2+",
   "x264_license": "GPL v2",
+  "lame_license": "LGPL 2.1",
+  "libogg_license": "BSD 3-clause",
+  "libflac_license": "BSD 3-clause",
   "validation": {
     "all_required_decoders_present": true,
     "all_required_encoders_present": true,
