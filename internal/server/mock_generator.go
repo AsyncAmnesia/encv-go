@@ -15,7 +15,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -180,6 +179,28 @@ func generateMockSpecs(typeName string) []mockFileSpec {
 //   - event: progress  data: { "relativePath": "...", "size": N }
 //   - event: done      data: { "count": N, "totalSize": M }
 func (s *Server) handleMockGenerateGin(c *gin.Context) {
+	// 🆕 2026-06-12 饱和防御：defer recover 防 SSE 写 closed conn 时 panic 整进程崩
+	// 即使 gin.Recovery() 顶层 middleware 会兜 500，但 panic 后 mockGenMu 仍需 Unlock
+	//（gin.Recovery 走 c.AbortWithStatus，handler 内 defer 仍会执行）
+	// 这里再包一层：
+	// 1) 防止真机 cgo 内 panic 跨越 cgo boundary（gin.Recovery 抓不到）
+	// 2) panic 时尝试 emit 一次 SSE error event（不一定成功，conn 可能已 close）
+	// 3) panic 详情写 slog 供 adb logcat 排查
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("[mock_gen] PANIC recovered",
+				"panic", fmt.Sprintf("%v", r),
+				"root", c.Param("root"),
+				"method", c.Request.Method,
+				"url", c.Request.URL.Path,
+			)
+			// 尝试给客户端写 error（可能写不进去，conn 已 close）
+			if !c.Writer.Written() {
+				_ = c.Error(fmt.Errorf("mock_generate panic: %v", r)) //nolint:errcheck
+			}
+		}
+	}()
+
 	// 🆕 2026-06-10：显式意图确认（防擅自生成）
 	//  - 防止 preflight / 第三方爬虫 / 误调触发数据生成
 	//  - 前端 UI 按钮自动带 X-Confirm-Mock-Mutation: yes
@@ -237,16 +258,23 @@ func (s *Server) handleMockGenerateGin(c *gin.Context) {
 		return
 	}
 
-	enc := json.NewEncoder(c.Writer)
-
 	count := 0
 	skipped := 0
 	var totalSize int64
+	// 🆕 2026-06-12 饱和防御：跟踪 SSE 写入错误，客户端断开时优雅停止
+	//  旧逻辑：writeSseEvent 错误被忽略，handler 继续跑全 9 个文件
+	//  即使文件写盘成功，对客户端已 disconnect 的请求也毫无意义 → 浪费 CPU + fd
+	clientGone := false
 	for _, sp := range specs {
+		if clientGone {
+			// 客户端已断开，跳过剩余文件 + 不再 emit SSE
+			slog.Warn("[mock_gen] client gone, abort loop", "remaining_specs", len(specs)-count-skipped)
+			break
+		}
 		fullPath := filepath.Join(root, sp.relativePath)
 		dir := filepath.Dir(fullPath)
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			emitSseEvent(c.Writer, flusher, "error", fmt.Sprintf(`{"error": "mkdir %s: %s"}`, dir, err.Error()))
+			_ = emitSseEvent(c.Writer, flusher, "error", fmt.Sprintf(`{"error": "mkdir %s: %s"}`, dir, err.Error()))
 			return
 		}
 		// 🆕 2026-06-11 v4 修复：ffmpegGenerate 返回 nil（真机 ffmpeg build 没编该 encoder）
@@ -256,21 +284,30 @@ func (s *Server) handleMockGenerateGin(c *gin.Context) {
 		if len(sp.data) == 0 {
 			skipped++
 			slog.Warn("[mock] skip nil data", "relativePath", sp.relativePath, "reason", "ffmpegGenerate returned nil (likely encoder not compiled in this ffmpeg build)")
-			emitSseEvent(c.Writer, flusher, "error", fmt.Sprintf(`{"skipped": true, "relativePath": %q, "reason": "ffmpeg 不可用/未编该 encoder (真机常见：libmp3lame/flac 等)"}`, sp.relativePath))
+			if err := emitSseEvent(c.Writer, flusher, "error", fmt.Sprintf(`{"skipped": true, "relativePath": %q, "reason": "ffmpeg 不可用/未编该 encoder (真机常见：libmp3lame/flac 等)"}`, sp.relativePath)); err != nil {
+				clientGone = true
+				slog.Warn("[mock_gen] SSE write failed (client gone?)", "err", err, "relativePath", sp.relativePath)
+				continue
+			}
 			continue
 		}
 		if err := os.WriteFile(fullPath, sp.data, 0644); err != nil {
-			emitSseEvent(c.Writer, flusher, "error", fmt.Sprintf(`{"error": "write %s: %s"}`, sp.relativePath, err.Error()))
+			_ = emitSseEvent(c.Writer, flusher, "error", fmt.Sprintf(`{"error": "write %s: %s"}`, sp.relativePath, err.Error()))
 			return
 		}
 		count++
 		totalSize += int64(len(sp.data))
-		_ = enc.Encode(mockGeneratorProgress{RelativePath: sp.relativePath, Size: len(sp.data)})
 		// SSE event: progress
-		writeSseEvent(c.Writer, flusher, "progress", fmt.Sprintf(`{"relativePath": %q, "size": %d}`, sp.relativePath, len(sp.data)))
+		if err := writeSseEvent(c.Writer, flusher, "progress", fmt.Sprintf(`{"relativePath": %q, "size": %d}`, sp.relativePath, len(sp.data))); err != nil {
+			clientGone = true
+			slog.Warn("[mock_gen] SSE write failed (client gone?)", "err", err, "relativePath", sp.relativePath)
+			continue
+		}
 	}
 	// 🆕 done 事件带 skipped 字段（前端可显示"X 个格式因 ffmpeg build 限制跳过"）
-	writeSseEvent(c.Writer, flusher, "done", fmt.Sprintf(`{"count": %d, "skipped": %d, "totalSize": %d}`, count, skipped, totalSize))
+	if err := writeSseEvent(c.Writer, flusher, "done", fmt.Sprintf(`{"count": %d, "skipped": %d, "totalSize": %d}`, count, skipped, totalSize)); err != nil {
+		slog.Warn("[mock_gen] SSE done write failed", "err", err, "count", count, "skipped", skipped)
+	}
 }
 
 // mockResetRequest 是 POST /api/mock/reset 的请求体
@@ -284,6 +321,16 @@ type mockResetRequest struct {
 // 修复：清空 4 个已知子目录（01-plain-media / 02-alist-encrypt / 03-encv-containers / 04-boundary-test）
 //       + 02-test-output（自动化测试运行时生成的产物），保留目录结构
 func (s *Server) handleMockResetGin(c *gin.Context) {
+	// 🆕 2026-06-12 饱和防御：defer recover（与 handleMockGenerateGin 同款）
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("[mock_reset] PANIC recovered",
+				"panic", fmt.Sprintf("%v", r),
+				"url", c.Request.URL.Path,
+			)
+		}
+	}()
+
 	var req mockResetRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body: " + err.Error()})
@@ -350,14 +397,28 @@ func (s *Server) handleMockResetGin(c *gin.Context) {
 }
 
 // writeSseEvent 写一个 SSE 事件（event: <name>\ndata: <payload>\n\n）
-func writeSseEvent(w io.Writer, flusher http.Flusher, event, data string) {
-	_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, data)
-	flusher.Flush()
+//
+// 🆕 2026-06-12 饱和防御：返回 error，调用方在客户端断开时能优雅停止 handler
+//
+// 旧实现：_, _ = fmt.Fprintf(...); flusher.Flush() — 两个 error 全忽略
+//   → 客户端提前断开（abort / 切 tab / 网络抖动）时 handler 继续跑全 9 个文件
+//   → 浪费 CPU + fd + goroutine 持有 mockGenMu 锁直到下一个 emit 失败（30s 后）
+//
+// 客户端断开检测：fmt.Fprintf 写 closed conn 返回 "broken pipe" / "connection reset"
+//   http.Flusher.Flush() 不返回 error（stdlib 限制），所以只能信 fmt.Fprintf
+//   gin 实际写入路径：responseWriter.Write() → wrapped ResponseWriter.Write()
+//   → 底层 net.TCPConn.Write() → broken pipe
+func writeSseEvent(w io.Writer, flusher http.Flusher, event, data string) error {
+	if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, data); err != nil {
+		return fmt.Errorf("sse write event=%s: %w", event, err)
+	}
+	flusher.Flush() // http.Flusher 接口无返回值，错误由下次 Write 反映
+	return nil
 }
 
 // emitSseEvent 是 writeSseEvent 的语义化别名（用于错误事件）
-func emitSseEvent(w io.Writer, flusher http.Flusher, event, data string) {
-	writeSseEvent(w, flusher, event, data)
+func emitSseEvent(w io.Writer, flusher http.Flusher, event, data string) error {
+	return writeSseEvent(w, flusher, event, data)
 }
 
 // ════════════════════════════════════════════════════════════════════
