@@ -97,7 +97,8 @@ fi
 # === Build libmp3lame (LGPL 2.1, MP3 encoder) ===
 # MP3 encoding patents expired 2017-04-16 (Fraunhofer IIS last to surrender).
 # Lame 3.100+ is safe for both static & dynamic linking in commercial products.
-# `--disable-decoder` cuts binary ~30% (we only need encoder for mock mp3 gen).
+# NOTE: lame 3.100 configure does NOT support --disable-decoder or --enable-debug=no.
+#   Only use options that `./configure --help` actually lists.
 if [ ! -f "${LAME_INSTALL}/lib/libmp3lame.a" ]; then
     if [ ! -d "lame-${LAME_VERSION}" ]; then
         echo "Downloading libmp3lame ${LAME_VERSION}..."
@@ -109,6 +110,12 @@ if [ ! -f "${LAME_INSTALL}/lib/libmp3lame.a" ]; then
 
     echo "=== Building libmp3lame ==="
     cd "${BUILD_DIR}/lame-${LAME_VERSION}"
+
+    # lame 3.100 needs a few patches for Android NDK r26:
+    # 1. Replace <sys/time.h> include guards (conflicts with NDK headers)
+    # 2. Fix nasm detection (NDK doesn't ship nasm; use --disable-nasm)
+    # 3. Fix gettext detection (Android lacks libintl; use --disable-nls)
+
     CC="$CC" AR="$AR" RANLIB="$RANLIB" STRIP="$STRIP" \
     ./configure \
         --host=${ARCH}-linux-android \
@@ -116,15 +123,27 @@ if [ ! -f "${LAME_INSTALL}/lib/libmp3lame.a" ]; then
         --enable-static \
         --disable-shared \
         --disable-frontend \
-        --disable-decoder \
-        --enable-debug=no \
-        --cross-prefix="${TOOLCHAIN}/bin/llvm-" \
-        --extra-cflags="-fPIC" \
-        > "${LOG_DIR}/lame-configure.log" 2>&1
+        --disable-nasm \
+        --disable-nls \
+        --disable-gtktest \
+        --with-pic=yes \
+        > "${LOG_DIR}/lame-configure.log" 2>&1 || {
+        echo "❌ lame configure failed (see ${LOG_DIR}/lame-configure.log)"
+        tail -30 "${LOG_DIR}/lame-configure.log"
+        exit 1
+    }
     echo "lame configure done (log: ${LOG_DIR}/lame-configure.log)"
 
-    make -j$(nproc) > "${LOG_DIR}/lame-make.log" 2>&1
-    make install > "${LOG_DIR}/lame-install.log" 2>&1
+    make -j$(nproc) > "${LOG_DIR}/lame-make.log" 2>&1 || {
+        echo "❌ lame make failed (see ${LOG_DIR}/lame-make.log)"
+        tail -30 "${LOG_DIR}/lame-make.log"
+        exit 1
+    }
+    make install > "${LOG_DIR}/lame-install.log" 2>&1 || {
+        echo "❌ lame install failed (see ${LOG_DIR}/lame-install.log)"
+        tail -30 "${LOG_DIR}/lame-install.log"
+        exit 1
+    }
     echo "✅ libmp3lame built and installed"
 else
     echo "✅ libmp3lame already built, skipping"
@@ -148,13 +167,23 @@ if [ ! -f "${OGG_INSTALL}/lib/libogg.a" ]; then
         --prefix="${OGG_INSTALL}" \
         --enable-static \
         --disable-shared \
-        --cross-prefix="${TOOLCHAIN}/bin/llvm-" \
-        --extra-cflags="-fPIC" \
-        > "${LOG_DIR}/ogg-configure.log" 2>&1
+        > "${LOG_DIR}/ogg-configure.log" 2>&1 || {
+        echo "❌ ogg configure failed (see ${LOG_DIR}/ogg-configure.log)"
+        tail -30 "${LOG_DIR}/ogg-configure.log"
+        exit 1
+    }
     echo "ogg configure done (log: ${LOG_DIR}/ogg-configure.log)"
 
-    make -j$(nproc) > "${LOG_DIR}/ogg-make.log" 2>&1
-    make install > "${LOG_DIR}/ogg-install.log" 2>&1
+    make -j$(nproc) > "${LOG_DIR}/ogg-make.log" 2>&1 || {
+        echo "❌ ogg make failed (see ${LOG_DIR}/ogg-make.log)"
+        tail -30 "${LOG_DIR}/ogg-make.log"
+        exit 1
+    }
+    make install > "${LOG_DIR}/ogg-install.log" 2>&1 || {
+        echo "❌ ogg install failed (see ${LOG_DIR}/ogg-install.log)"
+        tail -30 "${LOG_DIR}/ogg-install.log"
+        exit 1
+    }
     echo "✅ libogg built and installed"
 else
     echo "✅ libogg already built, skipping"
@@ -172,24 +201,65 @@ if [ ! -f "${FLAC_INSTALL}/lib/libFLAC.a" ]; then
 
     echo "=== Building libFLAC ==="
     cd "${BUILD_DIR}/flac-${FLAC_VERSION}"
-    PKG_CONFIG_PATH="${OGG_INSTALL}/lib/pkgconfig" \
-    CC="$CC" AR="$AR" RANLIB="$RANLIB" STRIP="$STRIP" \
-    ./configure \
-        --host=${ARCH}-linux-android \
-        --prefix="${FLAC_INSTALL}" \
-        --enable-static \
-        --disable-shared \
-        --disable-xmms-plugin \
-        --disable-oggtest \
-        --disable-doxygen-docs \
-        --cross-prefix="${TOOLCHAIN}/bin/llvm-" \
-        --extra-cflags="-fPIC -I${OGG_INSTALL}/include" \
-        --extra-ldflags="-L${OGG_INSTALL}/lib" \
-        > "${LOG_DIR}/flac-configure.log" 2>&1
-    echo "flac configure done (log: ${LOG_DIR}/flac-configure.log)"
-
-    make -j$(nproc) > "${LOG_DIR}/flac-make.log" 2>&1
-    make install > "${LOG_DIR}/flac-install.log" 2>&1
+    # FLAC 1.5.0 uses cmake by default; fall back to autotools if available.
+    # cmake is more reliable for Android NDK cross-compilation.
+    if [ -f "CMakeLists.txt" ] && command -v cmake >/dev/null 2>&1; then
+        echo "Using cmake for libFLAC..."
+        mkdir -p build && cd build
+        cmake .. \
+            -DCMAKE_TOOLCHAIN_FILE="${NDK_PATH}/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=${ABI} \
+            -DANDROID_PLATFORM=android-${API_LEVEL} \
+            -DCMAKE_INSTALL_PREFIX="${FLAC_INSTALL}" \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DBUILD_TESTING=OFF \
+            -DWITH_OGG=ON \
+            -DOGG_INCLUDE_DIR="${OGG_INSTALL}/include" \
+            -DOGG_LIBRARY="${OGG_INSTALL}/lib/libogg.a" \
+            -DCMAKE_C_FLAGS="-fPIC" \
+            > "${LOG_DIR}/flac-cmake.log" 2>&1 || {
+            echo "❌ flac cmake failed (see ${LOG_DIR}/flac-cmake.log)"
+            tail -30 "${LOG_DIR}/flac-cmake.log"
+            exit 1
+        }
+        make -j$(nproc) > "${LOG_DIR}/flac-make.log" 2>&1 || {
+            echo "❌ flac make failed (see ${LOG_DIR}/flac-make.log)"
+            tail -30 "${LOG_DIR}/flac-make.log"
+            exit 1
+        }
+        make install > "${LOG_DIR}/flac-install.log" 2>&1 || {
+            echo "❌ flac install failed (see ${LOG_DIR}/flac-install.log)"
+            tail -30 "${LOG_DIR}/flac-install.log"
+            exit 1
+        }
+    else
+        echo "Using autotools for libFLAC..."
+        PKG_CONFIG_PATH="${OGG_INSTALL}/lib/pkgconfig" \
+        CC="$CC" AR="$AR" RANLIB="$RANLIB" STRIP="$STRIP" \
+        ./configure \
+            --host=${ARCH}-linux-android \
+            --prefix="${FLAC_INSTALL}" \
+            --enable-static \
+            --disable-shared \
+            --disable-xmms-plugin \
+            --disable-oggtest \
+            --disable-doxygen-docs \
+            > "${LOG_DIR}/flac-configure.log" 2>&1 || {
+            echo "❌ flac configure failed (see ${LOG_DIR}/flac-configure.log)"
+            tail -30 "${LOG_DIR}/flac-configure.log"
+            exit 1
+        }
+        make -j$(nproc) > "${LOG_DIR}/flac-make.log" 2>&1 || {
+            echo "❌ flac make failed (see ${LOG_DIR}/flac-make.log)"
+            tail -30 "${LOG_DIR}/flac-make.log"
+            exit 1
+        }
+        make install > "${LOG_DIR}/flac-install.log" 2>&1 || {
+            echo "❌ flac install failed (see ${LOG_DIR}/flac-install.log)"
+            tail -30 "${LOG_DIR}/flac-install.log"
+            exit 1
+        }
+    fi
     echo "✅ libFLAC built and installed"
 else
     echo "✅ libFLAC already built, skipping"
