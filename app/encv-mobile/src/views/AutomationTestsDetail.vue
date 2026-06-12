@@ -97,10 +97,80 @@
 
         <div v-if="mockStats" class="mock-stats-card">
           <div class="stat-row"><span>{{ t('devtools.fileCount') }}</span><span class="stat-value">{{ mockStats.count }}</span></div>
+         <div v-if="(mockStats.skipped ?? 0) > 0" class="stat-row"><span>skipped (ffmpeg 缺 encoder)</span><span class="stat-value stat-value--warn">{{ mockStats.skipped }}</span></div>
           <div class="stat-row"><span>{{ t('devtools.totalSize') }}</span><span class="stat-value">{{ humanSize(mockStats.totalSize) }}</span></div>
         </div>
 
         <div v-if="generateProgressText" class="progress-text">{{ generateProgressText }}</div>
+
+        <!-- ========== 🆕 2026-06-12 饱和调试：完整 ffmpeg 流程日志卡 ========== -->
+        <!--
+          设计目的：
+            1. 即使后端 cgo 阻塞导致 SSE 流中断，前端也能展示「最后收到的 spec_diag」（在哪停止）
+            2. 失败时一行红色高亮 + 完整 stderr 可点开
+            3. 一键复制全部日志（带时间戳）—— 用户贴给开发者排查
+            4. 流程每一步带：序号 / 状态 / relativePath / encoder / ffmpegArgs / exitCode / stderr
+            5. 静态字节文件（JPEG/PNG/PDF/TXT/CSV）也展示（ffmpegArgs=[] 表明无 ffmpeg 调用）
+        -->
+        <div v-if="mockGenLog.length > 0" class="mock-gen-log-card">
+          <div class="mock-gen-log-header">
+            <div class="mock-gen-log-title">
+              <ion-icon :icon="terminalOutline" color="primary"></ion-icon>
+              <span>FFMPEG 流程日志</span>
+              <span class="mock-gen-log-count">{{ mockGenLog.length }} / {{ mockGenLogTotal }}</span>
+            </div>
+            <button
+              class="mock-gen-log-copy"
+              :class="{ 'mock-gen-log-copy--copied': mockGenLogCopied }"
+              @click="copyMockGenLog"
+              :aria-label="mockGenLogCopied ? '已复制' : '复制全部日志'"
+            >
+              <ion-icon :icon="mockGenLogCopied ? checkmarkCircleOutline : copyOutline" slot="icon-only"></ion-icon>
+              <span>{{ mockGenLogCopied ? '已复制' : '复制全部' }}</span>
+            </button>
+          </div>
+          <div class="mock-gen-log-summary" v-if="mockGenLogSummary">
+            <ion-icon :icon="mockGenLogSummary.failed > 0 ? warningOutline : checkmarkCircleOutline"
+                      :color="mockGenLogSummary.failed > 0 ? 'warning' : 'success'"></ion-icon>
+            <span>{{ mockGenLogSummary.text }}</span>
+            <span v-if="mockGenLogSummary.disconnected" class="mock-gen-log-disconnect">
+              ⚠ 后端连接已断开 — 下面 {{ mockGenLog.length }} 行是「处理到这步」
+            </span>
+          </div>
+          <ol class="mock-gen-log-list">
+            <li
+              v-for="entry in mockGenLog"
+              :key="entry.key"
+              class="mock-gen-log-entry"
+              :class="{
+                'mock-gen-log-entry--failed': entry.status === 'failed',
+                'mock-gen-log-entry--success': entry.status === 'ok',
+                'mock-gen-log-entry--expanded': entry.expanded,
+              }"
+            >
+              <div class="mock-gen-log-row" @click="toggleMockGenLogEntry(entry.key)">
+                <span class="mock-gen-log-status">
+                  <ion-icon
+                    :icon="entry.status === 'failed' ? closeCircleOutline : entry.status === 'ok' ? checkmarkCircleOutline : ellipsisHorizontalOutline"
+                    :color="entry.status === 'failed' ? 'danger' : entry.status === 'ok' ? 'success' : 'medium'"
+                  ></ion-icon>
+                </span>
+                <span class="mock-gen-log-idx">[{{ entry.index }}/{{ entry.total }}]</span>
+                <span class="mock-gen-log-path">{{ entry.relativePath }}</span>
+                <span class="mock-gen-log-encoder">{{ entry.encoder }}</span>
+                <span v-if="entry.status === 'failed'" class="mock-gen-log-exitcode">exit={{ entry.exitCode }}</span>
+                <ion-icon :icon="entry.expanded ? chevronUpOutline : chevronDownOutline" color="medium"></ion-icon>
+              </div>
+              <pre v-if="entry.expanded" class="mock-gen-log-detail">
+<span class="lbl">ffmpeg args:</span>
+{{ entry.ffmpegArgs.length > 0 ? entry.ffmpegArgs.join(' ') : '(静态字节 - 无 ffmpeg 调用)' }}
+<span class="lbl">exit code:</span> {{ entry.exitCode }}
+<span class="lbl">stderr:</span>
+{{ entry.stderr || '(empty)' }}
+<span class="lbl">at:</span> {{ entry.at }}</pre>
+            </li>
+          </ol>
+        </div>
       </ion-list>
 
       <!-- ========== 工作流引擎运行器 ========== -->
@@ -240,6 +310,8 @@ import {
 } from '@ionic/vue'
 import {
   addCircleOutline, trashOutline, syncOutline, playCircleOutline, closeCircleOutline,
+  checkmarkCircleOutline, warningOutline, copyOutline, terminalOutline,
+  chevronUpOutline, chevronDownOutline, ellipsisHorizontalOutline,
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
@@ -264,9 +336,40 @@ const { t } = useI18n()
 const mockRoot = computed(() => DEFAULT_AUTOMATION_SOURCE.split('/').slice(0, 5).join('/') + '/')
 const isGenerating = ref(false)
 const isResetting = ref(false)
-const mockStats = ref<{ count: number; totalSize: number } | null>(null)
+const mockStats = ref<{ count: number; totalSize: number; skipped?: number } | null>(null)
 const generateProgressText = ref('')
 const mockGenerated = ref(false)
+
+// 🆕 2026-06-12 饱和调试：流程日志（每个 spec 一行，含完整 ffmpeg 诊断）
+//   - 即使后端 cgo 阻塞导致 SSE 中断，最后收到的 spec_diag 也会被记录
+//   - 用户可点开看 stderr / 一键复制
+//   - 失败行红色高亮 + 自动展开
+interface MockGenLogEntry {
+  key: string
+  index: number
+  total: number
+  relativePath: string
+  status: 'ok' | 'failed' | 'pending'
+  encoder: string
+  ffmpegArgs: string[]
+  exitCode: number
+  stderr: string
+  at: string
+  expanded: boolean
+  _marked?: boolean // onProgress 标记过 ok 的不重复 mark
+}
+const mockGenLog = ref<MockGenLogEntry[]>([])
+const mockGenLogTotal = ref(0)
+const mockGenLogCopied = ref(false)
+const mockGenLogSummary = computed(() => {
+  const failed = mockGenLog.value.filter((e) => e.status === 'failed').length
+  const ok = mockGenLog.value.filter((e) => e.status === 'ok').length
+  const pending = mockGenLog.value.filter((e) => e.status === 'pending').length
+  const disconnected = mockGenLogTotal.value > 0 && mockGenLog.value.length < mockGenLogTotal.value && (failed + ok) < mockGenLogTotal.value
+  let text = `${ok} ✓ / ${failed} ✗ / ${pending} ◌`
+  if (disconnected) text = `${text}（流中断于 ${mockGenLog.value.length}/${mockGenLogTotal.value}）`
+  return { failed, ok, pending, text, disconnected }
+})
 
 // 🆕 2026-06-11 修复：内联错误卡（替代 showToast，饱和调试原则：禁用 Toast）
 // 历史：用户反馈「真机 mock 生成 ffmpeg 失败 / 后端崩溃 → 弹个 toast 就没了，根本看不到」
@@ -398,10 +501,14 @@ async function handleGenerateMock() {
   isGenerating.value = true
   generateProgressText.value = ''
   mockStats.value = null
+  // 🆕 2026-06-12 饱和调试：清空 + 准备流程日志
+  mockGenLog.value = []
+  mockGenLogTotal.value = 0
+  mockGenLogCopied.value = false
   let lastCount = 0
   let lastSize = 0
   // 🆕 2026-06-11 v4：跟踪被跳过的文件（real device 上 ffmpeg 没编 mp3/flac encoder 常见）
-  const skippedFiles: { relativePath: string; reason: string }[] = []
+  const skippedFiles: { relativePath: string; reason: string; exitCode: number; stderr: string }[] = []
   try {
     const result = await generateMockFilesViaBackend({
       root: mockRoot.value,
@@ -415,40 +522,95 @@ async function handleGenerateMock() {
       // 但**仍保留**：如果 worker 启动慢 / SIGKILL 在 cgo OS thread 卡住内核调度，
       // 前端 abort 至少断 SSE 让用户看到错误（不再 spinner 永远）。
       timeoutMs: 30000,
+      onSpecDiag: (diag) => {
+        // 🆕 2026-06-12 饱和调试：每个 spec 处理前先记一行
+        //   哪怕 progress 事件因 cgo 阻塞没收到，至少能看到「处理到这步」
+        mockGenLogTotal.value = diag.total
+        // 同一 relativePath 多次出现 → 用 index 区分（unlikely，但防 dedupe）
+        const key = `${diag.index}-${diag.relativePath}-${diag.exitCode}`
+        const existing = mockGenLog.value.findIndex((e) => e.key === key)
+        const entry = {
+          key,
+          index: diag.index,
+          total: diag.total,
+          relativePath: diag.relativePath,
+          status: diag.status,
+          encoder: diag.encoder,
+          ffmpegArgs: diag.ffmpegArgs,
+          exitCode: diag.exitCode,
+          stderr: diag.stderr,
+          at: new Date().toISOString(),
+          expanded: false,
+        }
+        if (existing >= 0) {
+          mockGenLog.value[existing] = entry
+        } else {
+          mockGenLog.value.push(entry)
+        }
+        generateProgressText.value = `[${diag.index}/${diag.total}] ${diag.relativePath} (${diag.status})`
+      },
       onProgress: (p) => {
         lastCount++
         lastSize += p.size
         generateProgressText.value = `(${lastCount}) ${p.relativePath}`
+        // 🆕 2026-06-12：把对应 spec_diag 行标记为 ok
+        const e = mockGenLog.value.find((e) => e.relativePath === p.relativePath && e.status === 'ok' && e.exitCode === 0 && !e._marked)
+        if (e) {
+          e._marked = true
+        }
+      },
+      onSpecFailed: (fail) => {
+        // 🆕 2026-06-12 饱和调试：spec 失败带完整 ffmpeg 诊断
+        skippedFiles.push({ relativePath: fail.relativePath, reason: fail.reason, exitCode: fail.exitCode, stderr: fail.stderr })
+        // 找对应的 spec_diag 行，更新状态 + 附加 stderr
+        const e = mockGenLog.value.find((e) => e.relativePath === fail.relativePath && e.status !== 'failed')
+        if (e) {
+          e.status = 'failed'
+          e.exitCode = fail.exitCode
+          e.stderr = fail.stderr || e.stderr
+          e.expanded = true // 自动展开失败行
+        }
+        generateProgressText.value = `⚠️ 失败 ${fail.relativePath} (exit=${fail.exitCode})`
+        console.warn('[mock-gen] spec failed', fail)
       },
       onSkipped: (info) => {
-        skippedFiles.push(info)
+        skippedFiles.push({ relativePath: info.relativePath, reason: info.reason, exitCode: -1, stderr: '' })
         generateProgressText.value = `⚠️ 跳过 ${info.relativePath}（${info.reason}）`
         console.warn('[mock-gen] skipped', info)
       },
     })
-    mockStats.value = { count: result.count || lastCount, totalSize: result.totalSize || lastSize }
+    mockStats.value = { count: result.count || lastCount, totalSize: result.totalSize || lastSize, skipped: result.skipped ?? skippedFiles.length }
     mockGenerated.value = true
     // 🆕 v4：如果有 skipped 文件，inline error card 显示（warning 风格而非 error）
     if (result.skipped > 0 || skippedFiles.length > 0) {
-      const reasonList = skippedFiles.map((s) => `  - ${s.relativePath}: ${s.reason}`).join('\n')
+      const reasonList = skippedFiles.map((s) => {
+        const tail = s.stderr ? `\n     stderr: ${s.stderr.split('\n')[0]}` : ''
+        return `  - ${s.relativePath} (exit=${s.exitCode}): ${s.reason}${tail}`
+      }).join('\n')
       setInlineError({
         source: 'mockGenerate',
         title: `Mock 生成完成（${result.count} 成功 / ${result.skipped} 跳过）`,
         message: `以下 ${result.skipped} 个文件因 ffmpeg build 限制被跳过（real device 常见：mp3/flac encoder 未编入 libffmpeg.so）：\n${reasonList}`,
-        hint: '此为 warning，不是 fatal error。mp4/mkv 仍可用。继续跑自动化测试可只勾选支持格式。',
+        hint: '此为 warning，不是 fatal error。mp4/mkv 仍可用。继续跑自动化测试可只勾选支持格式。下方「FFMPEG 流程日志」可点开看完整 stderr / 复制。',
       })
     } else {
-      showToast({ message: `${t('devtools.generateMock')}: ${mockStats.value.count}`, color: 'success', duration: 1500 })
+      // 🆕 2026-06-12：success 时不弹 toast（饱和调试原则），让流程日志卡展示全部 ✓
+      // 历史：toast 2.5s 一闪就消失，用户看不到「生成了 9 个文件全 ok」的确认
     }
   } catch (e) {
     // 🆕 2026-06-11 修复：用 inline error card 替代 toast
     // 历史：真机 mock 生成 ffmpeg 失败 + 后端崩溃 → toast 2.5s 一闪就消失，用户看不到根因
     const errMsg = e instanceof Error ? e.message : String(e)
     const classified = classifyMockError(errMsg)
+    // 🆕 2026-06-12：把"已收到但流中断"的 diag 也带过去，前端可显示「在 N/M 处停止」
+    const lastDiag = mockGenLog.value[mockGenLog.value.length - 1]
+    const stopHint = lastDiag
+      ? `\n\n📍 最后收到 spec_diag：[${lastDiag.index}/${lastDiag.total}] ${lastDiag.relativePath}\n   ffmpeg 调了：${lastDiag.ffmpegArgs.join(' ') || '(无)'}\n   exit code：${lastDiag.exitCode}\n   stderr：${lastDiag.stderr || '(empty)'}`
+      : ''
     setInlineError({
       source: 'mockGenerate',
       title: classified.title,
-      message: errMsg,
+      message: errMsg + stopHint,
       hint: classified.hint,
     })
     // 不弹 toast（饱和调试原则：禁用 Toast），错误卡已持久显示
@@ -456,6 +618,46 @@ async function handleGenerateMock() {
     isGenerating.value = false
     generateProgressText.value = ''
   }
+}
+
+// ---- 🆕 2026-06-12 饱和调试：流程日志卡操作 ----
+
+function toggleMockGenLogEntry(key: string) {
+  const e = mockGenLog.value.find((e) => e.key === key)
+  if (e) e.expanded = !e.expanded
+}
+
+function copyMockGenLog() {
+  if (mockGenLog.value.length === 0) return
+  const lines: string[] = []
+  lines.push(`# ENCV Mock 生成流程日志`)
+  lines.push(`# at: ${new Date().toISOString()}`)
+  lines.push(`# total: ${mockGenLogTotal.value}`)
+  lines.push(`# entries: ${mockGenLog.value.length}`)
+  lines.push(`# root: ${mockRoot.value}`)
+  lines.push(``)
+  for (const e of mockGenLog.value) {
+    const status = e.status === 'ok' ? '✓' : e.status === 'failed' ? '✗' : '◌'
+    lines.push(`[${status}] [${e.index}/${e.total}] ${e.relativePath}`)
+    lines.push(`    encoder: ${e.encoder}`)
+    lines.push(`    ffmpeg args: ${e.ffmpegArgs.length > 0 ? e.ffmpegArgs.join(' ') : '(静态字节 - 无 ffmpeg 调用)'}`)
+    lines.push(`    exit code: ${e.exitCode}`)
+    lines.push(`    at: ${e.at}`)
+    if (e.stderr) {
+      lines.push(`    stderr:`)
+      for (const ln of e.stderr.split('\n')) lines.push(`      ${ln}`)
+    }
+    lines.push(``)
+  }
+  const text = lines.join('\n')
+  navigator.clipboard?.writeText(text).then(() => {
+    mockGenLogCopied.value = true
+    setTimeout(() => { mockGenLogCopied.value = false }, 2000)
+  }).catch((e) => {
+    console.error('[mock-gen] copy failed', e)
+    // fallback: 弹 prompt 让用户手动复制
+    window.prompt('复制以下日志', text)
+  })
 }
 
 // classifyMockError 把后端 throw 出来的错误分类，给出精确的排查 hint。
@@ -966,12 +1168,105 @@ onUnmounted(() => {
 .mock-stats-card { margin: 8px 16px; padding: 12px 16px; background: var(--ion-color-light); border-radius: 8px; }
 .stat-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 14px; }
 .stat-value { font-weight: 600; font-family: monospace; }
+.stat-value--warn { color: #B8860B; }
 .progress-text { font-size: 12px; color: var(--ion-color-medium); padding: 4px 16px; font-family: monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .progress-card { margin: 8px 16px; padding: 12px 16px; background: var(--ion-color-light); border-radius: 8px; }
 .progress-stats { display: flex; justify-content: space-between; margin-top: 6px; font-size: 13px; }
 .progress-stats .passed { color: var(--ion-color-success); }
 .progress-stats .failed { color: var(--ion-color-danger); }
 .progress-stats .pending { color: #B8860B; }
+
+/* ========== 🆕 2026-06-12 饱和调试：FFMPEG 流程日志卡 ========== */
+.mock-gen-log-card {
+  margin: 8px 16px 12px;
+  padding: 12px 14px;
+  background: linear-gradient(180deg, #0F1419 0%, #0A0E12 100%);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  color: #E0E0E0;
+}
+.mock-gen-log-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.mock-gen-log-title { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #F4EFE6; }
+.mock-gen-log-title ion-icon { font-size: 14px; }
+.mock-gen-log-count { color: #6B7280; font-size: 11px; margin-left: 4px; }
+.mock-gen-log-copy {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #E0E0E0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.mock-gen-log-copy:hover { background: rgba(255, 255, 255, 0.1); }
+.mock-gen-log-copy ion-icon { font-size: 12px; }
+.mock-gen-log-copy--copied { background: rgba(34, 197, 94, 0.15); color: #4ADE80; border-color: rgba(34, 197, 94, 0.3); }
+
+.mock-gen-log-summary {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 0;
+  font-size: 12px;
+  color: #9CA3AF;
+  flex-wrap: wrap;
+}
+.mock-gen-log-summary ion-icon { font-size: 14px; }
+.mock-gen-log-disconnect { color: #F59E0B; font-weight: 600; }
+
+.mock-gen-log-list { list-style: none; margin: 0; padding: 0; }
+.mock-gen-log-entry {
+  border-left: 2px solid transparent;
+  padding: 4px 0 4px 8px;
+  margin: 1px 0;
+  transition: background 0.15s;
+}
+.mock-gen-log-entry--success { border-left-color: rgba(34, 197, 94, 0.4); }
+.mock-gen-log-entry--failed {
+  border-left-color: var(--ion-color-danger);
+  background: rgba(220, 38, 38, 0.06);
+}
+.mock-gen-log-row {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11.5px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  user-select: none;
+}
+.mock-gen-log-row:hover { background: rgba(255, 255, 255, 0.04); }
+.mock-gen-log-status { display: flex; align-items: center; }
+.mock-gen-log-status ion-icon { font-size: 13px; }
+.mock-gen-log-idx { color: #6B7280; font-weight: 600; }
+.mock-gen-log-path { color: #E0E0E0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mock-gen-log-encoder { color: #8B5CF6; font-size: 10.5px; }
+.mock-gen-log-exitcode { color: #FCA5A5; font-weight: 600; font-size: 10.5px; }
+.mock-gen-log-row ion-icon:last-child { font-size: 12px; color: #6B7280; }
+
+.mock-gen-log-detail {
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #C9D1D9;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.mock-gen-log-detail .lbl { color: #58A6FF; font-weight: 600; display: block; margin-top: 4px; }
+.mock-gen-log-detail .lbl:first-child { margin-top: 0; }
 
 .view-toggle { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; background: none; border: none; color: #6B5D4C; cursor: pointer; padding: 2px 6px; border-radius: 3px; }
 .view-toggle--active { background: #1A1A1A; color: #F4EFE6; }

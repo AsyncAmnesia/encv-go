@@ -15,6 +15,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -121,24 +122,46 @@ func validateMockRoot(root string) error {
 }
 
 // mockFileSpec 描述一个待生成的文件
+//
+// 🆕 2026-06-12 饱和调试：data 为 nil 时不再是「静默失败」—— 透传 ffmpeg 完整诊断
+//   （stderr / exitCode / ffmpegArgs / ext / encoder）让前端能展示「在哪个具体调用挂的」
+//
+// 历史：2026-06-11 v4 修复时 ffmpegGenerate 返回 nil（loader 没编 encoder）
+//   → 旧逻辑：os.WriteFile(fullPath, nil, 0644) 写 0 字节 + 报 success → 静默失败
+//   → 旧 v4 修复：跳过 nil + emit 单独 error event + done 带 skipped 计数
+//   → 但**仍缺**：用户看不到 stderr 全文 / exitCode / 调用的 ffmpeg args
+//   → 真机「Unknown encoder 'libmp3lame'」这种关键 stderr 被丢弃 → 排查难
+//
+// 新设计：每个 spec 自带 ffmpeg 诊断字段，emit diagnostic SSE event 时一次性推完
 type mockFileSpec struct {
 	relativePath string
 	data         []byte
+	// ffmpegArgs 仅在 ffmpegGenerate 调用过的 spec 上有值（mp4/mkv/mp3/flac）
+	// PNG/JPEG/PDF/TXT/AE/SCCV 等硬编码字节的 spec 留空
+	ffmpegArgs []string
+	// stderr 是 ffmpeg stderr 全文（含 ffmpeg 头部 + Unknown encoder 等关键信息）
+	// data 为 nil 时必有值
+	stderr string
+	// exitCode 是 ffmpeg 退出码；data 为 nil 时必有值（124 = ctx timeout / -1 = spawn 失败）
+	exitCode int
+	// encoderHint 是源码层面推断的 encoder（mp4=h264, mkv=h264, mp3=libmp3lame, flac=flac）
+	// 失败时前端可直接对比 manifest 看该 encoder 是否在 ffmpeg build 里
+	encoderHint string
 }
 
 // generateMockSpecs 返回指定 type 的所有文件 specs
 // 字节内容是硬编码的最小有效格式（与前端 lib/mockDataGenerator.ts 对齐）
 func generateMockSpecs(typeName string) []mockFileSpec {
 	plainSpecs := []mockFileSpec{
-		{relativePath: "01-plain-media/image/photo.jpg", data: minimalJPEG()},
-		{relativePath: "01-plain-media/image/screenshot.png", data: minimalPNG()},
-		{relativePath: "01-plain-media/video/sample.mp4", data: minimalMP4()},
-		{relativePath: "01-plain-media/video/comedy.mkv", data: minimalMKV()},
-		{relativePath: "01-plain-media/audio/music.mp3", data: minimalMP3()},
-		{relativePath: "01-plain-media/audio/podcast.flac", data: minimalFLAC()},
-		{relativePath: "01-plain-media/document/report.pdf", data: minimalPDF()},
-		{relativePath: "01-plain-media/document/notes.txt", data: []byte("ENCV Mock Notes\n中文测试\n日本語テスト\n한국어 테스트\n")},
-		{relativePath: "01-plain-media/document/data.csv", data: []byte("id,name,size\n1,photo.jpg,107\n2,sample.mp4,45056\n")},
+		{relativePath: "01-plain-media/image/photo.jpg", data: minimalJPEG(), encoderHint: "JPEG (static)"},
+		{relativePath: "01-plain-media/image/screenshot.png", data: minimalPNG(), encoderHint: "PNG (static)"},
+		minimalMP4(), // 已含 relativePath/data/ffmpegArgs/stderr/exitCode/encoderHint
+		minimalMKV(),
+		minimalMP3(),
+		minimalFLAC(),
+		{relativePath: "01-plain-media/document/report.pdf", data: minimalPDF(), encoderHint: "PDF (static)"},
+		{relativePath: "01-plain-media/document/notes.txt", data: []byte("ENCV Mock Notes\n中文测试\n日本語テスト\n한국어 테스트\n"), encoderHint: "TXT (static)"},
+		{relativePath: "01-plain-media/document/data.csv", data: []byte("id,name,size\n1,photo.jpg,107\n2,sample.mp4,45056\n"), encoderHint: "CSV (static)"},
 	}
 	aeSpecs := []mockFileSpec{
 		{relativePath: "02-alist-encrypt/secret.ae", data: makeAEFile("secret.ae", 4096)},
@@ -265,12 +288,32 @@ func (s *Server) handleMockGenerateGin(c *gin.Context) {
 	//  旧逻辑：writeSseEvent 错误被忽略，handler 继续跑全 9 个文件
 	//  即使文件写盘成功，对客户端已 disconnect 的请求也毫无意义 → 浪费 CPU + fd
 	clientGone := false
-	for _, sp := range specs {
+	for i, sp := range specs {
 		if clientGone {
 			// 客户端已断开，跳过剩余文件 + 不再 emit SSE
 			slog.Warn("[mock_gen] client gone, abort loop", "remaining_specs", len(specs)-count-skipped)
 			break
 		}
+
+		// 🆕 2026-06-12 饱和调试：每个 spec 处理前先 emit "spec_diag" 把完整 ffmpeg 诊断推给前端
+		//  即使后续处理失败，前端也能看到「这一步调用 ffmpeg 的完整 args / 失败 stderr」
+		//  JSON 字段：relativePath / status / ffmpegArgs / stderr / exitCode / encoder / index / total
+		diagStatus := "ok"
+		if len(sp.data) == 0 {
+			diagStatus = "failed"
+		}
+		diagData := fmt.Sprintf(
+			`{"index": %d, "total": %d, "relativePath": %q, "status": %q, "encoder": %q, "ffmpegArgs": %s, "exitCode": %d, "stderr": %q}`,
+			i+1, len(specs), sp.relativePath, diagStatus, sp.encoderHint,
+			jsonEscapeStringSlice(sp.ffmpegArgs),
+			sp.exitCode, sp.stderr,
+		)
+		if err := writeSseEvent(c.Writer, flusher, "spec_diag", diagData); err != nil {
+			clientGone = true
+			slog.Warn("[mock_gen] SSE diag write failed (client gone?)", "err", err, "relativePath", sp.relativePath)
+			continue
+		}
+
 		fullPath := filepath.Join(root, sp.relativePath)
 		dir := filepath.Dir(fullPath)
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -284,11 +327,10 @@ func (s *Server) handleMockGenerateGin(c *gin.Context) {
 		if len(sp.data) == 0 {
 			skipped++
 			slog.Warn("[mock] skip nil data", "relativePath", sp.relativePath, "reason", "ffmpegGenerate returned nil (likely encoder not compiled in this ffmpeg build)")
-			if err := emitSseEvent(c.Writer, flusher, "error", fmt.Sprintf(`{"skipped": true, "relativePath": %q, "reason": "ffmpeg 不可用/未编该 encoder (真机常见：libmp3lame/flac 等)"}`, sp.relativePath)); err != nil {
-				clientGone = true
-				slog.Warn("[mock_gen] SSE write failed (client gone?)", "err", err, "relativePath", sp.relativePath)
-				continue
-			}
+			_ = emitSseEvent(c.Writer, flusher, "spec_failed", fmt.Sprintf(
+				`{"relativePath": %q, "reason": "ffmpeg 不可用/未编该 encoder (真机常见：libmp3lame/flac 等)", "exitCode": %d, "stderr": %q}`,
+				sp.relativePath, sp.exitCode, sp.stderr,
+			))
 			continue
 		}
 		if err := os.WriteFile(fullPath, sp.data, 0644); err != nil {
@@ -308,6 +350,21 @@ func (s *Server) handleMockGenerateGin(c *gin.Context) {
 	if err := writeSseEvent(c.Writer, flusher, "done", fmt.Sprintf(`{"count": %d, "skipped": %d, "totalSize": %d}`, count, skipped, totalSize)); err != nil {
 		slog.Warn("[mock_gen] SSE done write failed", "err", err, "count", count, "skipped", skipped)
 	}
+}
+
+// jsonEscapeStringSlice JSON-encode a []string
+// 🆕 2026-06-12 饱和调试：spec_diag 事件里 ffmpegArgs 字段需要 JSON 数组
+//   fmt.Sprintf("%q", slice) 不行（Go 字符串转义，输出 `"a b"` 不会被 JSON 解析为数组）
+//   改用 encoding/json.Marshal → 失败时回退到空数组
+func jsonEscapeStringSlice(s []string) string {
+	if s == nil {
+		return "[]"
+	}
+	b, err := json.Marshal(s)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
 }
 
 // mockResetRequest 是 POST /api/mock/reset 的请求体
@@ -447,24 +504,25 @@ func emitSseEvent(w io.Writer, flusher http.Flusher, event, data string) error {
 
 // ffmpegGenerate 用 ffmpeg + 真输入文件生成目标格式
 //
+// 🆕 2026-06-12 饱和调试签名：返回 (data, stderr, exitCode, err)
+//  - data: 成功时返回字节；任何错误都返回 nil
+//  - stderr: ffmpeg stderr 全文（含 ffmpeg 头部 + 关键错误如 Unknown encoder）
+//  - exitCode: ffmpeg 退出码（0=成功, 1=编码失败, 124=ctx timeout, -1=spawn 失败）
+//  - err: 仅在 spawn / ctx cancel / 类型断言失败等「前置错误」时非 nil
+//
+// 失败时**严禁 base64 fallback**（171 字节假 MKV 垃圾），返回 nil 让调用方报错
+//
 // 流程：
 //   1. ffmpeg.Available() 检查（沙箱 exec / 真机 dlopen）
 //   2. 写 source.mp4 / source.wav 到 /tmp（go:embed 字节）
 //   3. ffmpeg 读真文件 → 输出到 /tmp
 //   4. 读回 /tmp 字节
-//
-// 失败返回 nil（**严禁 base64 fallback** —— 那是 171 字节假 MKV 垃圾）
-
-// mockFfmpegSeq 用于 ffmpegGenerate 内部生成唯一 tmp 文件名
-// 防止并发请求写入同一 tmp 文件导致 race（10 并发测试时所有 goroutine 同进程 → 同 PID → 冲突）
-var mockFfmpegSeq atomic.Uint64
-
-func ffmpegGenerate(ext string) []byte {
+//   5. 任意一步失败 → 透传 stderr / exitCode 给前端
+func ffmpegGenerate(ext string) (data []byte, stderr string, exitCode int, err error) {
 	// 0. ffmpeg 可用性
 	ffmpegOk, _, errMsg := ffmpeg.Available()
 	if !ffmpegOk {
-		slog.Warn("[mock] ffmpeg not available, returning nil (no base64 fallback)", "ext", ext, "errMsg", errMsg)
-		return nil
+		return nil, fmt.Sprintf("ffmpeg not available: %s", errMsg), -1, fmt.Errorf("ffmpeg not available: %s", errMsg)
 	}
 
 	// 唯一序列号（PID 同进程复用 → 需要 atomic counter 区分每次调用）
@@ -473,24 +531,22 @@ func ffmpegGenerate(ext string) []byte {
 	// 1. 选源文件 + 写 tmp
 	var srcBytes []byte
 	var srcName string
-	var srcArgs []string  // ffmpeg -i src
+	var srcArgs []string // ffmpeg -i src
 	switch ext {
 	case "mp4", "mkv":
 		srcBytes = sourceMP4Bytes
 		srcName = fmt.Sprintf("encv-mock-src-%d-%d.mp4", os.Getpid(), seq)
-		srcArgs = []string{"-i", ""}  // placeholder, set after WriteFile
+		srcArgs = []string{"-i", ""} // placeholder, set after WriteFile
 	case "mp3", "flac":
 		srcBytes = sourceWAVBytes
 		srcName = fmt.Sprintf("encv-mock-src-%d-%d.wav", os.Getpid(), seq)
 		srcArgs = []string{"-i", ""}
 	default:
-		slog.Warn("[mock] unknown ext, returning nil", "ext", ext)
-		return nil
+		return nil, fmt.Sprintf("unknown ext: %q (only mp4/mkv/mp3/flac supported)", ext), -1, fmt.Errorf("unknown ext: %q", ext)
 	}
 	srcPath := filepath.Join(os.TempDir(), srcName)
-	if err := os.WriteFile(srcPath, srcBytes, 0644); err != nil {
-		slog.Warn("[mock] write source failed", "ext", ext, "err", err)
-		return nil
+	if werr := os.WriteFile(srcPath, srcBytes, 0644); werr != nil {
+		return nil, fmt.Sprintf("write source tmp %s: %v", srcPath, werr), -1, werr
 	}
 	defer func() { _ = os.Remove(srcPath) }()
 	srcArgs[1] = srcPath
@@ -503,8 +559,7 @@ func ffmpegGenerate(ext string) []byte {
 	var encodeArgs []string
 	switch ext {
 	case "mp4":
-		// 真机 ffmpeg 没 aac 编码器？manifest 有 aac encoder，OK
-		// 用 source.mp4 直接 -c copy（最快，也是真机最稳路径）
+		// 真机 ffmpeg manifest 有 aac encoder，用 source.mp4 直接 -c copy（最快）
 		encodeArgs = []string{"-c", "copy"}
 	case "mkv":
 		// source.mp4 -c copy → .mkv（h264+aac → matroska container）
@@ -523,66 +578,155 @@ func ffmpegGenerate(ext string) []byte {
 	args = append(args, "-y", "-loglevel", "error", dstPath)
 
 	// 5. 跑 ffmpeg
-	// 🆕 2026-06-11 Phase 1 重构：通过 ctx timeout 让 WorkerRunner SIGKILL 子进程
-	//
-	// ┌──────────────────────────────────────────────────────────────┐
-	// │ 路径选择（init() 决定，见 ffmpeg/exec_runner.go init()）    │
-	// ├──────────────────────────────────────────────────────────────┤
-	// │ 沙箱 dev（!android build tag）:                              │
-	// │   - WorkerRunner（subprocess）✅ 完整隔离                    │
-	// │     encv-go → ffmpeg-worker → /usr/bin/ffmpeg                │
-	// │     ctx cancel → SIGKILL worker 整个进程组                  │
-	// │   - ExecRunner（fallback）: 同样 subprocess 但无 worker 包装 │
-	// │                                                              │
-	// │ 真机（gomobile bind → libffmpeg.so, build tag android）:    │
-	// │   - NativeRunner（cgo dlopen）❌ Phase 1 未隔离             │
-	// │     cgo call 阻塞 OS 线程 → ctx 取消无效                    │
-	// │     缓解：前端 30s AbortController（src/api/mockGenerator.ts）│
-	// │                                                              │
-	// │ Phase 2 计划（app/encv-mobile repo 改 build 系统）:          │
-	// │   - 把 ffmpeg-worker 打进 AAR                                │
-	// │   - 真机也走 WorkerRunner（worker 内部用 cgo 调 libffmpeg.so）│
-	// │   - 此时 ctx cancel 同样 SIGKILL worker → 彻底隔离           │
-	// └──────────────────────────────────────────────────────────────┘
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_, stderr, exitCode, err := ffmpeg.RunWithOutput(ctx, args...)
-	if err != nil || exitCode != 0 {
-		// 典型 stderr："Unknown encoder 'libmp3lame'" / "Encoder not found"
-		slog.Warn("[mock] ffmpeg generate failed", "ext", ext, "args", args, "exitCode", exitCode, "err", err, "stderr", stderr)
-		return nil
+	_, ffmpegStderr, ffmpegExit, runErr := ffmpeg.RunWithOutput(ctx, args...)
+	if runErr != nil {
+		// 典型：ctx canceled / ctx deadline exceeded / spawn 失败
+		return nil, fmt.Sprintf("ffmpeg spawn/run error: %v\nstderr: %s\nargs: %v", runErr, ffmpegStderr, args), ffmpegExit, runErr
+	}
+	if ffmpegExit != 0 {
+		// 典型 stderr：「Unknown encoder 'libmp3lame'」/「Encoder not found」/ 编码器失败
+		return nil, fmt.Sprintf("ffmpeg exit=%d, stderr: %s\nargs: %v", ffmpegExit, ffmpegStderr, args), ffmpegExit, fmt.Errorf("ffmpeg exit=%d", ffmpegExit)
 	}
 
 	// 6. 读回
-	data, err := os.ReadFile(dstPath)
-	if err != nil || len(data) == 0 {
-		slog.Warn("[mock] read dst failed", "ext", ext, "err", err, "size", len(data))
-		return nil
+	readBytes, rerr := os.ReadFile(dstPath)
+	if rerr != nil || len(readBytes) == 0 {
+		return nil, fmt.Sprintf("read dst %s: %v (size=%d)\nargs: %v", dstPath, rerr, len(readBytes), args), ffmpegExit, rerr
 	}
-	slog.Info("[mock] ffmpeg generated media", "ext", ext, "size", len(data), "src", srcName)
-	return data
+	return readBytes, ffmpegStderr, 0, nil
 }
 
-func minimalMP4() []byte {
-	// 2026-06-11 v3：ffmpeg + source.mp4 (-c copy) → mp4
-	return ffmpegGenerate("mp4")
+// ffmpegSpec 跑 ffmpeg 并组装成 mockFileSpec（含 ffmpeg 完整诊断）
+//
+// 🆕 2026-06-12 饱和调试：失败时**不返回 nil** —— 透传 ffmpegArgs/stderr/exitCode 给前端
+//   前端可显示「Unknown encoder 'libmp3lame'」全文 / exitCode=-1 / 完整 ffmpeg args
+func ffmpegSpec(ext, relPath, encoderHint string) mockFileSpec {
+	// 0. ffmpeg 可用性
+	ffmpegOk, _, errMsg := ffmpeg.Available()
+	if !ffmpegOk {
+		return mockFileSpec{
+			relativePath: relPath,
+			ffmpegArgs:   nil,
+			stderr:       fmt.Sprintf("ffmpeg not available: %s", errMsg),
+			exitCode:     -1,
+			encoderHint:  encoderHint,
+		}
+	}
+
+	// 1. 选源 + 输出
+	var srcBytes []byte
+	var srcExt string
+	switch ext {
+	case "mp4", "mkv":
+		srcBytes = sourceMP4Bytes
+		srcExt = "mp4"
+	case "mp3", "flac":
+		srcBytes = sourceWAVBytes
+		srcExt = "wav"
+	default:
+		return mockFileSpec{
+			relativePath: relPath,
+			stderr:       fmt.Sprintf("unknown ext: %q", ext),
+			exitCode:     -1,
+			encoderHint:  encoderHint,
+		}
+	}
+
+	seq := mockFfmpegSeq.Add(1)
+	srcPath := filepath.Join(os.TempDir(), fmt.Sprintf("encv-mock-src-%d-%d.%s", os.Getpid(), seq, srcExt))
+	if werr := os.WriteFile(srcPath, srcBytes, 0644); werr != nil {
+		return mockFileSpec{
+			relativePath: relPath,
+			stderr:       fmt.Sprintf("write source tmp %s: %v", srcPath, werr),
+			exitCode:     -1,
+			encoderHint:  encoderHint,
+		}
+	}
+	defer func() { _ = os.Remove(srcPath) }()
+
+	dstPath := filepath.Join(os.TempDir(), fmt.Sprintf("encv-mock-dst-%d-%d.%s", os.Getpid(), seq, ext))
+	defer func() { _ = os.Remove(dstPath) }()
+
+	// 2. 拼 ffmpeg args
+	var encodeArgs []string
+	switch ext {
+	case "mp4":
+		encodeArgs = []string{"-c", "copy"}
+	case "mkv":
+		encodeArgs = []string{"-c", "copy"}
+	case "mp3":
+		encodeArgs = []string{"-c:a", "libmp3lame", "-b:a", "128k"}
+	case "flac":
+		encodeArgs = []string{"-c:a", "flac"}
+	}
+	args := []string{"-i", srcPath}
+	args = append(args, encodeArgs...)
+	args = append(args, "-y", "-loglevel", "error", dstPath)
+
+	// 3. 跑 ffmpeg
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, ffmpegStderr, ffmpegExit, runErr := ffmpeg.RunWithOutput(ctx, args...)
+	if runErr != nil {
+		return mockFileSpec{
+			relativePath: relPath,
+			ffmpegArgs:   args,
+			stderr:       fmt.Sprintf("ffmpeg spawn/run: %v\nstderr: %s", runErr, ffmpegStderr),
+			exitCode:     ffmpegExit,
+			encoderHint:  encoderHint,
+		}
+	}
+	if ffmpegExit != 0 {
+		return mockFileSpec{
+			relativePath: relPath,
+			ffmpegArgs:   args,
+			stderr:       fmt.Sprintf("ffmpeg exit=%d\nstderr: %s", ffmpegExit, ffmpegStderr),
+			exitCode:     ffmpegExit,
+			encoderHint:  encoderHint,
+		}
+	}
+
+	// 4. 读回
+	data, rerr := os.ReadFile(dstPath)
+	if rerr != nil || len(data) == 0 {
+		return mockFileSpec{
+			relativePath: relPath,
+			ffmpegArgs:   args,
+			stderr:       fmt.Sprintf("read dst %s: %v (size=%d)", dstPath, rerr, len(data)),
+			exitCode:     ffmpegExit,
+			encoderHint:  encoderHint,
+		}
+	}
+	return mockFileSpec{
+		relativePath: relPath,
+		data:         data,
+		ffmpegArgs:   args,
+		stderr:       ffmpegStderr,
+		exitCode:     0,
+		encoderHint:  encoderHint,
+	}
 }
 
-func minimalMKV() []byte {
-	// 2026-06-11 v3：ffmpeg + source.mp4 (-c copy) → mkv
-	return ffmpegGenerate("mkv")
+// mockFfmpegSeq 用于 ffmpegSpec 内部生成唯一 tmp 文件名
+// 防止并发请求写入同一 tmp 文件导致 race（10 并发测试时所有 goroutine 同进程 → 同 PID → 冲突）
+var mockFfmpegSeq atomic.Uint64
+
+func minimalMP4() mockFileSpec {
+	return ffmpegSpec("mp4", "01-plain-media/video/sample.mp4", "h264+aac (-c copy)")
 }
 
-func minimalMP3() []byte {
-	// 2026-06-11 v3：ffmpeg + source.wav → mp3
-	// 真机没 libmp3lame → 返回 nil（详见 ffmpegGenerate 注释）
-	return ffmpegGenerate("mp3")
+func minimalMKV() mockFileSpec {
+	return ffmpegSpec("mkv", "01-plain-media/video/comedy.mkv", "h264+aac (-c copy) → matroska")
 }
 
-func minimalFLAC() []byte {
-	// 2026-06-11 v3：ffmpeg + source.wav → flac
-	// 真机没 flac encoder → 返回 nil
-	return ffmpegGenerate("flac")
+func minimalMP3() mockFileSpec {
+	return ffmpegSpec("mp3", "01-plain-media/audio/music.mp3", "libmp3lame")
+}
+
+func minimalFLAC() mockFileSpec {
+	return ffmpegSpec("flac", "01-plain-media/audio/podcast.flac", "flac")
 }
 
 func minimalJPEG() []byte {

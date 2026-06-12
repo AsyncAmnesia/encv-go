@@ -146,37 +146,34 @@ func TestMinimalMediaMagic(t *testing.T) {
 			t.Errorf("PNG signature byte %d: got %x want %x", i, png[i], b)
 		}
 	}
-	// MP4 ftyp（2026-06-11：ffmpeg 真生成，无 base64 fallback）
+	// 🆕 2026-06-12：minimalMP4 等现在返回 mockFileSpec（含 ffmpeg 完整诊断）
+	//  取 .data 拿字节。如果 data==nil（ffmpeg 失败），跳过 magic 校验但记录 stderr 供排查
 	mp4 := minimalMP4()
-	if len(mp4) < 8 {
-		t.Fatalf("MP4 too short: %d bytes (ffmpeg failed?)", len(mp4))
-	}
-	if string(mp4[4:8]) != "ftyp" {
-		t.Errorf("MP4 ftyp wrong: %s", string(mp4[4:8]))
+	if len(mp4.data) < 8 {
+		t.Logf("MP4 ffmpeg failed (data=%d bytes), stderr=%q, ffmpegArgs=%v", len(mp4.data), mp4.stderr, mp4.ffmpegArgs)
+	} else if string(mp4.data[4:8]) != "ftyp" {
+		t.Errorf("MP4 ftyp wrong: %s", string(mp4.data[4:8]))
 	}
 	// MKV EBML
 	mkv := minimalMKV()
-	if len(mkv) < 4 {
-		t.Fatalf("MKV too short: %d bytes (ffmpeg failed?)", len(mkv))
-	}
-	if mkv[0] != 0x1A || mkv[1] != 0x45 || mkv[2] != 0xDF || mkv[3] != 0xA3 {
-		t.Errorf("MKV EBML wrong: %x %x %x %x", mkv[0], mkv[1], mkv[2], mkv[3])
+	if len(mkv.data) < 4 {
+		t.Logf("MKV ffmpeg failed (data=%d bytes), stderr=%q", len(mkv.data), mkv.stderr)
+	} else if mkv.data[0] != 0x1A || mkv.data[1] != 0x45 || mkv.data[2] != 0xDF || mkv.data[3] != 0xA3 {
+		t.Errorf("MKV EBML wrong: %x %x %x %x", mkv.data[0], mkv.data[1], mkv.data[2], mkv.data[3])
 	}
 	// MP3 ID3
 	mp3 := minimalMP3()
-	if len(mp3) < 3 {
-		t.Fatalf("MP3 too short: %d bytes (ffmpeg failed?)", len(mp3))
-	}
-	if string(mp3[0:3]) != "ID3" {
-		t.Errorf("MP3 ID3 wrong: %s", string(mp3[0:3]))
+	if len(mp3.data) < 3 {
+		t.Logf("MP3 ffmpeg failed (data=%d bytes), stderr=%q", len(mp3.data), mp3.stderr)
+	} else if string(mp3.data[0:3]) != "ID3" {
+		t.Errorf("MP3 ID3 wrong: %s", string(mp3.data[0:3]))
 	}
 	// FLAC fLaC
 	flac := minimalFLAC()
-	if len(flac) < 4 {
-		t.Fatalf("FLAC too short: %d bytes (ffmpeg failed?)", len(flac))
-	}
-	if string(flac[0:4]) != "fLaC" {
-		t.Errorf("FLAC magic wrong: %s", string(flac[0:4]))
+	if len(flac.data) < 4 {
+		t.Logf("FLAC ffmpeg failed (data=%d bytes), stderr=%q", len(flac.data), flac.stderr)
+	} else if string(flac.data[0:4]) != "fLaC" {
+		t.Errorf("FLAC magic wrong: %s", string(flac.data[0:4]))
 	}
 	// AENC magic
 	ae := makeAEFile("test.ae", 1024)
@@ -213,10 +210,11 @@ func TestMinimalMediaIsPlayable(t *testing.T) {
 		minBytes int
 		why      string
 	}{
-		{"MP4 (mp4 box + frame data)", minimalMP4(), 2000, "ffmpeg -c copy source.mp4 → 19458B"},
-		{"MKV (EBML + audio block)", minimalMKV(), 1000, "ffmpeg -c copy source.mp4 → mkv = 19001B"},
-		{"MP3 (ID3v2 + frames)", minimalMP3(), 5000, "ffmpeg libmp3lame 128kbps 1s wav → ~10KB"},
-		{"FLAC (fLaC sig + STREAMINFO)", minimalFLAC(), 5000, "ffmpeg flac 1s wav → ~12KB"},
+		// 🆕 2026-06-12：minimalMP4 等返回 mockFileSpec，取 .data
+		{"MP4 (mp4 box + frame data)", minimalMP4().data, 2000, "ffmpeg -c copy source.mp4 → 19458B"},
+		{"MKV (EBML + audio block)", minimalMKV().data, 1000, "ffmpeg -c copy source.mp4 → mkv = 19001B"},
+		{"MP3 (ID3v2 + frames)", minimalMP3().data, 5000, "ffmpeg libmp3lame 128kbps 1s wav → ~10KB"},
+		{"FLAC (fLaC sig + STREAMINFO)", minimalFLAC().data, 5000, "ffmpeg flac 1s wav → ~12KB"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

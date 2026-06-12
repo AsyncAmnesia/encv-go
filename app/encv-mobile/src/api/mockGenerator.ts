@@ -20,10 +20,58 @@ export interface MockProgress {
   size: number
 }
 
+/**
+ * 🆕 2026-06-12 饱和调试：每个 spec 处理前的完整 ffmpeg 诊断
+ *  - relativePath: 相对路径（如 "01-plain-media/video/sample.mp4"）
+ *  - status: "ok" | "failed"（data 为 nil 时 failed）
+ *  - encoder: encoder 提示（"h264+aac (-c copy)" / "libmp3lame" / "JPEG (static)"）
+ *  - ffmpegArgs: 完整 ffmpeg 命令行（空数组 = 静态字节，无 ffmpeg 调用）
+ *  - exitCode: ffmpeg 退出码（0=成功, 1=编码失败, 124=ctx timeout, -1=spawn/前置失败）
+ *  - stderr: ffmpeg stderr 全文（如 "Unknown encoder 'libmp3lame'"）
+ *  - index / total: 1-based 序号 / 总数
+ *
+ * 设计目的：让前端能 100% 还原"在哪一步 / 调什么 ffmpeg / 错在哪"
+ *   即使后端 cgo 阻塞导致 SSE 流被中断，前端也能展示"最后收到的 spec_diag"
+ */
+export interface MockSpecDiag {
+  index: number
+  total: number
+  relativePath: string
+  status: 'ok' | 'failed'
+  encoder: string
+  ffmpegArgs: string[]
+  exitCode: number
+  stderr: string
+}
+
+/**
+ * 🆕 2026-06-12 饱和调试：spec 失败事件（带完整 ffmpeg 诊断）
+ *  - relativePath: 相对路径
+ *  - reason: 失败原因
+ *  - exitCode: ffmpeg 退出码
+ *  - stderr: ffmpeg stderr 全文
+ */
+export interface MockSpecFailed {
+  relativePath: string
+  reason: string
+  exitCode: number
+  stderr: string
+}
+
 export interface MockGenerateOptions {
   root: string
   type?: MockFileType
   onProgress?: (p: MockProgress) => void
+  /**
+   * 🆕 2026-06-12 饱和调试：每个 spec 处理前的完整 ffmpeg 诊断
+   *   即使后端因 cgo 阻塞中断流，最后收到的 onSpecDiag 也能让前端展示「在哪停止」
+   */
+  onSpecDiag?: (diag: MockSpecDiag) => void
+  /**
+   * 🆕 2026-06-12 饱和调试：spec 失败（ffmpeg exit != 0 或 spawn 失败）
+   *   区别于 fatal error（fatal 会 throw 中断流，spec_failed 仅 spec 跳过）
+   */
+  onSpecFailed?: (fail: MockSpecFailed) => void
   /**
    * 🆕 2026-06-11 v4：被跳过的文件（通常是 ffmpeg build 没编该 encoder）
    *   例如：real device 没 libmp3lame/flac → mp3/flac 生成会 emit "skipped" error 事件
@@ -108,10 +156,25 @@ export async function generateMockFilesViaBackend(opts: MockGenerateOptions): Pr
         buffer = buffer.slice(idx + 2)
         const parsed = parseSseEvent(eventBlock)
         if (!parsed) continue
-        if (parsed.event === 'progress') {
+        if (parsed.event === 'spec_diag') {
+          // 🆕 2026-06-12 饱和调试：每个 spec 处理前先推完整 ffmpeg 诊断
+          //   即使后续 progress/spec_failed 因 cgo 阻塞没收到，前端也至少知道「处理到这步」
+          try {
+            const diag = JSON.parse(parsed.data) as MockSpecDiag
+            opts.onSpecDiag?.(diag)
+          } catch (e) {
+            // JSON 解析失败不致命，丢弃
+          }
+        } else if (parsed.event === 'progress') {
           try {
             const data = JSON.parse(parsed.data) as MockProgress
             opts.onProgress?.(data)
+          } catch {}
+        } else if (parsed.event === 'spec_failed') {
+          // 🆕 2026-06-12 饱和调试：spec 失败带完整 ffmpeg 诊断（exitCode / stderr）
+          try {
+            const fail = JSON.parse(parsed.data) as MockSpecFailed
+            opts.onSpecFailed?.(fail)
           } catch {}
         } else if (parsed.event === 'done') {
           try {
