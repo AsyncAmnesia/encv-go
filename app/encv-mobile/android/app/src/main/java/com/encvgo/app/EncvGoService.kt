@@ -97,10 +97,21 @@ class EncvGoService : Service() {
     private val processReady = AtomicBoolean(false)
     private var wakeLock: PowerManager.WakeLock? = null
 
+    // 🆕 2026-06-12 崩溃根因修复：goProcess 死时自动重启（带指数退避 + 最多 3 次）
+    //   死因：真机 libffmpeg.so 没编 encoder → go_GenerateMP3 走 NativeRunner → cgo panic
+    //         cgo panic 跨 cgo boundary 杀整个进程 → 之前前端只看到 "Failed to fetch"
+    //   修复：后台线程 1s poll process.isAlive；死 → publishFailure(完整 stderr) → 重启
+    private var restartAttempts = 0
+    private val MAX_RESTART_ATTEMPTS = 3
+    private val restartExecutor = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r ->
+        Thread(r, "encv-go-restart").apply { isDaemon = true }
+    }
+
     override fun onCreate() {
         super.onCreate()
         instance = this
         createNotificationChannel()
+        startProcessAliveMonitor()  // 🆕 2026-06-12：进程死后自动重启
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -124,7 +135,49 @@ class EncvGoService : Service() {
         instance = null
         stopGoProcess("service_destroyed", stopService = false)
         worker.shutdownNow()
+        restartExecutor.shutdownNow()  // 🆕 2026-06-12
         super.onDestroy()
+    }
+
+    // 🆕 2026-06-12 崩溃根因修复：1 秒 poll goProcess.isAlive
+    //   死 → publishFailure (完整 stderr tail) → 指数退避 1s/2s/4s 重启
+    //   最多 3 次（避免无限重启循环），最后仍死则不再尝试
+    private fun startProcessAliveMonitor() {
+        restartExecutor.scheduleWithFixedDelay({
+            val proc = goProcess ?: return@scheduleWithFixedDelay
+            val wasReady = processReady.get()
+            if (proc.isAlive) {
+                // 进程还活着 — 重置重启计数（连续 60s 稳定 = 健康）
+                if (wasReady && restartAttempts > 0) {
+                    restartAttempts = 0
+                }
+                return@scheduleWithFixedDelay
+            }
+            if (!wasReady) return@scheduleWithFixedDelay  // 启动阶段失败由 startGoProcess 自己处理
+
+            // 进程死了，之前是 ready 状态
+            processReady.set(false)
+            restartAttempts += 1
+            val exitCode = try { proc.exitValue() } catch (e: Exception) { -1 }
+            val tail = outputBuffer.toString().takeLast(2 * 1024)
+            val reason = "alive_monitor: process died after ready (exit=$exitCode, attempts=$restartAttempts)"
+            publishFailure(reason, tail)
+            lastExitCode = exitCode
+
+            if (restartAttempts > MAX_RESTART_ATTEMPTS) {
+                android.util.Log.e(TAG, "❌ Go process died $restartAttempts times; giving up auto-restart")
+                return@scheduleWithFixedDelay
+            }
+            val delayMs = (1L shl (restartAttempts - 1)) * 1000L  // 1s / 2s / 4s
+            android.util.Log.w(TAG, "⚠️  Go process died, auto-restart in ${delayMs}ms (attempt ${restartAttempts}/${MAX_RESTART_ATTEMPTS})")
+            restartExecutor.schedule({
+                try {
+                    startGoProcess("auto_restart:$reason", null)
+                } catch (e: Throwable) {
+                    android.util.Log.e(TAG, "auto-restart failed", e)
+                }
+            }, delayMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+        }, 1, 1, java.util.concurrent.TimeUnit.SECONDS)
     }
 
     private fun startGoProcess(source: String, command: String?) {
