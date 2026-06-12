@@ -72,9 +72,9 @@ func (r *NativeRunner) Available() (ffmpegOk bool, ffprobeOk bool, errMsg string
 // (subprocess, SIGKILL-able) → NativeRunner (in-process cgo, can block).
 //
 // 🆕 2026-06-12 Phase 3 草案：MediaCodec 硬编集成
-//   当前 init 仅在 WorkerRunner / NativeRunner 之间选，Phase 3.2 实装后将
+//   当前 init 仅在 WorkerRunner / NativeRunner 之间选，Phase 3.3 实装后将
 //   MediaCodecRunner 插在最前。详见：
-//   https://.../phase3-mediacodec-integration-proposal.md
+//   .trae/documents/phase3-codec-completion-proposal.md
 //
 // 真机（Kotlin EncvGoService.kt）注入：
 //   ENCV_FFMPEG_WORKER = nativeLibraryDir + "/libffmpeg-worker.so"
