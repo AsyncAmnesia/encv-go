@@ -100,16 +100,20 @@ fi
 # NOTE: lame 3.100 configure does NOT support --disable-decoder or --enable-debug=no.
 #   Only use options that `./configure --help` actually lists.
 if [ ! -f "${LAME_INSTALL}/lib/libmp3lame.a" ]; then
-    if [ ! -d "lame-${LAME_VERSION}" ]; then
-        echo "Downloading libmp3lame ${LAME_VERSION}..."
-        curl -sL "https://sourceforge.net/projects/lame/files/lame/${LAME_VERSION}/lame-${LAME_VERSION}.tar.gz/download" \
-            -o lame.tar.gz
-        tar xzf lame.tar.gz
-        rm lame.tar.gz
+    echo "Downloading libmp3lame ${LAME_VERSION}..."
+    curl -fSL "https://sourceforge.net/projects/lame/files/lame/${LAME_VERSION}/lame-${LAME_VERSION}.tar.gz/download" \
+        -o lame.tar.gz || { echo "❌ Failed to download libmp3lame"; exit 1; }
+    tar xzf lame.tar.gz && rm lame.tar.gz || { echo "❌ Failed to extract libmp3lame"; exit 1; }
+    # Find actual extracted directory
+    LAME_SRC_DIR=$(find . -maxdepth 1 -type d -name "*lame*" ! -name ".*" | head -1)
+    if [ -z "$LAME_SRC_DIR" ]; then
+        echo "❌ libmp3lame source directory not found after extraction"
+        ls -la
+        exit 1
     fi
 
-    echo "=== Building libmp3lame ==="
-    cd "${BUILD_DIR}/lame-${LAME_VERSION}"
+    echo "=== Building libmp3lame (source: ${LAME_SRC_DIR}) ==="
+    cd "${BUILD_DIR}/${LAME_SRC_DIR}"
 
     # lame 3.100 needs a few patches for Android NDK r26:
     # 1. Replace <sys/time.h> include guards (conflicts with NDK headers)
@@ -151,16 +155,19 @@ fi
 
 # === Build libogg (BSD 3-clause, required by libFLAC) ===
 if [ ! -f "${OGG_INSTALL}/lib/libogg.a" ]; then
-    if [ ! -d "libogg-${OGG_VERSION}" ]; then
-        echo "Downloading libogg ${OGG_VERSION}..."
-        curl -sL "https://ftp.osuosl.org/pub/xiph/releases/ogg/libogg-${OGG_VERSION}.tar.gz" \
-            -o ogg.tar.gz
-        tar xzf ogg.tar.gz
-        rm ogg.tar.gz
+    echo "Downloading libogg ${OGG_VERSION}..."
+    curl -fSL "https://ftp.osuosl.org/pub/xiph/releases/ogg/libogg-${OGG_VERSION}.tar.gz" \
+        -o ogg.tar.gz || { echo "❌ Failed to download libogg"; exit 1; }
+    tar xzf ogg.tar.gz && rm ogg.tar.gz || { echo "❌ Failed to extract libogg"; exit 1; }
+    # Find actual extracted directory (tarball may extract to ogg-X.Y.Z instead of libogg-X.Y.Z)
+    OGG_SRC_DIR=$(find . -maxdepth 1 -type d -name "*ogg*" ! -name ".*" | head -1)
+    if [ -z "$OGG_SRC_DIR" ]; then
+        echo "❌ libogg source directory not found after extraction"
+        ls -la
+        exit 1
     fi
-
-    echo "=== Building libogg ==="
-    cd "${BUILD_DIR}/libogg-${OGG_VERSION}"
+    echo "=== Building libogg (source: ${OGG_SRC_DIR}) ==="
+    cd "${BUILD_DIR}/${OGG_SRC_DIR}"
     CC="$CC" AR="$AR" RANLIB="$RANLIB" STRIP="$STRIP" \
     ./configure \
         --host=${ARCH}-linux-android \
@@ -172,8 +179,6 @@ if [ ! -f "${OGG_INSTALL}/lib/libogg.a" ]; then
         tail -30 "${LOG_DIR}/ogg-configure.log"
         exit 1
     }
-    echo "ogg configure done (log: ${LOG_DIR}/ogg-configure.log)"
-
     make -j$(nproc) > "${LOG_DIR}/ogg-make.log" 2>&1 || {
         echo "❌ ogg make failed (see ${LOG_DIR}/ogg-make.log)"
         tail -30 "${LOG_DIR}/ogg-make.log"
@@ -191,16 +196,20 @@ fi
 
 # === Build libFLAC (BSD 3-clause, FLAC encoder, depends on libogg) ===
 if [ ! -f "${FLAC_INSTALL}/lib/libFLAC.a" ]; then
-    if [ ! -d "flac-${FLAC_VERSION}" ]; then
-        echo "Downloading libFLAC ${FLAC_VERSION}..."
-        curl -sL "https://ftp.osuosl.org/pub/xiph/releases/flac/flac-${FLAC_VERSION}.tar.xz" \
-            -o flac.tar.xz
-        tar xJf flac.tar.xz
-        rm flac.tar.xz
+    echo "Downloading libFLAC ${FLAC_VERSION}..."
+    curl -fSL "https://ftp.osuosl.org/pub/xiph/releases/flac/flac-${FLAC_VERSION}.tar.xz" \
+        -o flac.tar.xz || { echo "❌ Failed to download libFLAC"; exit 1; }
+    tar xJf flac.tar.xz && rm flac.tar.xz || { echo "❌ Failed to extract libFLAC"; exit 1; }
+    # Find actual extracted directory
+    FLAC_SRC_DIR=$(find . -maxdepth 1 -type d -name "*flac*" ! -name ".*" | head -1)
+    if [ -z "$FLAC_SRC_DIR" ]; then
+        echo "❌ libFLAC source directory not found after extraction"
+        ls -la
+        exit 1
     fi
 
-    echo "=== Building libFLAC ==="
-    cd "${BUILD_DIR}/flac-${FLAC_VERSION}"
+    echo "=== Building libFLAC (source: ${FLAC_SRC_DIR}) ==="
+    cd "${BUILD_DIR}/${FLAC_SRC_DIR}"
     # FLAC 1.5.0 uses cmake by default; fall back to autotools if available.
     # cmake is more reliable for Android NDK cross-compilation.
     if [ -f "CMakeLists.txt" ] && command -v cmake >/dev/null 2>&1; then
