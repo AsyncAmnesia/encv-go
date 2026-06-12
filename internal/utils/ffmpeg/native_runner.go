@@ -68,17 +68,23 @@ func (r *NativeRunner) Available() (ffmpegOk bool, ffprobeOk bool, errMsg string
 	return ok, ok2, msg
 }
 
-// init prefers WorkerRunner (subprocess isolation) over NativeRunner (in-process
-// cgo). WorkerRunner is safe because the parent can SIGKILL the worker on ctx
-// cancel; NativeRunner cannot interrupt an in-flight cgo call.
+// init prefers MediaCodecRunner (hardware encoder, fastest) → WorkerRunner
+// (subprocess, SIGKILL-able) → NativeRunner (in-process cgo, can block).
 //
-// 2026-06-11 Phase 2: changed from "always NativeRunner" to "WorkerRunner first
-// if available, else NativeRunner". Worker binary availability is decided by
-// worker_client.locateWorker() (checks $ENCV_FFMPEG_WORKER / $ENCV_LIB_DIR /
-// exe-dir / PATH). On real device, Kotlin EncvGoService.kt sets:
+// 🆕 2026-06-12 Phase 3 草案：MediaCodec 硬编集成
+//   当前 init 仅在 WorkerRunner / NativeRunner 之间选，Phase 3.2 实装后将
+//   MediaCodecRunner 插在最前。详见：
+//   https://.../phase3-mediacodec-integration-proposal.md
+//
+// 真机（Kotlin EncvGoService.kt）注入：
 //   ENCV_FFMPEG_WORKER = nativeLibraryDir + "/libffmpeg-worker.so"
-// so this typically picks WorkerRunner. Falls back to NativeRunner only if
-// the worker binary is not shipped.
+//
+// Phase 3 init 计划（不实装，只 stub）：
+//   if mcr := NewMediaCodecRunner(); mcr != nil && mcr.Available().Ok {
+//       SetRunner(mcr); return
+//   }
+//   if wr := NewWorkerRunner(); wr != nil { if ok, _, _ := wr.Available(); ok { SetRunner(wr); return } }
+//   SetRunner(&NativeRunner{})
 func init() {
 	if wr := NewWorkerRunner(); wr != nil {
 		if ok, _, _ := wr.Available(); ok {

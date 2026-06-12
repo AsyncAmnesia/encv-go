@@ -295,7 +295,7 @@ func (s *Server) handleMockGenerateGin(c *gin.Context) {
 	skipped := 0
 	var totalSize int64
 
-	// 🆕 2026-06-12 饱和调试：handler 入口**先** emit starting + 9 行 spec_plan（pending 状态）
+	// 🆕 2026-06-12 饱和调试 + 异步化：handler 入口**先** emit starting + 9 行 spec_plan（pending 状态）
 	//   真机 cgo 阻塞 mp4 时：前端立刻看到 9 行流程条目，30s abort 时能定位
 	//   即使后续 ffmpeg 阻塞导致后续 SSE 发不出，前端已知"待跑 9 个"
 	if err := writeSseEvent(c.Writer, flusher, "starting", fmt.Sprintf(`{"total": %d, "type": %q, "root": %q}`, len(specs), req.Type, root)); err != nil {
@@ -312,77 +312,134 @@ func (s *Server) handleMockGenerateGin(c *gin.Context) {
 		}
 	}
 
+	// 🆕 2026-06-12 异步化：execute 跑在独立 goroutine，主 handler 在 select 上等
+	//   - 真机 cgo 阻塞 mp4 时：goroutine 阻塞 → main select 不阻塞 → ticker 持续 emit heartbeat
+	//     → 前端 SSE 流持续有数据 → 30s abort 时**能区分"真机在跑"vs"真机死了"**
+	//   - 客户端断开 → c.Request.Context().Done() 触发 → main handler 退出 + 标记 clientGone
+	//     注意：goroutine 内 execute 仍跑（cgo 不响应 ctx），但因为 clientGone 不再 emit 也不写文件
+	//   - ticker 2s emit heartbeat 让前端知道"流还活着"
+	//
+	// ⚠️ 已知限制：cgo OS 线程不响应 Go context cancel — goroutine 仍阻塞
+	//   这是 ffmpeg cgo dlopen 的根本问题，需要把 cgo 移到独立进程（Phase 3 重构）
+	//   当前修复**至少**让前端能看到"真机在跑只是慢"vs"流断了"
+	resultCh := make(chan mockFileSpec, len(specs))
+	runCtx, runCancel := context.WithCancel(c.Request.Context())
+	defer runCancel()
+
+	go func() {
+		// 重要：defer recover 防 cgo panic 跨 boundary 杀整进程
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("[mock_gen] execute goroutine PANIC recovered", "panic", fmt.Sprintf("%v", r))
+			}
+			close(resultCh)
+		}()
+		for i := range specs {
+			if runCtx.Err() != nil {
+				return
+			}
+			sp := &specs[i]
+			if !sp.isStatic {
+				executeMockSpec(sp)
+			}
+			select {
+			case resultCh <- *sp:
+			case <-runCtx.Done():
+				return
+			}
+		}
+	}()
+
 	// 🆕 2026-06-12 饱和防御：跟踪 SSE 写入错误，客户端断开时优雅停止
-	//  旧逻辑：writeSseEvent 错误被忽略，handler 继续跑全 9 个文件
-	//  即使文件写盘成功，对客户端已 disconnect 的请求也毫无意义 → 浪费 CPU + fd
 	clientGone := false
-	for i, sp := range specs {
-		if clientGone {
-			// 客户端已断开，跳过剩余文件 + 不再 emit SSE
-			slog.Warn("[mock_gen] client gone, abort loop", "remaining_specs", len(specs)-count-skipped)
-			break
-		}
+	heartbeat := time.NewTicker(2 * time.Second)
+	defer heartbeat.Stop()
+	completed := 0
 
-		// 🆕 2026-06-12 饱和调试：executeMockSpec 跑 ffmpeg，**修改入参 sp**（data/stderr/exitCode）
-		//   旧逻辑：plan 阶段 ffmpeg.RunWithOutput 阻塞 → handler 入口卡死 → SSE 没字节发出
-		//   新逻辑：plan 阶段只构造 spec（含 ffmpegArgs），handler 拿到后**先** emit 9 个 spec_plan
-		//         告诉前端"接下来要跑这些"，**再**串行 executeMockSpec
-		//   效果：真机 cgo 卡 mp4 时，前端已看到 mp3/flac/pdf 等 9 行 spec_plan
-		//         30s abort 时 inline error card 含"卡在 mp4，ffmpegArgs=[-i ... -c copy]"
-		if !sp.isStatic {
-			executeMockSpec(&sp)
-		}
+	for completed < len(specs) {
+		select {
+		case sp, ok := <-resultCh:
+			if !ok {
+				// goroutine 异常退出
+				slog.Warn("[mock_gen] resultCh closed early", "completed", completed, "total", len(specs))
+				return
+			}
+			if clientGone {
+				completed++
+				continue
+			}
 
-		// 🆕 2026-06-12 饱和调试：execute 后再 emit "spec_diag" 把完整 ffmpeg 诊断推给前端
-		//  - 第一次 spec_diag（plan 阶段）→ status=pending / stderr="" → 前端先看流程
-		//  - 第二次 spec_diag（execute 后）→ status=ok|failed / stderr=真实全文 → 前端看诊断
-		//  前端用 (relativePath, index) 作 key update 同一行
-		diagStatus := "ok"
-		if len(sp.data) == 0 {
-			diagStatus = "failed"
-		}
-		diagData := fmt.Sprintf(
-			`{"index": %d, "total": %d, "relativePath": %q, "status": %q, "encoder": %q, "ffmpegArgs": %s, "exitCode": %d, "stderr": %q}`,
-			i+1, len(specs), sp.relativePath, diagStatus, sp.encoderHint,
-			jsonEscapeStringSlice(sp.ffmpegArgs),
-			sp.exitCode, sp.stderr,
-		)
-		if err := writeSseEvent(c.Writer, flusher, "spec_diag", diagData); err != nil {
-			clientGone = true
-			slog.Warn("[mock_gen] SSE diag write failed (client gone?)", "err", err, "relativePath", sp.relativePath)
-			continue
-		}
+			// emit spec_diag (execute 结果)
+			diagStatus := "ok"
+			if len(sp.data) == 0 {
+				diagStatus = "failed"
+			}
+			// 找原 index（specs slice index — sp 来自 resultCh 元素）
+			// 这里我们没传 index，**用 relativePath 反查**
+			idx := 0
+			for i, orig := range specs {
+				if orig.relativePath == sp.relativePath {
+					idx = i + 1
+					break
+				}
+			}
+			diagData := fmt.Sprintf(
+				`{"index": %d, "total": %d, "relativePath": %q, "status": %q, "encoder": %q, "ffmpegArgs": %s, "exitCode": %d, "stderr": %q}`,
+				idx, len(specs), sp.relativePath, diagStatus, sp.encoderHint,
+				jsonEscapeStringSlice(sp.ffmpegArgs),
+				sp.exitCode, sp.stderr,
+			)
+			if err := writeSseEvent(c.Writer, flusher, "spec_diag", diagData); err != nil {
+				clientGone = true
+				slog.Warn("[mock_gen] SSE diag write failed (client gone?)", "err", err, "relativePath", sp.relativePath)
+				completed++
+				continue
+			}
 
-		fullPath := filepath.Join(root, sp.relativePath)
-		dir := filepath.Dir(fullPath)
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			_ = emitSseEvent(c.Writer, flusher, "error", fmt.Sprintf(`{"error": "mkdir %s: %s"}`, dir, err.Error()))
+			fullPath := filepath.Join(root, sp.relativePath)
+			dir := filepath.Dir(fullPath)
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				_ = emitSseEvent(c.Writer, flusher, "error", fmt.Sprintf(`{"error": "mkdir %s: %s"}`, dir, err.Error()))
+				return
+			}
+			if len(sp.data) == 0 {
+				skipped++
+				slog.Warn("[mock] skip nil data", "relativePath", sp.relativePath, "reason", "ffmpegGenerate returned nil (likely encoder not compiled in this ffmpeg build)")
+				_ = emitSseEvent(c.Writer, flusher, "spec_failed", fmt.Sprintf(
+					`{"relativePath": %q, "reason": "ffmpeg 不可用/未编该 encoder (真机常见：libmp3lame/flac 等)", "exitCode": %d, "stderr": %q}`,
+					sp.relativePath, sp.exitCode, sp.stderr,
+				))
+				completed++
+				continue
+			}
+			if err := os.WriteFile(fullPath, sp.data, 0644); err != nil {
+				_ = emitSseEvent(c.Writer, flusher, "error", fmt.Sprintf(`{"error": "write %s: %s"}`, sp.relativePath, err.Error()))
+				return
+			}
+			count++
+			totalSize += int64(len(sp.data))
+			// SSE event: progress
+			if err := writeSseEvent(c.Writer, flusher, "progress", fmt.Sprintf(`{"relativePath": %q, "size": %d}`, sp.relativePath, len(sp.data))); err != nil {
+				clientGone = true
+				slog.Warn("[mock_gen] SSE write failed (client gone?)", "err", err, "relativePath", sp.relativePath)
+			}
+			completed++
+
+		case <-heartbeat.C:
+			// 🆕 2026-06-12 异步化：2s heartbeat 让前端知道"流还活着"
+			//   真机 cgo 阻塞时，前端至少能看到"还在线"不会误判"死了"
+			if !clientGone {
+				hbData := fmt.Sprintf(`{"completed": %d, "total": %d, "ts": %d}`, completed, len(specs), time.Now().UnixMilli())
+				if err := writeSseEvent(c.Writer, flusher, "heartbeat", hbData); err != nil {
+					clientGone = true
+					slog.Warn("[mock_gen] SSE heartbeat write failed (client gone?)", "err", err)
+				}
+			}
+
+		case <-runCtx.Done():
+			// 客户端断开（c.Request.Context）— 停止写文件、停止 emit
+			slog.Warn("[mock_gen] client context done, aborting", "completed", completed, "total", len(specs))
 			return
-		}
-		// 🆕 2026-06-11 v4 修复：ffmpegGenerate 返回 nil（真机 ffmpeg build 没编该 encoder）
-		//   旧逻辑：os.WriteFile(fullPath, nil, 0644) → 静默写 0 字节文件 + 报 success
-		//   后果：用户在前端看到"成功"但 mp3/flac 是 0 字节 → 后续流程全挂 + 用户分不清
-		//   新逻辑：跳过 nil + emit 单独 error event + done 事件带 skipped 计数
-		if len(sp.data) == 0 {
-			skipped++
-			slog.Warn("[mock] skip nil data", "relativePath", sp.relativePath, "reason", "ffmpegGenerate returned nil (likely encoder not compiled in this ffmpeg build)")
-			_ = emitSseEvent(c.Writer, flusher, "spec_failed", fmt.Sprintf(
-				`{"relativePath": %q, "reason": "ffmpeg 不可用/未编该 encoder (真机常见：libmp3lame/flac 等)", "exitCode": %d, "stderr": %q}`,
-				sp.relativePath, sp.exitCode, sp.stderr,
-			))
-			continue
-		}
-		if err := os.WriteFile(fullPath, sp.data, 0644); err != nil {
-			_ = emitSseEvent(c.Writer, flusher, "error", fmt.Sprintf(`{"error": "write %s: %s"}`, sp.relativePath, err.Error()))
-			return
-		}
-		count++
-		totalSize += int64(len(sp.data))
-		// SSE event: progress
-		if err := writeSseEvent(c.Writer, flusher, "progress", fmt.Sprintf(`{"relativePath": %q, "size": %d}`, sp.relativePath, len(sp.data))); err != nil {
-			clientGone = true
-			slog.Warn("[mock_gen] SSE write failed (client gone?)", "err", err, "relativePath", sp.relativePath)
-			continue
 		}
 	}
 	// 🆕 done 事件带 skipped 字段（前端可显示"X 个格式因 ffmpeg build 限制跳过"）
