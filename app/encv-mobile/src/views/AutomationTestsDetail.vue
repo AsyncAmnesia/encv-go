@@ -307,12 +307,12 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { App as CapacitorApp } from '@capacitor/app'
 
 // 🆕 2026-06-12 崩溃根因修复：后端 crash 完全静默 → 订阅 EncvGoService.BROADCAST_BACKEND_STATUS
 //   EncvGoService.startGoProcess() 失败时 publishFailure() 发 broadcast 含 lastError 详情
 //   （如 "go_exit:127|output:libffmpeg.so not found" / "timeout:alive=false|output:..."）
 //   前端不订阅就只看到 "Failed to fetch" → 用户以为是网络问题
+//   注：不用 @capacitor/app（避免新增依赖）— 改用 window.Capacitor.Plugins.BroadcastReceiver
 const ENCV_BACKEND_STATUS = 'com.encvgo.broadcast.BACKEND_STATUS'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton,
@@ -1212,9 +1212,6 @@ onMounted(() => {
   tickHandle = setInterval(() => { _tickNow.value = Date.now() }, 1000)
   wsStart()
   // 🆕 2026-06-12：订阅 EncvGoService 崩溃事件，inline error card 显示 lastError
-  if (CapacitorApp) {
-    CapacitorApp.addListener('appStateChange', () => {}) // no-op (ensure plugin loaded)
-  }
   ;(window as any).Capacitor?.Plugins?.BroadcastReceiver?.addListener?.(
     'receive',
     (info: { action: string; extras?: Record<string, any> }) => {
@@ -1233,7 +1230,7 @@ onMounted(() => {
           title: '后端服务已退出',
           message: error,
           detail: extras.port ? `port=${extras.port}` : '',
-          at: new Date().toISOString(),
+          at: Date.now(),
         }
       }
     }
