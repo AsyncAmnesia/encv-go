@@ -116,15 +116,20 @@ class EncvGoService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         currentSource = intent?.getStringExtra(EXTRA_SOURCE) ?: "manual"
-        when (intent?.action) {
-            ACTION_STOP -> worker.execute { stopGoProcess("stopped", stopService = true) }
-            ACTION_RESTART, ACTION_EXTERNAL_RESTART -> worker.execute {
-                restartGoProcess(currentSource, intent?.getStringExtra(EXTRA_COMMAND))
+        intent?.let { it ->
+            when (it.action) {
+                ACTION_STOP -> worker.execute { stopGoProcess("stopped", stopService = true) }
+                ACTION_RESTART, ACTION_EXTERNAL_RESTART -> worker.execute {
+                    restartGoProcess(currentSource, it.getStringExtra(EXTRA_COMMAND))
+                }
+                ACTION_STATUS -> publishStatus(lastError)
+                ACTION_START, ACTION_EXTERNAL_START -> worker.execute {
+                    startGoProcess(currentSource, it.getStringExtra(EXTRA_COMMAND))
+                }
             }
-            ACTION_STATUS -> publishStatus(lastError)
-            ACTION_START, ACTION_EXTERNAL_START, null -> worker.execute {
-                startGoProcess(currentSource, intent?.getStringExtra(EXTRA_COMMAND))
-            }
+        } ?: run {
+            // 无 intent 视为默认 start（向后兼容旧版无 action 调用）
+            worker.execute { startGoProcess(currentSource, null) }
         }
         return START_STICKY
     }
