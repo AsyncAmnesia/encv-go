@@ -160,8 +160,8 @@ class EncvGoService : Service() {
             restartAttempts += 1
             val exitCode = try { proc.exitValue() } catch (e: Exception) { -1 }
             val tail = outputBuffer.toString().takeLast(2 * 1024)
-            val reason = "alive_monitor: process died after ready (exit=$exitCode, attempts=$restartAttempts)"
-            publishFailure(reason, tail)
+            val reason = "go_exit:$exitCode|attempts=$restartAttempts|output:${if (tail.isEmpty()) "(empty)" else tail}"
+            publishFailure(reason, "alive_monitor", null)
             lastExitCode = exitCode
 
             if (restartAttempts > MAX_RESTART_ATTEMPTS) {
