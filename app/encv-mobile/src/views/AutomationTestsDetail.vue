@@ -308,12 +308,32 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 
-// 🆕 2026-06-12 崩溃根因修复：后端 crash 完全静默 → 订阅 EncvGoService.BROADCAST_BACKEND_STATUS
-//   EncvGoService.startGoProcess() 失败时 publishFailure() 发 broadcast 含 lastError 详情
-//   （如 "go_exit:127|output:libffmpeg.so not found" / "timeout:alive=false|output:..."）
-//   前端不订阅就只看到 "Failed to fetch" → 用户以为是网络问题
-//   注：不用 @capacitor/app（避免新增依赖）— 改用 window.Capacitor.Plugins.BroadcastReceiver
-const ENCV_BACKEND_STATUS = 'com.encvgo.broadcast.BACKEND_STATUS'
+// 🆕 2026-06-12 崩溃根因修复：后端 crash 完全静默 → 监听 MainActivity 推送的 window CustomEvent
+//   链路：EncvGoService.sendBroadcast (Android system broadcast)
+//       → MainActivity 的 android.content.BroadcastReceiver (Java 类, 不是 Capacitor plugin)
+//       → bridge.webView.evaluateJavascript
+//       → window.dispatchEvent(new CustomEvent('encv:backend-status', {detail:{port,running,error,...}}))
+//   真实事件名是 'encv:backend-status' (MainActivity.kt:166 写死)
+//   前端用 WebView 原生 window.addEventListener 订阅，**不需要任何 Capacitor plugin**。
+function onBackendStatus(ev: Event) {
+  const detail = (ev as CustomEvent<{ port: number; running: boolean; error?: string; source?: string }>).detail
+  if (!detail) return
+  const running = detail.running === true
+  const error = detail.error
+  if (running || !error) return  // 只在 running=false + error 有值时显示
+  const raw = (error || '').toString()
+  const source = raw.startsWith('go_exit') ? 'mockGenerate'
+    : raw.startsWith('timeout') ? 'mockGenerate'
+    : raw.startsWith('no_binary') ? 'loadPlugins'
+    : 'loadPlugins'
+  inlineError.value = {
+    source,
+    title: '后端服务已退出',
+    message: raw,
+    detail: detail.port ? `port=${detail.port}` : '',
+    at: Date.now(),
+  }
+}
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton,
   IonContent, IonList, IonListHeader, IonItem, IonLabel, IonIcon,
@@ -1211,36 +1231,14 @@ function humanSize(bytes: number): string {
 onMounted(() => {
   tickHandle = setInterval(() => { _tickNow.value = Date.now() }, 1000)
   wsStart()
-  // 🆕 2026-06-12：订阅 EncvGoService 崩溃事件，inline error card 显示 lastError
-  ;(window as any).Capacitor?.Plugins?.BroadcastReceiver?.addListener?.(
-    'receive',
-    (info: { action: string; extras?: Record<string, any> }) => {
-      if (info?.action !== ENCV_BACKEND_STATUS) return
-      const extras = info.extras || {}
-      const running = extras.running === true || extras.running === 'true'
-      const error = extras.error as string | undefined
-      if (!running && error) {
-        // 显式渲染崩溃详情（替代"Failed to fetch"的不可见错误）
-        const source = error.startsWith('go_exit') ? 'mockGenerate'
-          : error.startsWith('timeout') ? 'mockGenerate'
-          : error.startsWith('no_binary') ? 'loadPlugins'
-          : 'loadPlugins'
-        inlineError.value = {
-          source,
-          title: '后端服务已退出',
-          message: error,
-          detail: extras.port ? `port=${extras.port}` : '',
-          at: Date.now(),
-        }
-      }
-    }
-  )?.catch?.(() => { /* BroadcastReceiver 插件不存在时（dev/web）静默 */ })
+  // 🆕 2026-06-12：监听 MainActivity 推送的 CustomEvent，显示 lastError
+  window.addEventListener('encv:backend-status', onBackendStatus)
 })
 
 onUnmounted(() => {
   if (tickHandle) clearInterval(tickHandle)
   wsStop()
-  ;(window as any).Capacitor?.Plugins?.BroadcastReceiver?.removeAllListeners?.()
+  window.removeEventListener('encv:backend-status', onBackendStatus)
 })
 </script>
 
