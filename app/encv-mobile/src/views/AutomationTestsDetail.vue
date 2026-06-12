@@ -525,12 +525,18 @@ async function handleGenerateMock() {
       onSpecDiag: (diag) => {
         // 🆕 2026-06-12 饱和调试：每个 spec 处理前先记一行
         //   哪怕 progress 事件因 cgo 阻塞没收到，至少能看到「处理到这步」
-        mockGenLogTotal.value = diag.total
-        // 同一 relativePath 多次出现 → 用 index 区分（unlikely，但防 dedupe）
-        const key = `${diag.index}-${diag.relativePath}-${diag.exitCode}`
-        const existing = mockGenLog.value.findIndex((e) => e.key === key)
-        const entry = {
-          key,
+        //   关键：用 relativePath + index 找已有 row（spec_plan 时已 push pending），
+        //         替换为完整诊断版（status / stderr / exitCode）
+        //   真机 cgo 阻塞时只有 plan 行（pending），诊断版（ok/failed）永远到不了 → 前端仍能看到 pending 行
+        if (diag.relativePath === '__starting__') {
+          // starting 事件：更新 total 即可
+          mockGenLogTotal.value = diag.total
+          return
+        }
+        // 找同 relativePath 已有 row（plan 阶段 push 过）
+        const existing = mockGenLog.value.findIndex((e) => e.relativePath === diag.relativePath && e.index === diag.index)
+        const entry: MockGenLogEntry = {
+          key: `${diag.index}-${diag.relativePath}-${diag.status}`,
           index: diag.index,
           total: diag.total,
           relativePath: diag.relativePath,
@@ -540,7 +546,7 @@ async function handleGenerateMock() {
           exitCode: diag.exitCode,
           stderr: diag.stderr,
           at: new Date().toISOString(),
-          expanded: false,
+          expanded: diag.status === 'failed', // 失败自动展开
         }
         if (existing >= 0) {
           mockGenLog.value[existing] = entry
@@ -548,6 +554,35 @@ async function handleGenerateMock() {
           mockGenLog.value.push(entry)
         }
         generateProgressText.value = `[${diag.index}/${diag.total}] ${diag.relativePath} (${diag.status})`
+      },
+      onSpecPlan: (diag) => {
+        // 🆕 2026-06-12 饱和调试：handler 入口发的"待跑"列表（pending 状态）
+        //   真机 cgo 阻塞时只有这些行能到达 → 前端能定位"卡在哪个 spec"
+        if (diag.relativePath === '__starting__') {
+          mockGenLogTotal.value = diag.total
+          return
+        }
+        // 找同 relativePath 已有 row，避免重复 push
+        const existing = mockGenLog.value.findIndex((e) => e.relativePath === diag.relativePath && e.index === diag.index)
+        const entry: MockGenLogEntry = {
+          key: `${diag.index}-${diag.relativePath}-plan`,
+          index: diag.index,
+          total: diag.total,
+          relativePath: diag.relativePath,
+          status: 'pending',
+          encoder: diag.encoder,
+          ffmpegArgs: diag.ffmpegArgs,
+          exitCode: 0,
+          stderr: '',
+          at: new Date().toISOString(),
+          expanded: false,
+        }
+        if (existing >= 0) {
+          // 保留已有行（plan 后已被 diag 替换过），不动
+        } else {
+          mockGenLog.value.push(entry)
+        }
+        mockGenLogTotal.value = diag.total
       },
       onProgress: (p) => {
         lastCount++

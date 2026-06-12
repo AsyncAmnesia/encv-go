@@ -37,7 +37,7 @@ export interface MockSpecDiag {
   index: number
   total: number
   relativePath: string
-  status: 'ok' | 'failed'
+  status: 'pending' | 'ok' | 'failed'
   encoder: string
   ffmpegArgs: string[]
   exitCode: number
@@ -67,6 +67,12 @@ export interface MockGenerateOptions {
    *   即使后端因 cgo 阻塞中断流，最后收到的 onSpecDiag 也能让前端展示「在哪停止」
    */
   onSpecDiag?: (diag: MockSpecDiag) => void
+  /**
+   * 🆕 2026-06-12 饱和调试：handler 入口发的"待跑"列表
+   *   每个 spec 一行 pending 状态，**先**于 spec_diag 到达
+   *   真机 cgo 阻塞 30s+ abort 时，前端至少有这 9 行能告诉用户"卡在哪个 spec"
+   */
+  onSpecPlan?: (diag: MockSpecDiag) => void
   /**
    * 🆕 2026-06-12 饱和调试：spec 失败（ffmpeg exit != 0 或 spawn 失败）
    *   区别于 fatal error（fatal 会 throw 中断流，spec_failed 仅 spec 跳过）
@@ -156,7 +162,17 @@ export async function generateMockFilesViaBackend(opts: MockGenerateOptions): Pr
         buffer = buffer.slice(idx + 2)
         const parsed = parseSseEvent(eventBlock)
         if (!parsed) continue
-        if (parsed.event === 'spec_diag') {
+        if (parsed.event === 'spec_plan') {
+          // 🆕 2026-06-12 饱和调试：handler 入口发的"待跑"列表
+          //   每个 spec pending 状态 → 前端 log 卡先显示 9 行流程结构
+          //   真机 cgo 阻塞 mp4 时，前端能定位"卡在 mp4"
+          try {
+            const diag = JSON.parse(parsed.data) as MockSpecDiag
+            opts.onSpecPlan?.(diag)
+          } catch (e) {
+            // 解析失败不致命
+          }
+        } else if (parsed.event === 'spec_diag') {
           // 🆕 2026-06-12 饱和调试：每个 spec 处理前先推完整 ffmpeg 诊断
           //   即使后续 progress/spec_failed 因 cgo 阻塞没收到，前端也至少知道「处理到这步」
           try {
@@ -165,6 +181,20 @@ export async function generateMockFilesViaBackend(opts: MockGenerateOptions): Pr
           } catch (e) {
             // JSON 解析失败不致命，丢弃
           }
+        } else if (parsed.event === 'starting') {
+          // 🆕 2026-06-12 饱和调试：handler 入口第一个事件，告诉前端"收到请求"
+          //   通过 opts.onSpecPlan? 的同入口回调处理（或用 onStarting 单独回调）
+          //   简化：直接解析后由调用方通过 onSpecPlan(total) 接收
+          try {
+            const data = JSON.parse(parsed.data) as { total: number; type: string; root: string }
+            console.info('[mock-gen] starting', data)
+            // 调 onSpecPlan 一次，status=pending，相对路径空，total=data.total
+            // 前端用这个更新 mockGenLogTotal
+            opts.onSpecPlan?.({
+              index: 0, total: data.total, relativePath: '__starting__', status: 'pending',
+              encoder: '', ffmpegArgs: [], exitCode: 0, stderr: data.root,
+            })
+          } catch {}
         } else if (parsed.event === 'progress') {
           try {
             const data = JSON.parse(parsed.data) as MockProgress

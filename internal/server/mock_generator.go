@@ -126,16 +126,19 @@ func validateMockRoot(root string) error {
 // 🆕 2026-06-12 饱和调试：data 为 nil 时不再是「静默失败」—— 透传 ffmpeg 完整诊断
 //   （stderr / exitCode / ffmpegArgs / ext / encoder）让前端能展示「在哪个具体调用挂的」
 //
-// 历史：2026-06-11 v4 修复时 ffmpegGenerate 返回 nil（loader 没编 encoder）
-//   → 旧逻辑：os.WriteFile(fullPath, nil, 0644) 写 0 字节 + 报 success → 静默失败
-//   → 旧 v4 修复：跳过 nil + emit 单独 error event + done 带 skipped 计数
-//   → 但**仍缺**：用户看不到 stderr 全文 / exitCode / 调用的 ffmpeg args
-//   → 真机「Unknown encoder 'libmp3lame'」这种关键 stderr 被丢弃 → 排查难
-//
-// 新设计：每个 spec 自带 ffmpeg 诊断字段，emit diagnostic SSE event 时一次性推完
+// 🆕 2026-06-12 重构：ffmpeg 不在 spec 构造阶段跑，挪到 handler 阶段跑
+//   历史 bug（真机 cgo 阻塞 30s+）：
+//     旧 planMockSpecs + ffmpegSpec → handler 入口 ffmpeg.RunWithOutput 卡住
+//     → SSE 第一个 spec_diag 都没发出去 → 前端 30s abort 时**完全不知道卡在哪个 spec**
+//   修复：planMockSpecs 只构造 spec 列表（含 ffmpegArgs，但 data=nil）
+//     handler 拿到 spec 后**先** emit 9 个 spec_diag 给前端（让前端立刻看到流程结构）
+//     **再** 循环跑 ffmpeg + emit spec_done / spec_failed
+//   效果：即使真机 cgo 卡 mp4，前端已经看到「接下来要跑 mp3/flac/...」的 9 行
+//         30s abort 时 inline error card 含「最后收到的 spec_diag → 卡在 mp4 这步」
 type mockFileSpec struct {
 	relativePath string
-	data         []byte
+	// data 在 planMockSpecs 阶段为 nil；handler 跑 ffmpeg 后填
+	data []byte
 	// ffmpegArgs 仅在 ffmpegGenerate 调用过的 spec 上有值（mp4/mkv/mp3/flac）
 	// PNG/JPEG/PDF/TXT/AE/SCCV 等硬编码字节的 spec 留空
 	ffmpegArgs []string
@@ -147,38 +150,45 @@ type mockFileSpec struct {
 	// encoderHint 是源码层面推断的 encoder（mp4=h264, mkv=h264, mp3=libmp3lame, flac=flac）
 	// 失败时前端可直接对比 manifest 看该 encoder 是否在 ffmpeg build 里
 	encoderHint string
+	// 静态字节 spec 标志（planMockSpecs 直接填 data，不走 ffmpeg）
+	isStatic bool
 }
 
 // generateMockSpecs 返回指定 type 的所有文件 specs
 // 字节内容是硬编码的最小有效格式（与前端 lib/mockDataGenerator.ts 对齐）
+//
+// 🆕 2026-06-12 重构：**不跑 ffmpeg**！ffmpeg 调用挪到 handler 阶段
+//   静态字节 spec 立即填 data；ffmpeg spec 留 ffmpegArgs + status="pending" + data=nil
+//   handler 拿到 spec 列表后**先** emit 9 个 spec_diag 给前端，**再**循环跑 ffmpeg
+//   目的：真机 cgo 阻塞 mp4 时，前端已看到「接下来 mp3/flac/pdf」流程结构
 func generateMockSpecs(typeName string) []mockFileSpec {
 	plainSpecs := []mockFileSpec{
-		{relativePath: "01-plain-media/image/photo.jpg", data: minimalJPEG(), encoderHint: "JPEG (static)"},
-		{relativePath: "01-plain-media/image/screenshot.png", data: minimalPNG(), encoderHint: "PNG (static)"},
-		minimalMP4(), // 已含 relativePath/data/ffmpegArgs/stderr/exitCode/encoderHint
-		minimalMKV(),
-		minimalMP3(),
-		minimalFLAC(),
-		{relativePath: "01-plain-media/document/report.pdf", data: minimalPDF(), encoderHint: "PDF (static)"},
-		{relativePath: "01-plain-media/document/notes.txt", data: []byte("ENCV Mock Notes\n中文测试\n日本語テスト\n한국어 테스트\n"), encoderHint: "TXT (static)"},
-		{relativePath: "01-plain-media/document/data.csv", data: []byte("id,name,size\n1,photo.jpg,107\n2,sample.mp4,45056\n"), encoderHint: "CSV (static)"},
+		{relativePath: "01-plain-media/image/photo.jpg", data: minimalJPEG(), encoderHint: "JPEG (static)", isStatic: true},
+		{relativePath: "01-plain-media/image/screenshot.png", data: minimalPNG(), encoderHint: "PNG (static)", isStatic: true},
+		planMP4(),
+		planMKV(),
+		planMP3(),
+		planFLAC(),
+		{relativePath: "01-plain-media/document/report.pdf", data: minimalPDF(), encoderHint: "PDF (static)", isStatic: true},
+		{relativePath: "01-plain-media/document/notes.txt", data: []byte("ENCV Mock Notes\n中文测试\n日本語テスト\n한국어 테스트\n"), encoderHint: "TXT (static)", isStatic: true},
+		{relativePath: "01-plain-media/document/data.csv", data: []byte("id,name,size\n1,photo.jpg,107\n2,sample.mp4,45056\n"), encoderHint: "CSV (static)", isStatic: true},
 	}
 	aeSpecs := []mockFileSpec{
-		{relativePath: "02-alist-encrypt/secret.ae", data: makeAEFile("secret.ae", 4096)},
-		{relativePath: "02-alist-encrypt/document.ae", data: makeAEFile("document.ae", 8192)},
-		{relativePath: "02-alist-encrypt/hidden-gem.ae", data: makeAEFile("hidden-gem.ae", 16384)},
+		{relativePath: "02-alist-encrypt/secret.ae", data: makeAEFile("secret.ae", 4096), encoderHint: "AE (static)", isStatic: true},
+		{relativePath: "02-alist-encrypt/document.ae", data: makeAEFile("document.ae", 8192), encoderHint: "AE (static)", isStatic: true},
+		{relativePath: "02-alist-encrypt/hidden-gem.ae", data: makeAEFile("hidden-gem.ae", 16384), encoderHint: "AE (static)", isStatic: true},
 	}
 	containerSpecs := []mockFileSpec{
-		{relativePath: "03-encv-containers/container.sccgv", data: makeSCCVFile("container", "sccgv", 8192)},
-		{relativePath: "03-encv-containers/archive.scext", data: makeSCCVFile("archive", "scext", 16384)},
-		{relativePath: "03-encv-containers/bundle.scepkg", data: makeSCCVFile("bundle", "scepkg", 32768)},
+		{relativePath: "03-encv-containers/container.sccgv", data: makeSCCVFile("container", "sccgv", 8192), encoderHint: "SCCGV (static)", isStatic: true},
+		{relativePath: "03-encv-containers/archive.scext", data: makeSCCVFile("archive", "scext", 16384), encoderHint: "SCCEXT (static)", isStatic: true},
+		{relativePath: "03-encv-containers/bundle.scepkg", data: makeSCCVFile("bundle", "scepkg", 32768), encoderHint: "SCCEPKG (static)", isStatic: true},
 	}
 	boundarySpecs := []mockFileSpec{
-		{relativePath: "04-boundary-test/zero-byte-file.bin", data: []byte{}},
-		{relativePath: "04-boundary-test/single-byte.bin", data: []byte{0x42}},
-		{relativePath: "04-boundary-test/exactly-1kb.bin", data: makeBytes(1024, 0x41)},
-		{relativePath: "04-boundary-test/large-1mb.dat", data: makeBytes(1024*1024, 0x58)},
-		{relativePath: "04-boundary-test/normal.txt", data: []byte("plain text")},
+		{relativePath: "04-boundary-test/zero-byte-file.bin", data: []byte{}, encoderHint: "BIN (static)", isStatic: true},
+		{relativePath: "04-boundary-test/single-byte.bin", data: []byte{0x42}, encoderHint: "BIN (static)", isStatic: true},
+		{relativePath: "04-boundary-test/exactly-1kb.bin", data: makeBytes(1024, 0x41), encoderHint: "BIN (static)", isStatic: true},
+		{relativePath: "04-boundary-test/large-1mb.dat", data: makeBytes(1024*1024, 0x58), encoderHint: "BIN (static)", isStatic: true},
+		{relativePath: "04-boundary-test/normal.txt", data: []byte("plain text"), encoderHint: "TXT (static)", isStatic: true},
 	}
 
 	switch typeName {
@@ -284,6 +294,24 @@ func (s *Server) handleMockGenerateGin(c *gin.Context) {
 	count := 0
 	skipped := 0
 	var totalSize int64
+
+	// 🆕 2026-06-12 饱和调试：handler 入口**先** emit starting + 9 行 spec_plan（pending 状态）
+	//   真机 cgo 阻塞 mp4 时：前端立刻看到 9 行流程条目，30s abort 时能定位
+	//   即使后续 ffmpeg 阻塞导致后续 SSE 发不出，前端已知"待跑 9 个"
+	if err := writeSseEvent(c.Writer, flusher, "starting", fmt.Sprintf(`{"total": %d, "type": %q, "root": %q}`, len(specs), req.Type, root)); err != nil {
+		slog.Warn("[mock_gen] SSE starting write failed", "err", err)
+	}
+	for i, sp := range specs {
+		diagData := fmt.Sprintf(
+			`{"index": %d, "total": %d, "relativePath": %q, "status": "pending", "encoder": %q, "ffmpegArgs": %s, "exitCode": 0, "stderr": ""}`,
+			i+1, len(specs), sp.relativePath, sp.encoderHint, jsonEscapeStringSlice(sp.ffmpegArgs),
+		)
+		if err := writeSseEvent(c.Writer, flusher, "spec_plan", diagData); err != nil {
+			slog.Warn("[mock_gen] SSE plan write failed (client gone?)", "err", err, "relativePath", sp.relativePath)
+			break
+		}
+	}
+
 	// 🆕 2026-06-12 饱和防御：跟踪 SSE 写入错误，客户端断开时优雅停止
 	//  旧逻辑：writeSseEvent 错误被忽略，handler 继续跑全 9 个文件
 	//  即使文件写盘成功，对客户端已 disconnect 的请求也毫无意义 → 浪费 CPU + fd
@@ -295,9 +323,20 @@ func (s *Server) handleMockGenerateGin(c *gin.Context) {
 			break
 		}
 
-		// 🆕 2026-06-12 饱和调试：每个 spec 处理前先 emit "spec_diag" 把完整 ffmpeg 诊断推给前端
-		//  即使后续处理失败，前端也能看到「这一步调用 ffmpeg 的完整 args / 失败 stderr」
-		//  JSON 字段：relativePath / status / ffmpegArgs / stderr / exitCode / encoder / index / total
+		// 🆕 2026-06-12 饱和调试：executeMockSpec 跑 ffmpeg，**修改入参 sp**（data/stderr/exitCode）
+		//   旧逻辑：plan 阶段 ffmpeg.RunWithOutput 阻塞 → handler 入口卡死 → SSE 没字节发出
+		//   新逻辑：plan 阶段只构造 spec（含 ffmpegArgs），handler 拿到后**先** emit 9 个 spec_plan
+		//         告诉前端"接下来要跑这些"，**再**串行 executeMockSpec
+		//   效果：真机 cgo 卡 mp4 时，前端已看到 mp3/flac/pdf 等 9 行 spec_plan
+		//         30s abort 时 inline error card 含"卡在 mp4，ffmpegArgs=[-i ... -c copy]"
+		if !sp.isStatic {
+			executeMockSpec(&sp)
+		}
+
+		// 🆕 2026-06-12 饱和调试：execute 后再 emit "spec_diag" 把完整 ffmpeg 诊断推给前端
+		//  - 第一次 spec_diag（plan 阶段）→ status=pending / stderr="" → 前端先看流程
+		//  - 第二次 spec_diag（execute 后）→ status=ok|failed / stderr=真实全文 → 前端看诊断
+		//  前端用 (relativePath, index) 作 key update 同一行
 		diagStatus := "ok"
 		if len(sp.data) == 0 {
 			diagStatus = "failed"
@@ -598,32 +637,19 @@ func ffmpegGenerate(ext string) (data []byte, stderr string, exitCode int, err e
 	return readBytes, ffmpegStderr, 0, nil
 }
 
-// ffmpegSpec 跑 ffmpeg 并组装成 mockFileSpec（含 ffmpeg 完整诊断）
+// planMockSpec 构造 ffmpeg spec（**不跑 ffmpeg**，仅填 ffmpegArgs + encoderHint）
+//   handler 阶段调 executeMockSpec 真正跑 ffmpeg
 //
-// 🆕 2026-06-12 饱和调试：失败时**不返回 nil** —— 透传 ffmpegArgs/stderr/exitCode 给前端
-//   前端可显示「Unknown encoder 'libmp3lame'」全文 / exitCode=-1 / 完整 ffmpeg args
-func ffmpegSpec(ext, relPath, encoderHint string) mockFileSpec {
-	// 0. ffmpeg 可用性
-	ffmpegOk, _, errMsg := ffmpeg.Available()
-	if !ffmpegOk {
-		return mockFileSpec{
-			relativePath: relPath,
-			ffmpegArgs:   nil,
-			stderr:       fmt.Sprintf("ffmpeg not available: %s", errMsg),
-			exitCode:     -1,
-			encoderHint:  encoderHint,
-		}
-	}
-
-	// 1. 选源 + 输出
-	var srcBytes []byte
+// 🆕 2026-06-12 重构：plan + execute 分离
+//   旧逻辑：planMockSpecs 阶段直接调 ffmpeg.RunWithOutput → handler 入口阻塞 30s+
+//   新逻辑：planMockSpecs 只构造 spec（含 ffmpegArgs），handler 先 emit 9 个 spec_diag
+//           给前端，**再** 串行跑 executeMockSpec
+func planMockSpec(ext, relPath, encoderHint string) mockFileSpec {
 	var srcExt string
 	switch ext {
 	case "mp4", "mkv":
-		srcBytes = sourceMP4Bytes
 		srcExt = "mp4"
 	case "mp3", "flac":
-		srcBytes = sourceWAVBytes
 		srcExt = "wav"
 	default:
 		return mockFileSpec{
@@ -636,20 +662,8 @@ func ffmpegSpec(ext, relPath, encoderHint string) mockFileSpec {
 
 	seq := mockFfmpegSeq.Add(1)
 	srcPath := filepath.Join(os.TempDir(), fmt.Sprintf("encv-mock-src-%d-%d.%s", os.Getpid(), seq, srcExt))
-	if werr := os.WriteFile(srcPath, srcBytes, 0644); werr != nil {
-		return mockFileSpec{
-			relativePath: relPath,
-			stderr:       fmt.Sprintf("write source tmp %s: %v", srcPath, werr),
-			exitCode:     -1,
-			encoderHint:  encoderHint,
-		}
-	}
-	defer func() { _ = os.Remove(srcPath) }()
-
 	dstPath := filepath.Join(os.TempDir(), fmt.Sprintf("encv-mock-dst-%d-%d.%s", os.Getpid(), seq, ext))
-	defer func() { _ = os.Remove(dstPath) }()
 
-	// 2. 拼 ffmpeg args
 	var encodeArgs []string
 	switch ext {
 	case "mp4":
@@ -665,68 +679,106 @@ func ffmpegSpec(ext, relPath, encoderHint string) mockFileSpec {
 	args = append(args, encodeArgs...)
 	args = append(args, "-y", "-loglevel", "error", dstPath)
 
+	return mockFileSpec{
+		relativePath: relPath,
+		ffmpegArgs:   args,
+		encoderHint:  encoderHint,
+	}
+}
+
+// executeMockSpec 真正跑 ffmpeg，**修改入参 sp 的 data/stderr/exitCode 字段**
+//
+// 🆕 2026-06-12：plan + execute 分离后 handler 阶段调用
+//   真机 cgo 阻塞 mp4 时：
+//     - 前端**已收到** 9 个 spec_diag（知道流程结构）
+//     - handler 在 mp4 这一步阻塞 30s+
+//     - 前端 30s abort → fetch reject → catch 块 → inline error card 含
+//       "最后收到的 spec_diag = mp4，ffmpegArgs=[-i ... -c copy] 阻塞 30s+"
+func executeMockSpec(sp *mockFileSpec) {
+	// 0. ffmpeg 可用性
+	ffmpegOk, _, errMsg := ffmpeg.Available()
+	if !ffmpegOk {
+		sp.stderr = fmt.Sprintf("ffmpeg not available: %s", errMsg)
+		sp.exitCode = -1
+		return
+	}
+
+	// 1. 解析 ffmpegArgs → 提取 src/dst
+	if len(sp.ffmpegArgs) < 6 {
+		sp.stderr = fmt.Sprintf("invalid ffmpegArgs (len=%d): %v", len(sp.ffmpegArgs), sp.ffmpegArgs)
+		sp.exitCode = -1
+		return
+	}
+	// ffmpegArgs 格式：["-i", srcPath, ...encodeArgs..., "-y", "-loglevel", "error", dstPath]
+	srcPath := sp.ffmpegArgs[1]
+	dstPath := sp.ffmpegArgs[len(sp.ffmpegArgs)-1]
+
+	// 2. 写 src
+	srcExt := filepath.Ext(srcPath)
+	var srcBytes []byte
+	switch srcExt {
+	case ".mp4":
+		srcBytes = sourceMP4Bytes
+	case ".wav":
+		srcBytes = sourceWAVBytes
+	default:
+		sp.stderr = fmt.Sprintf("unknown src ext: %q", srcExt)
+		sp.exitCode = -1
+		return
+	}
+	if werr := os.WriteFile(srcPath, srcBytes, 0644); werr != nil {
+		sp.stderr = fmt.Sprintf("write source tmp %s: %v", srcPath, werr)
+		sp.exitCode = -1
+		return
+	}
+	defer func() { _ = os.Remove(srcPath) }()
+	defer func() { _ = os.Remove(dstPath) }()
+
 	// 3. 跑 ffmpeg
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_, ffmpegStderr, ffmpegExit, runErr := ffmpeg.RunWithOutput(ctx, args...)
+	_, ffmpegStderr, ffmpegExit, runErr := ffmpeg.RunWithOutput(ctx, sp.ffmpegArgs...)
 	if runErr != nil {
-		return mockFileSpec{
-			relativePath: relPath,
-			ffmpegArgs:   args,
-			stderr:       fmt.Sprintf("ffmpeg spawn/run: %v\nstderr: %s", runErr, ffmpegStderr),
-			exitCode:     ffmpegExit,
-			encoderHint:  encoderHint,
-		}
+		sp.stderr = fmt.Sprintf("ffmpeg spawn/run: %v\nstderr: %s", runErr, ffmpegStderr)
+		sp.exitCode = ffmpegExit
+		return
 	}
 	if ffmpegExit != 0 {
-		return mockFileSpec{
-			relativePath: relPath,
-			ffmpegArgs:   args,
-			stderr:       fmt.Sprintf("ffmpeg exit=%d\nstderr: %s", ffmpegExit, ffmpegStderr),
-			exitCode:     ffmpegExit,
-			encoderHint:  encoderHint,
-		}
+		sp.stderr = fmt.Sprintf("ffmpeg exit=%d\nstderr: %s", ffmpegExit, ffmpegStderr)
+		sp.exitCode = ffmpegExit
+		return
 	}
 
 	// 4. 读回
 	data, rerr := os.ReadFile(dstPath)
 	if rerr != nil || len(data) == 0 {
-		return mockFileSpec{
-			relativePath: relPath,
-			ffmpegArgs:   args,
-			stderr:       fmt.Sprintf("read dst %s: %v (size=%d)", dstPath, rerr, len(data)),
-			exitCode:     ffmpegExit,
-			encoderHint:  encoderHint,
-		}
+		sp.stderr = fmt.Sprintf("read dst %s: %v (size=%d)", dstPath, rerr, len(data))
+		sp.exitCode = ffmpegExit
+		return
 	}
-	return mockFileSpec{
-		relativePath: relPath,
-		data:         data,
-		ffmpegArgs:   args,
-		stderr:       ffmpegStderr,
-		exitCode:     0,
-		encoderHint:  encoderHint,
-	}
+	sp.data = data
+	sp.stderr = ffmpegStderr
+	sp.exitCode = 0
 }
 
-// mockFfmpegSeq 用于 ffmpegSpec 内部生成唯一 tmp 文件名
+// mockFfmpegSeq 用于 planMockSpec 内部生成唯一 tmp 文件名
 // 防止并发请求写入同一 tmp 文件导致 race（10 并发测试时所有 goroutine 同进程 → 同 PID → 冲突）
 var mockFfmpegSeq atomic.Uint64
 
-func minimalMP4() mockFileSpec {
-	return ffmpegSpec("mp4", "01-plain-media/video/sample.mp4", "h264+aac (-c copy)")
+func planMP4() mockFileSpec {
+	return planMockSpec("mp4", "01-plain-media/video/sample.mp4", "h264+aac (-c copy)")
 }
 
-func minimalMKV() mockFileSpec {
-	return ffmpegSpec("mkv", "01-plain-media/video/comedy.mkv", "h264+aac (-c copy) → matroska")
+func planMKV() mockFileSpec {
+	return planMockSpec("mkv", "01-plain-media/video/comedy.mkv", "h264+aac (-c copy) → matroska")
 }
 
-func minimalMP3() mockFileSpec {
-	return ffmpegSpec("mp3", "01-plain-media/audio/music.mp3", "libmp3lame")
+func planMP3() mockFileSpec {
+	return planMockSpec("mp3", "01-plain-media/audio/music.mp3", "libmp3lame")
 }
 
-func minimalFLAC() mockFileSpec {
-	return ffmpegSpec("flac", "01-plain-media/audio/podcast.flac", "flac")
+func planFLAC() mockFileSpec {
+	return planMockSpec("flac", "01-plain-media/audio/podcast.flac", "flac")
 }
 
 func minimalJPEG() []byte {
