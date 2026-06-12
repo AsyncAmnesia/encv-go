@@ -155,19 +155,20 @@ fi
 
 # === Build libogg (BSD 3-clause, required by libFLAC) ===
 if [ ! -f "${OGG_INSTALL}/lib/libogg.a" ]; then
+    cd "${BUILD_DIR}"
     echo "Downloading libogg ${OGG_VERSION}..."
     curl -fSL "https://ftp.osuosl.org/pub/xiph/releases/ogg/libogg-${OGG_VERSION}.tar.gz" \
         -o ogg.tar.gz || { echo "❌ Failed to download libogg"; exit 1; }
     tar xzf ogg.tar.gz && rm ogg.tar.gz || { echo "❌ Failed to extract libogg"; exit 1; }
-    # Find actual extracted directory (tarball may extract to ogg-X.Y.Z instead of libogg-X.Y.Z)
-    OGG_SRC_DIR=$(find . -maxdepth 1 -type d -name "*ogg*" ! -name ".*" | head -1)
+    # Find actual extracted directory (inside BUILD_DIR)
+    OGG_SRC_DIR=$(find "${BUILD_DIR}" -maxdepth 1 -type d -name "*ogg*" | head -1)
     if [ -z "$OGG_SRC_DIR" ]; then
         echo "❌ libogg source directory not found after extraction"
-        ls -la
+        ls -la "${BUILD_DIR}"
         exit 1
     fi
     echo "=== Building libogg (source: ${OGG_SRC_DIR}) ==="
-    cd "${BUILD_DIR}/${OGG_SRC_DIR}"
+    cd "${OGG_SRC_DIR}"
     CC="$CC" AR="$AR" RANLIB="$RANLIB" STRIP="$STRIP" \
     ./configure \
         --host=${ARCH}-linux-android \
@@ -196,20 +197,21 @@ fi
 
 # === Build libFLAC (BSD 3-clause, FLAC encoder, depends on libogg) ===
 if [ ! -f "${FLAC_INSTALL}/lib/libFLAC.a" ]; then
+    cd "${BUILD_DIR}"
     echo "Downloading libFLAC ${FLAC_VERSION}..."
     curl -fSL "https://ftp.osuosl.org/pub/xiph/releases/flac/flac-${FLAC_VERSION}.tar.xz" \
         -o flac.tar.xz || { echo "❌ Failed to download libFLAC"; exit 1; }
     tar xJf flac.tar.xz && rm flac.tar.xz || { echo "❌ Failed to extract libFLAC"; exit 1; }
     # Find actual extracted directory
-    FLAC_SRC_DIR=$(find . -maxdepth 1 -type d -name "*flac*" ! -name ".*" | head -1)
+    FLAC_SRC_DIR=$(find "${BUILD_DIR}" -maxdepth 1 -type d -name "*flac*" | head -1)
     if [ -z "$FLAC_SRC_DIR" ]; then
         echo "❌ libFLAC source directory not found after extraction"
-        ls -la
+        ls -la "${BUILD_DIR}"
         exit 1
     fi
 
     echo "=== Building libFLAC (source: ${FLAC_SRC_DIR}) ==="
-    cd "${BUILD_DIR}/${FLAC_SRC_DIR}"
+    cd "${FLAC_SRC_DIR}"
     # FLAC 1.5.0 uses cmake by default; fall back to autotools if available.
     # cmake is more reliable for Android NDK cross-compilation.
     if [ -f "CMakeLists.txt" ] && command -v cmake >/dev/null 2>&1; then
