@@ -55,7 +55,10 @@
       </div>
       <div v-else-if="buildInfoError" class="build-info-error">
         <ion-icon :icon="warningOutline" color="warning"></ion-icon>
-        <span>{{ t('engine.loadFailed') }}</span>
+        <div class="build-info-error-content">
+          <span class="error-title">{{ t('engine.loadFailed') }}</span>
+          <span v-if="buildInfoErrorMessage" class="error-detail">{{ buildInfoErrorMessage }}</span>
+        </div>
       </div>
 
       <template v-if="buildInfo">
@@ -312,6 +315,7 @@ const engineStatus = ref<FFmpegStatus | null>(null)
 const buildInfo = ref<BuildInfo | null>(null)
 const buildInfoLoading = ref(true)
 const buildInfoError = ref(false)
+const buildInfoErrorMessage = ref('')  // ✅ 新增：保存详细错误信息
 
 function formatDate(dateStr: string): string {
   if (!dateStr) return ''
@@ -337,6 +341,8 @@ onMounted(async () => {
     buildInfo.value = await fetchBuildInfo()
   } catch {
     buildInfoError.value = true
+    buildInfoErrorMessage.value = e?.message || e?.toString() || 'Unknown error'  // ✅ 捕获详细错误
+    console.error('[EngineDetail] build info load error:', e)  // ✅ 控制台也打出来
   } finally {
     buildInfoLoading.value = false
   }
@@ -359,12 +365,31 @@ onMounted(async () => {
 
 .build-info-error {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  font-size: 13px;
-  opacity: 0.6;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  background: rgba(255, 193, 7, 0.1);
+  border-radius: 8px;
 }
+
+.build-info-error-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.error-title {
+  font-weight: 500;
+  color: var(--ion-color-warning);
+}
+
+.error-detail {
+  font-size: 12px;
+  color: var(--ion-color-medium);
+  font-family: monospace;
+  word-break: break-all;
+}
+
 
 .lib-header-item {
   --padding-start: 12px;
