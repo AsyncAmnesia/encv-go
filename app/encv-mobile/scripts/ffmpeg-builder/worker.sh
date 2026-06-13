@@ -118,8 +118,8 @@ build_worker() {
         CGO_CFLAGS="$cgo_cflags" \
         CGO_LDFLAGS="$cgo_ldflags" \
         PKG_CONFIG_PATH="${DEPS_INSTALL_DIR}/lib/pkgconfig" \
-        go build -C "$gomod_root" -buildmode=c-shared \
-        -ldflags='-s -w -extldflags=-Wl,-soname,libffmpeg-worker.so' \
+        go build -C "$gomod_root" -buildmode=pie \
+        -ldflags='-s -w' \
         -o "$worker_out" \
         ./cmd/ffmpeg-worker/ \
         > "${LOG_DIR}/ffmpeg-worker-build.log" 2>&1; then
