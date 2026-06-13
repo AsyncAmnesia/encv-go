@@ -130,6 +130,17 @@ generate_build_info() {
     local ffmpeg_install="$2"
     local out_path="$3"
 
+    # ========== 新增：JSON 安全转义 ==========
+     json_escape() {
+         local s="$1"
+         s="${s//\\/\\\\}"
+         s="${s//\"/\\\"}"
+         s="${s//$'\n'/\\n}"
+         s="${s//$'\r'/\\r}"
+         s="${s//$'\t'/\\t}"
+         printf '%s' "$s"
+     }
+
     # 数组 → JSON 数组
     list_to_json() {
         local items="$1"
@@ -168,35 +179,30 @@ generate_build_info() {
     local abi="${TARGET_ABI:-${HOST_ARCH}}"
     [ "${TARGET:-}" = "host" ] && abi="${HOST_ARCH}-${HOST_OS}"
 
-    cat > "$out_path" << BIEOF
-{
-  "ffmpeg_version": "${FFMPEG_VERSION}",
-  "ffmpeg_codename": "Huffman",
-  "ffmpeg_license": "${FFMPEG_LICENSE}",
-  "external_libs": "${EXTERNAL_LIBS}",
-  "ndk_version": "${ndk_version}",
-  "api_level": ${api_level},
-  "abi": "${abi}",
-  "target_os": "${TARGET_OS}",
-  "target_arch": "${TARGET_ARCH}",
-  "build_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "manifest_sha256": "${MANIFEST_SHA256}",
-  "enabled_decoders": $(list_to_json "$DECODERS"),
-  "enabled_encoders": $(list_to_json "$ENCODERS"),
-  "enabled_muxers":   $(list_to_json "$MUXERS"),
-  "enabled_demuxers": $(list_to_json "$DEMUXERS"),
-  "enabled_parsers":  $(list_to_json "$PARSERS"),
-  "enabled_protocols":$(list_to_json "$PROTOCOLS"),
-  "enabled_filters":  $(list_to_json "$FILTERS"),
-  "static_libs": ${static_libs_json},
-  "linking": "static-into-so",
-  "cflags": "$(echo "${CFLAGS_CROSS:-} ${CFLAGS_COMMON:-}" | tr -s ' ' | sed 's/^ //;s/ $//')",
-  "validation": {
-    "all_required_decoders_present": true,
-    "all_required_encoders_present": true,
-    "missing": []
-  }
-}
+ # ========== 修改：所有字符串用 json_escape 包裹 ==========
+     cat > "$out_path" << BIEOF
+ {
+   "ffmpeg_version": "$(json_escape "${FFMPEG_VERSION}")",
+   "ffmpeg_codename": "Huffman",
+   "ffmpeg_license": "$(json_escape "${FFMPEG_LICENSE}")",
+   "x264_version": "$(json_escape "${x264_version:-}")",
+   "x264_license": "$(json_escape "${x264_license:-GPL}")",
+   "x264_configure_opts": "$(json_escape "${x264_configure:-}")",
+   "ndk_version": "$(json_escape "${ndk_version}")",
+   "api_level": ${api_level},
+   "abi": "$(json_escape "${abi}")",
+   "build_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+   "enabled_decoders": $(list_to_json "$DECODERS"),
+   "enabled_encoders": $(list_to_json "$ENCODERS"),
+   "enabled_muxers":   $(list_to_json "$MUXERS"),
+   "enabled_demuxers": $(list_to_json "$DEMUXERS"),
+   "enabled_parsers":  $(list_to_json "$PARSERS"),
+   "enabled_protocols":$(list_to_json "$PROTOCOLS"),
+   "enabled_filters":  $(list_to_json "$FILTERS"),
+   "static_libs": ${static_libs_json},
+   "linking": "static-into-so",
+   "cflags": "$(json_escape "$(echo "${CFLAGS_CROSS:-} ${CFLAGS_COMMON:-}" | tr -s ' ' | sed 's/^ //;s/ $//')")"
+ }
 BIEOF
     log_ok "build-info.json: $out_path"
 }
