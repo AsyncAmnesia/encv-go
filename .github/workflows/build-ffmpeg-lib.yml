@@ -85,18 +85,25 @@ jobs:
       # === 派生路径：GITHUB_WORKSPACE + MONOREPO_MOBILE_DIR 拼出 ffmpeg-builder 自己的路径 ===
       # 架构铁律：本工作流只管 ffmpeg-builder 自己的输出（OUTPUT_DIR），
       #         不知道主应用 jniLibs 在哪。产物 zip 推到 release，caller 自己拷。
+      #
+      # 命名规则必须跟 ffmpeg-builder common/paths.sh compute_paths 一致：
+      #   BUILD_ROOT = <project>/build/ffmpeg/${TARGET}-${HOST_ARCH}/
+      #   OUTPUT_DIR = ${BUILD_ROOT}/out/                       ← ffmpeg-builder 派生
+      #   OUTPUT_LIB_DIR = ${OUTPUT_DIR}/${ANDROID_ABI}/       ← targets/android.sh 派生
+      # 不能改 ffmpeg-builder 的命名 — cache path / 产物路径都靠它，破坏会全错。
       - name: Compute monorepo paths
         id: paths
         run: |
           # 全部基于 GITHUB_WORKSPACE 派生，不写死 /home/runner
           MOBILE_DIR="${GITHUB_WORKSPACE}/${MONOREPO_MOBILE_DIR}"
           BUILDER_DIR="${MOBILE_DIR}/scripts/ffmpeg-builder"
-          # BUILD_DIR = ffmpeg-builder 自己的 build 根（<project>/build/ffmpeg/android-<arch>/）
-          BUILD_DIR="${MOBILE_DIR}/build/ffmpeg/android-${{ inputs.ffmpeg_abi }}"
+          # 跟 ffmpeg-builder 同步：TARGET=android + HOST_ARCH=uname -m
+          HOST_ARCH="$(uname -m)"
+          BUILD_DIR="${MOBILE_DIR}/build/ffmpeg/android-${HOST_ARCH}"
           # OUTPUT_DIR = ffmpeg-builder 产物落点（<BUILD_DIR>/out/<abi>/），本工作流唯一输出目录
           OUTPUT_DIR="${BUILD_DIR}/out/${{ inputs.ffmpeg_abi }}"
 
-          for v in MOBILE_DIR BUILDER_DIR BUILD_DIR OUTPUT_DIR; do
+          for v in MOBILE_DIR BUILDER_DIR BUILD_DIR OUTPUT_DIR HOST_ARCH; do
               eval "val=\$$v"
               if [ -z "$val" ]; then
                   echo "::error::$v is empty"; exit 1
@@ -106,9 +113,12 @@ jobs:
 
           echo "MOBILE_DIR=$MOBILE_DIR"   >> "$GITHUB_OUTPUT"
           echo "BUILDER_DIR=$BUILDER_DIR" >> "$GITHUB_OUTPUT"
+          echo "HOST_ARCH=$HOST_ARCH"     >> "$GITHUB_OUTPUT"
           echo "BUILD_DIR=$BUILD_DIR"     >> "$GITHUB_OUTPUT"
           echo "OUTPUT_DIR=$OUTPUT_DIR"   >> "$GITHUB_OUTPUT"
           echo "✅ paths derived (ffmpeg-builder 自己的目录，不碰主应用 jniLibs)"
+          echo "   HOST_ARCH=$HOST_ARCH (runner host 架构)"
+          echo "   ABI=${{ inputs.ffmpeg_abi }} (Android ABI)"
 
       # === ffmpeg-builder 源码 cache（x264 + lame + ffmpeg tarball 复用） ===
       - name: Cache ffmpeg-builder sources
