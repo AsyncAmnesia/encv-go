@@ -61,17 +61,6 @@
               <p class="lib-desc">{{ t('about.ffmpegDesc') }}</p>
             </ion-label>
           </ion-item>
-          <ion-item v-if="buildInfo">
-            <ion-icon :icon="hardwareChipOutline" slot="start" class="lib-icon x264-icon"></ion-icon>
-            <ion-label>
-              <div class="lib-title-row">
-                <h3 class="lib-name">x264</h3>
-                <ion-badge color="medium" class="lib-badge version-badge">{{ buildInfo.x264_version }}</ion-badge>
-                <ion-badge color="danger" class="lib-badge license-badge">{{ buildInfo.x264_license }}</ion-badge>
-              </div>
-              <p class="lib-desc">{{ t('about.x264Desc') }}</p>
-            </ion-label>
-          </ion-item>
         </ion-list>
 
         <ion-list>
@@ -241,8 +230,7 @@ import {
   IonBadge, IonSpinner,
 } from '@ionic/vue'
 import {
-  informationCircle, codeSlash, logoGithub, openOutline,
-  videocamOutline, hardwareChipOutline,
+  informationCircle, codeSlash, logoGithub, openOutline, videocamOutline,
   serverOutline, warningOutline, globeOutline, terminalOutline,
   filmOutline, imagesOutline, eyeOutline, swapHorizontalOutline,
   speedometerOutline, playCircleOutline, gitBranchOutline,
