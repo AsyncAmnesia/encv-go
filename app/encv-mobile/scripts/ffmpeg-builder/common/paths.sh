@@ -219,6 +219,28 @@ compute_paths() {
     mkdir -p "$OUTPUT_DIR" "$LOG_DIR" "$BUILD_DIR"
 }
 
+# === 产物落点单一权威解析函数 ===
+# 所有 caller (target_setup / Makefile show-output-dir) 都必须调这个函数算 OUTPUT_LIB_DIR。
+# 规则：
+#   1. caller 用 OUT_DIR env 覆盖（CI workflow 传任意路径）→ 优先用
+#   2. 否则走 ffmpeg-builder 默认派生：OUTPUT_DIR/<abi>（target=android）或 OUTPUT_DIR（host）
+# 设计目的：避免 caller 重新发明命名规则 → show-output-dir 跟 target_setup 永远一致。
+resolve_output_lib_dir() {
+    if [ -n "${OUT_DIR:-}" ]; then
+        mkdir -p "$OUT_DIR"
+        echo "$OUT_DIR"
+        return 0
+    fi
+    case "${TARGET:-}" in
+        android)
+            echo "${OUTPUT_DIR}/${ANDROID_ABI:-arm64-v8a}"
+            ;;
+        host|*)
+            echo "${OUTPUT_DIR}"
+            ;;
+    esac
+}
+
 # === 初始化入口（被 Makefile / 单 .sh 都调用） ===
 ffmpeg_builder_init() {
     compute_paths

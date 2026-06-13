@@ -53,8 +53,11 @@ target_host_setup() {
 
     DEPS_INSTALL_DIR="${BUILD_ROOT}/deps-install"
     FFMPEG_INSTALL_DIR="${BUILD_ROOT}/ffmpeg-install"
-    # host target：output 走 BUILD_ROOT/out（jniLibs 是 Android 概念，host 不需要）
-    OUTPUT_LIB_DIR="${OUTPUT_DIR}"
+    # 产物落点走单一权威函数 resolve_output_lib_dir（与 android target 共享）。
+    OUTPUT_LIB_DIR="$(resolve_output_lib_dir)"
+    if [ -n "${OUT_DIR:-}" ]; then
+        log_info "OUT_DIR override: $OUTPUT_LIB_DIR (caller-controlled)"
+    fi
 
     FFMPEG_CONFIGURE_EXTRA=""
     NEEDS_ANDROID_NDK=0

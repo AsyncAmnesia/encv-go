@@ -28,6 +28,7 @@ ROOT_DIR    := $(abspath $(PROJECT_DIR)/..)
 MANIFEST    := $(BUILDER_DIR)/../ffmpeg-feature-manifest.json
 
 # === Android 配置（可用环境变量覆盖） ===
+TARGET ?= android
 ANDROID_ABI ?= arm64-v8a
 ANDROID_API ?= 24
 
@@ -64,15 +65,29 @@ help:
 .PHONY: host
 host:
 	@echo ">>> Building for host ($(shell uname -s)-$(shell uname -m))"
-	@TARGET=host \
+	@TARGET=host OUT_DIR=$(OUT_DIR) \
 	  bash -c 'source $(BUILDER_DIR)/common/paths.sh && ffmpeg_builder_init && source $(BUILDER_DIR)/targets/dispatcher.sh && target_setup && source $(BUILDER_DIR)/common/manifest.sh && load_manifest && source $(BUILDER_DIR)/deps/dispatcher.sh && build_all_deps && source $(BUILDER_DIR)/ffmpeg.sh && build_ffmpeg && source $(BUILDER_DIR)/postprocess.sh && build_fftools'
 
 # === android target ===
 .PHONY: android
 android:
 	@echo ">>> Cross-compiling for Android $(ANDROID_ABI) + API $(ANDROID_API)"
-	@TARGET=android ANDROID_ABI=$(ANDROID_ABI) ANDROID_API=$(ANDROID_API) \
+	@TARGET=android ANDROID_ABI=$(ANDROID_ABI) ANDROID_API=$(ANDROID_API) OUT_DIR=$(OUT_DIR) \
 	  bash -c 'source $(BUILDER_DIR)/common/paths.sh && ffmpeg_builder_init && source $(BUILDER_DIR)/targets/dispatcher.sh && target_setup && source $(BUILDER_DIR)/common/manifest.sh && load_manifest && source $(BUILDER_DIR)/deps/dispatcher.sh && build_all_deps && source $(BUILDER_DIR)/ffmpeg.sh && build_ffmpeg && source $(BUILDER_DIR)/postprocess.sh && build_fftools && source $(BUILDER_DIR)/worker.sh && build_worker'
+
+# === show-output-dir: 打印 ffmpeg-builder 内部的 OUTPUT_LIB_DIR（绝对路径）===
+# 设计目的：caller (CI workflow) 不重新发明命名规则，直接查权威路径。
+# 零硬编码：内部走 paths.sh 的 resolve_output_lib_dir，跟 targets/* 调的是同一个函数。
+# 不调 target_setup → 不依赖 NDK 探测（host target 也支持）。
+# 用法：
+#   make show-output-dir                                # 默认 android / arm64-v8a
+#   make show-output-dir ANDROID_ABI=arm64-v8a
+#   make show-output-dir TARGET=host                    # host target 也支持
+#   make show-output-dir OUT_DIR=/some/caller/path      # caller 覆盖时，返回的就是 OUT_DIR
+.PHONY: show-output-dir
+show-output-dir:
+	@TARGET=$(TARGET) ANDROID_ABI=$(ANDROID_ABI) OUT_DIR=$(OUT_DIR) \
+	  bash -c 'source $(BUILDER_DIR)/common/paths.sh && ffmpeg_builder_init >/dev/null && resolve_output_lib_dir'
 
 # === ios (stub) ===
 .PHONY: ios
