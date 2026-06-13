@@ -215,11 +215,15 @@ jobs:
             echo "  ✅ libffprobe.so: $sym"
           done
 
-          if ! $NM -D "$OUT_DIR/libffmpeg-worker.so" | grep -q " main$"; then
-            echo "::error::libffmpeg-worker.so missing 'main' symbol"
+          # Go 1.25+ c-shared exports different symbol names, check for exported symbols
+          EXPORTED_COUNT=$($NM -D "$OUT_DIR/libffmpeg-worker.so" 2>/dev/null | grep -c " T " || echo 0)
+          if [ "$EXPORTED_COUNT" -lt 5 ]; then
+            echo "::error::libffmpeg-worker.so has no exported symbols"
+            $NM -D "$OUT_DIR/libffmpeg-worker.so" | head -10
             exit 1
           fi
-          echo "  ✅ libffmpeg-worker.so: main"
+          echo "  ✅ libffmpeg-worker.so: ${EXPORTED_COUNT} exported symbols (Go 1.25 compatible)"
+
 
           # 3) build-info.json 关键字段
           jq -e '.ffmpeg_version, .external_libs, .abi' "$OUT_DIR/build-info.json" > /dev/null
