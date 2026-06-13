@@ -193,6 +193,7 @@ generate_build_info() {
    "ffmpeg_version": "$(json_escape "${FFMPEG_VERSION}")",
    "ffmpeg_codename": "Huffman",
    "ffmpeg_license": "$(json_escape "${FFMPEG_LICENSE}")",
+   "external_libs": "$(json_escape "${EXTERNAL_LIBS}")",
    "x264_version": "$(json_escape "${x264_version:-}")",
    "x264_license": "$(json_escape "${x264_license:-GPL}")",
    "x264_configure_opts": "$(json_escape "${x264_configure:-}")",
