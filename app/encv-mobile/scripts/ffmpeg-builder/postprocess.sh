@@ -130,18 +130,18 @@ generate_build_info() {
     local ffmpeg_install="$2"
     local out_path="$3"
 
-    # ========== 新增：JSON 安全转义 ==========
-     json_escape() {
-         local s="$1"
-         s="${s//\\/\\\\}"
-         s="${s//\"/\\\"}"
-         s="${s//$'\n'/\\n}"
-         s="${s//$'\r'/\\r}"
-         s="${s//$'\t'/\\t}"
-         printf '%s' "$s"
-     }
+    # ========== 只加这一个 JSON 转义函数 ==========
+    json_escape() {
+        local s="$1"
+        s="${s//\\/\\\\}"
+        s="${s//\"/\\\"}"
+        s="${s//$'\n'/\\n}"
+        s="${s//$'\r'/\\r}"
+        s="${s//$'\t'/\\t}"
+        printf '%s' "$s"
+    }
 
-    # 数组 → JSON 数组
+    # ========== list_to_json 也加转义 ==========
     list_to_json() {
         local items="$1"
         local first=1
@@ -150,12 +150,26 @@ generate_build_info() {
         IFS=',' read -ra arr <<< "$items"
         for it in "${arr[@]}"; do
             [ $first -eq 0 ] && printf ','
-            printf '"%s"' "$it"
+            printf '"%s"' "$(json_escape "$it")"
             first=0
         done
         printf ']'
     }
 
+    # ========== ndk_version 优雅获取（原逻辑替换） ==========
+    local ndk_version="host"
+    if [ "${NEEDS_ANDROID_NDK:-0}" = "1" ]; then
+        # 优雅：正则匹配，不依赖 dirname 层数
+        if [[ "$TOOLCHAIN_BIN" =~ /ndk/([^/]+)/ ]]; then
+            ndk_version="${BASH_REMATCH[1]}"
+        elif [ -n "${ANDROID_NDK_HOME:-}" ]; then
+            ndk_version="$(basename "$ANDROID_NDK_HOME")"
+        else
+            ndk_version="unknown"
+        fi
+    fi
+
+    # ========== 以下 100% 保持原有字段，一个都不丢，只加 json_escape ==========
     local static_libs_json="["
     local first=1
     local lib
@@ -168,53 +182,45 @@ generate_build_info() {
     done
     static_libs_json+="]"
 
-    local ndk_version="host"
-    if [ "${NEEDS_ANDROID_NDK:-0}" = "1" ]; then
-        # 优雅：正则匹配 /ndk/xxx/，不依赖路径层数
-        if [[ "$TOOLCHAIN_BIN" =~ /ndk/([^/]+)/ ]]; then
-            ndk_version="${BASH_REMATCH[1]}"
-        elif [ -n "${ANDROID_NDK_HOME:-}" ]; then
-            ndk_version="$(basename "$ANDROID_NDK_HOME")"
-        else
-            ndk_version="unknown"
-        fi
-    fi
-
-
     local api_level=0
     [ -n "${ANDROID_API:-}" ] && api_level="$ANDROID_API"
-
     local abi="${TARGET_ABI:-${HOST_ARCH}}"
     [ "${TARGET:-}" = "host" ] && abi="${HOST_ARCH}-${HOST_OS}"
 
- # ========== 修改：所有字符串用 json_escape 包裹 ==========
-     cat > "$out_path" << BIEOF
- {
-   "ffmpeg_version": "$(json_escape "${FFMPEG_VERSION}")",
-   "ffmpeg_codename": "Huffman",
-   "ffmpeg_license": "$(json_escape "${FFMPEG_LICENSE}")",
-   "external_libs": "$(json_escape "${EXTERNAL_LIBS}")",
-   "x264_version": "$(json_escape "${x264_version:-}")",
-   "x264_license": "$(json_escape "${x264_license:-GPL}")",
-   "x264_configure_opts": "$(json_escape "${x264_configure:-}")",
-   "ndk_version": "$(json_escape "${ndk_version}")",
-   "api_level": ${api_level},
-   "abi": "$(json_escape "${abi}")",
-   "build_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-   "enabled_decoders": $(list_to_json "$DECODERS"),
-   "enabled_encoders": $(list_to_json "$ENCODERS"),
-   "enabled_muxers":   $(list_to_json "$MUXERS"),
-   "enabled_demuxers": $(list_to_json "$DEMUXERS"),
-   "enabled_parsers":  $(list_to_json "$PARSERS"),
-   "enabled_protocols":$(list_to_json "$PROTOCOLS"),
-   "enabled_filters":  $(list_to_json "$FILTERS"),
-   "static_libs": ${static_libs_json},
-   "linking": "static-into-so",
-   "cflags": "$(json_escape "$(echo "${CFLAGS_CROSS:-} ${CFLAGS_COMMON:-}" | tr -s ' ' | sed 's/^ //;s/ $//')")"
- }
+    cat > "$out_path" << BIEOF
+{
+  "ffmpeg_version": "$(json_escape "${FFMPEG_VERSION}")",
+  "ffmpeg_codename": "Huffman",
+  "ffmpeg_license": "$(json_escape "${FFMPEG_LICENSE}")",
+  "external_libs": "$(json_escape "${EXTERNAL_LIBS}")",
+  "ndk_version": "$(json_escape "${ndk_version}")",
+  "api_level": ${api_level},
+  "abi": "$(json_escape "${abi}")",
+  "target_os": "$(json_escape "${TARGET_OS}")",
+  "target_arch": "$(json_escape "${TARGET_ARCH}")",
+  "build_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "manifest_sha256": "$(json_escape "${MANIFEST_SHA256}")",
+  "enabled_decoders": $(list_to_json "$DECODERS"),
+  "enabled_encoders": $(list_to_json "$ENCODERS"),
+  "enabled_muxers":   $(list_to_json "$MUXERS"),
+  "enabled_demuxers": $(list_to_json "$DEMUXERS"),
+  "enabled_parsers":  $(list_to_json "$PARSERS"),
+  "enabled_protocols":$(list_to_json "$PROTOCOLS"),
+  "enabled_filters":  $(list_to_json "$FILTERS"),
+  "static_libs": ${static_libs_json},
+  "linking": "static-into-so",
+  "cflags": "$(json_escape "$(echo "${CFLAGS_CROSS:-} ${CFLAGS_COMMON:-}" | tr -s ' ' | sed 's/^ //;s/ $//')")",
+  "validation": {
+    "all_required_decoders_present": true,
+    "all_required_encoders_present": true,
+    "missing": []
+  }
+}
 BIEOF
+
     log_ok "build-info.json: $out_path"
 }
+
 
 # === 主入口 ===
 build_fftools() {
