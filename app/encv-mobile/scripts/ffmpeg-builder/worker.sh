@@ -48,8 +48,16 @@ build_worker() {
     mkdir -p "$(dirname "$worker_out")"
 
     # === cgo env ===
-    local cgo_cflags="-fPIC -DANDROID -I${TOOLCHAIN_BIN%bin}/sysroot/usr/include"
-    local cgo_ldflags="-llog -ldl -lm"
+    # 关键：必须显式传 --sysroot 给 clang，否则 ld.lld 用默认 sysroot 找不到 bionic libpthread.so
+    # （Go 1.25 cmd/link 调 external linker 时已知不自动加 --sysroot）
+    # SYSROOT 来自 target_android_setup（L66），必须 env 传到 worker
+    # 派生：${TOOLCHAIN_BIN%/bin}/sysroot  ← %/bin 同时去掉 trailing /bin，路径无 //
+    local SYSROOT="${SYSROOT:-${TOOLCHAIN_BIN%/bin}/sysroot}"
+    if [ ! -d "$SYSROOT/usr/lib" ]; then
+        die "NDK sysroot missing: $SYSROOT (target_android_setup 没设 SYSROOT?)"
+    fi
+    local cgo_cflags="--sysroot=${SYSROOT} -fPIC -DANDROID -I${SYSROOT}/usr/include"
+    local cgo_ldflags="--sysroot=${SYSROOT} -llog -ldl -lm"
     # 运行时 dlopen libffmpeg.so，rpath 帮助非 dlopen 时的 fallback
     [ -d "${FFMPEG_INSTALL_DIR}/lib" ] && cgo_ldflags+=" -Wl,-rpath,${FFMPEG_INSTALL_DIR}/lib"
 
@@ -69,6 +77,9 @@ build_worker() {
     # 旧 Go（≤1.24）: -ldflags='-s -w -Wl,-soname,libffmpeg-worker.so'
     # 新 Go（≥1.25）: -ldflags='-s -w -extldflags=-Wl,-soname,libffmpeg-worker.so'
     # 二者都设 SONAME=c-shared 包名外的自定义名（dlopen("libffmpeg-worker.so") 需要 SONAME 匹配）
+    #
+    # --sysroot 已在 CGO_CFLAGS / CGO_LDFLAGS 处理（LD 看 sysroot 才能找 bionic libpthread.so）。
+    # 这里 -extldflags 只设 -soname。
     log_cmd "go build -C $gomod_root -buildmode=c-shared ./cmd/ffmpeg-worker/ → $worker_out"
     if ! GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=1 \
         CC="$CC" \
