@@ -30,6 +30,10 @@ const (
 	KindFileChange ToolKind = "fileChange" // 写文件操作
 	KindMetadata   ToolKind = "metadata"   // 元数据查询
 	KindCommand    ToolKind = "command"    // 受限 shell
+	// KindBashLike 跨平台 bash 抽象工具（list_dir / show_file / tail_lines 等）。
+	// 与 KindCommand 的区别：handler 内部走 platform_dispatch.ResolveCommand 查
+	// 真实命令名后调 os/exec，参数模板和输出解析都在 high_level.go 内做。
+	KindBashLike ToolKind = "bashLike"
 )
 
 // ToolDeps 是所有工具 handler 共用的依赖注入。
@@ -43,6 +47,10 @@ type ToolDeps struct {
 	SandboxCheck func(absPath string) bool
 	// Config 注入，方便 handler 读 ToolWhitelist / SandboxPaths 等。
 	Config any // 实际为 *config.Agent，但为了避免循环依赖用 any
+	// Platform 显式指定的平台（"linux" / "darwin" / "windows" / "android"）。
+	// 留空时由 handler 内部调 DetectPlatform() 推断。
+	// 主要用于 high-level 跨平台 bash 工具。
+	Platform string
 }
 
 // ToolResult 是 handler 的统一返回结构。
@@ -63,8 +71,46 @@ type ToolResult struct {
 //   - ctx 用于取消 / 超时控制
 //   - argsJSON 是 LLM 传入的参数字符串（与原 executeFSTool 兼容）
 //   - deps 是依赖注入（mount 解析 / config 读取等）
+//
 // 返回 ToolResult，错误在 Result JSON 中体现（IsError 字段）。
 type ToolHandler func(ctx context.Context, argsJSON string, deps *ToolDeps) (ToolResult, error)
+
+// BashLikeHandler 是 high-level 跨平台 bash 工具的"原生"签名。
+//
+// 与 ToolHandler 的差异：
+//   - 第二个参数是 platform 字符串（"linux" / "darwin" / "windows" / "android"）
+//   - 返回值是 *ToolError（结构化错误，参考 .trae/specs/mobile-agent-polish-2026q2/spec.md）
+//
+// 这是可选签名：handler 也可继续用 ToolHandler，由 high_level.go 内的
+// dispatcher 在调用前注入 platform + 转换错误。是否使用此签名取决于实现便利。
+//
+// 主要用途：high_level.go 的 10 个跨平台工具可以基于此类型直接实现，
+// 减少 platform 探测的样板代码。
+type BashLikeHandler func(ctx context.Context, platform string, argsJSON string, deps *ToolDeps) (ToolResult, *ToolError)
+
+// ToToolHandler 把 BashLikeHandler 包装为 ToolHandler。
+//
+// 错误处理（关键）：
+//   - 内部 *ToolError → 返回 (res, te) 保持原样
+//   - 内部 nil error → 返回 (res, nil)
+//   - 内部 裸 error → Wrap 成 *ToolError{Code: "UNKNOWN"} 再返回
+//
+// 用法：
+//
+//	Handler: BashLikeHandlerToToolHandler(myBashTool)
+func BashLikeHandlerToToolHandler(h BashLikeHandler) ToolHandler {
+	return func(ctx context.Context, argsJSON string, deps *ToolDeps) (ToolResult, error) {
+		platform := DetectPlatform()
+		if deps != nil && deps.Platform != "" {
+			platform = deps.Platform
+		}
+		res, te := h(ctx, platform, argsJSON, deps)
+		if te == nil {
+			return res, nil
+		}
+		return res, te
+	}
+}
 
 // ToolDef 描述一个工具的元信息 + handler。
 type ToolDef struct {
@@ -159,16 +205,68 @@ func (r *ToolRegistry) Names() []string {
 // 不在 registry 中的 tool 返回 "unknown tool" 错误。
 //
 // 用于替换原 s.executeAgentTool 中的 if-else 硬编码分支。
+//
+// 错误处理（参考 .trae/specs/mobile-agent-polish-2026q2/spec.md §ToolError 统一异常类型）：
+//   - handler 自身已经用 errResult() 包装 → ToolResult.IsError=true，error=nil
+//   - handler 返回非 nil error（包括 *ToolError）→ 这里统一规范化为
+//     ToolResult{IsError: true, Status: "failed", Result: JSON{error, code, message}}
+//   - "unknown tool" → ToolResult{IsError: true, Status: "failed"} + error
 func (r *ToolRegistry) Dispatch(ctx context.Context, name, argsJSON string, deps *ToolDeps) (ToolResult, error) {
 	def, ok := r.Get(name)
 	if !ok {
 		return ToolResult{
-			Result:  fmt.Sprintf(`{"error":"unknown tool: %s"}`, name),
+			Result:  fmt.Sprintf(`{"error":"unknown tool: %s","code":"%s"}`, name, CodeUnknown),
 			IsError: true,
 			Status:  "failed",
 		}, fmt.Errorf("unknown tool: %s", name)
 	}
-	return def.Handler(ctx, argsJSON, deps)
+	res, err := def.Handler(ctx, argsJSON, deps)
+	if err != nil {
+		// handler 返回非 nil 错误 → 统一规范化为 ToolResult.IsError=true
+		// 兼容：(1) 裸 error (2) *ToolError
+		return normalizeErrorResult(name, res, err), err
+	}
+	// 防御性：如果 handler 忘了设 IsError=true 但返回了 nil error
+	// 且 Status 为空 → 补一个 success（避免外层误判）
+	if !res.IsError && res.Status == "" {
+		res.Status = "success"
+	}
+	return res, nil
+}
+
+// normalizeErrorResult 把 (ToolResult, error) 规范化为 IsError=true 的 ToolResult。
+//
+//   - 优先用 res.IsError（handler 可能已设）
+//   - 提取 err 中的 ToolError 字段（code / message / underlying）
+//   - 把 error 描述塞进 Result JSON（code / message 字段）以便前端展示
+//
+// 如果 res.Result 已有内容（handler 部分填充）→ 保留并追加 error 字段。
+func normalizeErrorResult(name string, res ToolResult, err error) ToolResult {
+	res.IsError = true
+	if res.Status == "" || res.Status == "success" {
+		res.Status = "failed"
+	}
+	code := CodeUnknown
+	message := err.Error()
+	if te := AsToolError(err); te != nil {
+		if te.Code != "" {
+			code = te.Code
+		}
+		if te.Message != "" {
+			message = te.Message
+		}
+	}
+	// 构造错误 JSON（尽量复用 res.Result 中的已有结构）
+	if res.Result == "" {
+		res.Result = fmt.Sprintf(`{"error":%q,"code":%q,"message":%q,"tool":%q}`,
+			err.Error(), code, message, name)
+	} else {
+		// res.Result 已有内容 → 尝试解析后追加 error/code 字段
+		// 简化策略：用 wrap-error 模式（避免破坏 handler 写的 JSON 结构）
+		res.Result = fmt.Sprintf(`{"error":%q,"code":%q,"message":%q,"tool":%q,"data":%s}`,
+			err.Error(), code, message, name, res.Result)
+	}
+	return res
 }
 
 // ─── 全局注册表 ─────────────────────────────────────────────────

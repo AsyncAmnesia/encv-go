@@ -12,7 +12,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -21,6 +20,7 @@ import (
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
+	"github.com/Soltus/encv-go/internal/v2/testutil"
 	alistencrypt "github.com/Soltus/encv-go/internal/v2/plugins/alistencrypt"
 	pluginInterfaces "github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
 	"github.com/Soltus/encv-go/internal/v2/types"
@@ -177,180 +177,81 @@ func (s *Server) handleUploadFileGin(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+// handleServiceGuardGin 处理 GET /api/service-guard
+//
+// 2026-06-10 简化：只检查 servingDir 是否挂载到 /storage/emulated/0（mobile 真机 / dev preview 的标准路径）。
+//
+// 历史版本还检查 01-plain-media marker（4 个子目录 + 文件数）。2026-06-10 改造：
+//   - Node CLI scripts/generate-mock-files.ts 已废弃（重复入口）
+//   - service-guard 不再强制 mock 数据就位（用户主动调 /api/mock/generate 生成）
+//   - 用户没主动按"生成 Mock"按钮时，目录是空的——这是预期行为
+//
+// 所以现在守卫只验证"servingDir 是不是 mobile 标准路径"，不关心里面有没有数据。
 func (s *Server) handleServiceGuardGin(c *gin.Context) {
-	// 收集诊断上下文（任何守卫失败都带上 → 调试不再靠"猜"）
-	cwd, _ := os.Getwd()
+	expectedDir := "/storage/emulated/0"
+
+	// 1. 解析成绝对路径
+	absDir, err := filepath.Abs(s.servingDir)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"ready":  false,
+			"detail": fmt.Sprintf("servingDir 解析失败: %v", err),
+		})
+		return
+	}
+
 	envDevPreview := os.Getenv("ENCV_DEV_PREVIEW") == "1"
 	envMobile := os.Getenv("ENCV_MOBILE") == "1"
 
-	// 规范：mock 脚本与启动脚本在仓库里的固定路径
-	mockScriptRel := "app/encv-mobile/scripts/generate-mock-files.ts"
-	previewScriptRel := "app/encv-mobile/scripts/start-preview.sh"
-	makefileRel := "Makefile"
-	docsMockSpec := ".trae/documents/mock-real-files-plan.md"
-
-	// 根因分类：A) 路径不可读 B) 缺 marker 目录
-	type guardContext struct {
-		Os          string `json:"os"`
-		Arch        string `json:"arch"`
-		Cwd         string `json:"cwd"`
-		ServingDir  string `json:"servingDir"`
-		ServingDirExists bool   `json:"servingDirExists"`
-		EnvDevPreview bool  `json:"envDevPreview"`
-		EnvMobile      bool  `json:"envMobile"`
-		MockScript   string `json:"mockScript"`
-		PreviewScript string `json:"previewScript"`
-		Makefile     string `json:"makefile"`
-		Docs         string `json:"docs"`
-	}
-
-	ctx := guardContext{
-		Os:             runtime.GOOS,
-		Arch:           runtime.GOARCH,
-		Cwd:            cwd,
-		ServingDir:     s.servingDir,
-		ServingDirExists: fileExists(s.servingDir),
-		EnvDevPreview:  envDevPreview,
-		EnvMobile:      envMobile,
-		MockScript:     mockScriptRel,
-		PreviewScript:  previewScriptRel,
-		Makefile:     makefileRel,
-		Docs:         docsMockSpec,
-	}
-
-	files, err := s.mobileSvc.ListFiles("/")
-	if err != nil {
-		// 根因 A: servingDir 不可读（Linux 沙箱常见 — 路径不存在或权限不足）
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"ready":  false,
-			"detail": "failed to list root directory",
-			"error":  err.Error(),
-			"context": ctx,
-			"remediation": []gin.H{
-				{
-					"scenario": "A1 — Linux 沙箱开发 (推荐)",
-					"steps": []string{
-						"切换到 Makefile dev-mobile 目标（自动 ENCV_DEV_PREVIEW=1 + mock 生成）：",
-						"  make dev-mobile",
-						"或手动：",
-						"  cd app/encv-mobile && npx tsx scripts/generate-mock-files.ts --dir /storage/emulated/0",
-						"  ENCV_DEV_PREVIEW=1 go run ./cmd/encv start",
-					},
-				},
-				{
-					"scenario": "A2 — Android 真机 (Capacitor)",
-					"steps": []string{
-						"路径 /storage/emulated/0 在 Android 上是合法路径，但需 SD 卡权限。",
-						"如使用沙盒路径或 scoped storage，改用：",
-						"  ENCV_DEV_PREVIEW=1 ENCV_MOCK_ROOT=/sdcard npx tsx scripts/generate-mock-files.ts",
-					},
-				},
-				{
-					"scenario": "A3 — 桌面端正常模式 (无 mobile overlay)",
-					"steps": []string{
-						"不要设 ENCV_DEV_PREVIEW / ENCV_MOBILE，servingDir 自动 = 当前目录。",
-						"在此目录运行 mock 生成：",
-						"  npx tsx scripts/generate-mock-files.ts --dir \"$(pwd)\"",
-					},
-				},
-			},
-		})
-		return
-	}
-
-	const marker = "01-plain-media"
-	hasMarker := false
-	var dirNames []string
-	for _, f := range files {
-		dirNames = append(dirNames, f.Name)
-		if f.Name == marker && f.IsDirectory {
-			hasMarker = true
-		}
-	}
-
-	if !hasMarker {
-		preview := len(dirNames) > 10
-		if !preview {
-			preview = len(dirNames) == len(files)
-		}
-		displayNames := dirNames
-		if preview && len(displayNames) > 10 {
-			displayNames = displayNames[:10]
-		}
-
-		// 修复命令：自动用当前 servingDir 替换占位符
-		mockCmd := "cd app/encv-mobile && npx tsx scripts/generate-mock-files.ts --dir " + s.servingDir
-		makeCmd := "make dev-mobile    # ENCV_DEV_PREVIEW=1 + 自动 mock 生成"
-		previewCmd := "bash app/encv-mobile/scripts/start-preview.sh    # 一键前台启动（含 mock + air + vite）"
-
-		// 根因 B: servingDir 可读但缺 01-plain-media marker
+	// 2. servingDir 必须 == /storage/emulated/0
+	if absDir != expectedDir {
 		c.JSON(http.StatusForbidden, gin.H{
-			"ready":  false,
-			"marker": marker,
-			"found":  displayNames,
-			"detail": fmt.Sprintf("server.dir 缺少约定的 marker 目录 %q（这是 ENCV mock 数据规范的前缀，详见 %s）", marker, mockScriptRel),
-			"context": ctx,
+			"ready":         false,
+			"servingDir":    absDir,
+			"expected":      expectedDir,
+			"envDevPreview": envDevPreview,
+			"envMobile":     envMobile,
+			"detail":        fmt.Sprintf("servingDir=%q 不是 mobile 真机/预览标准路径 %q", absDir, expectedDir),
 			"remediation": []gin.H{
 				{
-					"scenario": "B1 — 一键修复（推荐）",
-					"command":  previewCmd,
-					"explain":  "脚本会先 pkill 残留、npm install、生成 mock、启动 air+ENCV_DEV_PREVIEW=1、启动 Vite、保持前台运行（便于 OpenPreview 激活）",
+					"scenario": "B1 — 用 mobile overlay 启动（推荐）",
+					"command":  "make dev-mobile",
+					"explain":  "自动 ENCV_MOBILE=1 ENCV_DEV_PREVIEW=1 → ApplyMobileOverlay → servingDir=/storage/emulated/0",
 				},
 				{
-					"scenario": "B2 — Makefile 目标",
-					"command":  makeCmd,
-					"explain":  "执行 make dev-mobile 即可：先 mock 生成到 /storage/emulated/0，再 ENCV_MOBILE=1 ENCV_DEV_PREVIEW=1 go run",
+					"scenario": "B2 — 手工等价命令",
+					"command":  "ENCV_MOBILE=1 ENCV_DEV_PREVIEW=1 go run ./cmd/encv start",
+					"explain":  "同上但手工设 env（pm2 gateway spawn air 时确保透传）",
 				},
 				{
-					"scenario": "B3 — 手动精确生成 mock 到当前 servingDir",
-					"command":  mockCmd,
-					"explain":  "规范脚本：scripts/generate-mock-files.ts 会在 " + s.servingDir + " 下创建 01-plain-media 04 个分类（plain/ae/container/boundary）",
+					"scenario": "B3 — 桌面端正常模式（无 mobile overlay）",
+					"command":  "go run ./cmd/encv start",
+					"explain":  "不要设 ENCV_DEV_PREVIEW / ENCV_MOBILE，servingDir 自动 = 当前工作目录（通常 /workspace，service-guard 仍会 BLOCK）",
 				},
-				{
-					"scenario": "B4 — 如果不想用 mock（极少见）",
-					"steps": []string{
-						"在 " + s.servingDir + " 下手动建一个空目录：",
-						"  mkdir -p " + s.servingDir + "/01-plain-media",
-						"（不推荐，违反 mock 规范，CI 会判违规）",
-					},
-				},
-			},
-			"expectations": gin.H{
-				"after_fix_servingDir": s.servingDir,
-				"after_fix_should_contain": []string{
-					"01-plain-media/   (普通媒体：image/video/audio/document)",
-					"02-alist-encrypt/ (AE 加密文件)",
-					"03-encv-containers/ (ENCV v4 容器)",
-					"04-boundary-test/  (边界测试：长文件名/控制字符/特殊字符)",
-				},
-				"verify_cmd": "curl -s http://localhost:2025/api/service-guard  # 期望 HTTP 200 + ready:true",
 			},
 		})
 		return
 	}
 
-	// OK: 一切就绪 — 列出 marker 实际内容（让用户立刻看到 mock 数据布局）
-	markerChildren := make([]string, 0, 4)
-	for _, f := range files {
-		if f.IsDirectory && (f.Name == "01-plain-media" || f.Name == "02-alist-encrypt" || f.Name == "03-encv-containers" || f.Name == "04-boundary-test") {
-			markerChildren = append(markerChildren, f.Name)
-		}
+	// 3. 目录必须可读
+	if _, statErr := os.Stat(absDir); statErr != nil {
+		c.JSON(http.StatusForbidden, gin.H{
+			"ready":      false,
+			"servingDir": absDir,
+			"detail":     fmt.Sprintf("servingDir 不可读: %v", statErr),
+		})
+		return
 	}
 
+	// ✅ 一切就绪
 	c.JSON(http.StatusOK, gin.H{
-		"ready":      true,
-		"servingDir": s.servingDir,
-		"marker":     marker,
-		"context":    ctx,
-		"mockCategories": markerChildren,
-		"nextStep":   "前端访问 http://localhost:5173/ （前提是已 OpenPreview 激活）",
+		"ready":         true,
+		"servingDir":    absDir,
+		"expected":      expectedDir,
+		"envDevPreview": envDevPreview,
+		"envMobile":     envMobile,
+		"nextStep":      "前端访问 OpenPreview 激活 :16666 入口（http://localhost:16666/）",
 	})
-}
-
-// fileExists 判断路径是否存在（避免守卫 error 里少这一上下文）
-func fileExists(p string) bool {
-	_, err := os.Stat(p)
-	return err == nil
 }
 
 // pluginOpenlistUpstream plugin-openlist 独立 Vite dev server
@@ -731,6 +632,31 @@ func (s *Server) handleTestLocalWebDAVGin(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+// handleWebDavLocalInfoGin 返回本地 webdav endpoint 的元信息（用户名/密码/是否启用），
+// 供前端自动化测试时构造 Basic Auth header，避免触发浏览器原生 401 弹窗
+func (s *Server) handleWebDavLocalInfoGin(c *gin.Context) {
+	if s.webdavFS == nil {
+		c.JSON(http.StatusOK, gin.H{
+			"enabled":       false,
+			"authRequired":  false,
+			"username":      "",
+			"password":      "",
+			"webdavPath":    s.webdavPath,
+			"serverBaseUrl": fmt.Sprintf("http://127.0.0.1:%d", s.cfg.Server.Port),
+		})
+		return
+	}
+	authRequired := s.cfg.Webdav.Username != "" || s.cfg.Webdav.Password != ""
+	c.JSON(http.StatusOK, gin.H{
+		"enabled":       true,
+		"authRequired":  authRequired,
+		"username":      s.cfg.Webdav.Username,
+		"password":      s.cfg.Webdav.Password,
+		"webdavPath":    s.webdavPath,
+		"serverBaseUrl": fmt.Sprintf("http://127.0.0.1:%d", s.cfg.Server.Port),
+	})
+}
+
 func (s *Server) handleIndexClearGin(c *gin.Context) {
 	s.mobileSvc.ClearIndex()
 	c.JSON(http.StatusOK, gin.H{"status": "cleared"})
@@ -1046,6 +972,179 @@ func (s *Server) handleFFmpegStatusGin(c *gin.Context) {
 		"ffmpeg_detail":     ffmpegDetail,
 		"ffprobe_detail":    ffprobeDetail,
 	})
+}
+
+// 🆕 2026-06-11 v7：接收前端自动化测试分析结果上报
+// 用途：Tasks.vue 「查看报告」按钮触发，把 localStorage 历史聚合 + 错误聚类
+//   通过 fetch 异步上报到后端，dev console 同时输出
+//   后端把 payload 写到 log（聚合分析用） + 返回 ack
+// 不阻塞前端 UI（fire-and-forget + silent fail）
+func (s *Server) handleAutomationReportGin(c *gin.Context) {
+	var payload map[string]any
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json: " + err.Error()})
+		return
+	}
+	// 提取关键字段便于日志检索
+	runCount, _ := payload["runCount"].(float64)
+	failed, _ := payload["totalFailed"].(float64)
+	passed, _ := payload["totalPassed"].(float64)
+	webdav, _ := payload["webdavRunCount"].(float64)
+	plugin, _ := payload["pluginRunCount"].(float64)
+	failureRate, _ := payload["failureRate"].(float64)
+	suspiciousCount := 0
+	if bugs, ok := payload["suspiciousBugs"].([]any); ok {
+		suspiciousCount = len(bugs)
+	}
+	// 失败/可疑 bug → warn 级别（运维日志监控可捞）
+	logLevel := "info"
+	if failed > 0 || suspiciousCount > 0 {
+		logLevel = "warn"
+	}
+	slog.LogAttrs(c.Request.Context(), slog.LevelInfo,
+		"[automation-report] 收到前端自动化测试分析上报",
+		slog.String("level", logLevel),
+		slog.Float64("runCount", runCount),
+		slog.Float64("webdavRunCount", webdav),
+		slog.Float64("pluginRunCount", plugin),
+		slog.Float64("totalPassed", passed),
+		slog.Float64("totalFailed", failed),
+		slog.Float64("failureRate%", failureRate),
+		slog.Int("suspiciousBugCount", suspiciousCount),
+	)
+	// 可疑 bug 详情单独打一行 JSON（方便日志检索）
+	if bugs, ok := payload["suspiciousBugs"].([]any); ok && len(bugs) > 0 {
+		bugJSON, _ := json.Marshal(bugs)
+		slog.Warn("[automation-report] suspicious bugs: " + string(bugJSON))
+	}
+	// 最近失败用例详情
+	if lastFailed, ok := payload["lastRunFailed"].([]any); ok && len(lastFailed) > 0 {
+		lfJSON, _ := json.Marshal(lastFailed)
+		slog.Warn("[automation-report] last run failed cases: " + string(lfJSON))
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "received": true})
+}
+
+// ============= ECv4 Sparse Container Capacity Boundary Test =============
+
+// handleSparseContainerWriteGin 写一个 sparse 虚拟容器（默认 100×128GB）
+//
+// POST /api/dev/sparse-container
+// Body: {"fragmentCount": 100, "fragmentSizeGB": 128, "physicalChunkMB": 0, "containerType": 1}
+// Response: SparseResult (virtual/physical/manifest size + isSparse)
+func (s *Server) handleSparseContainerWriteGin(c *gin.Context) {
+	var req struct {
+		FragmentCount   int    `json:"fragmentCount"`
+		FragmentSizeGB  int    `json:"fragmentSizeGB"`
+		PhysicalChunkMB int    `json:"physicalChunkMB"`
+		ContainerType   uint16 `json:"containerType"`
+		BaseName        string `json:"baseName"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid json: " + err.Error()})
+		return
+	}
+
+	outputDir := "/tmp/encv-sparse-test"
+	if req.BaseName == "" {
+		req.BaseName = fmt.Sprintf("sparse-%d", time.Now().Unix())
+	}
+
+	// 1GB = 1024^3
+	fragmentSize := int64(req.FragmentSizeGB) * 1024 * 1024 * 1024
+	if fragmentSize <= 0 {
+		fragmentSize = 128 * 1024 * 1024 * 1024
+	}
+
+	cfg := testutil.SparseContainerConfig{
+		OutputDir:       outputDir,
+		BaseName:        req.BaseName,
+		FragmentCount:   req.FragmentCount,
+		FragmentSize:    fragmentSize,
+		PhysicalChunkMB: req.PhysicalChunkMB,
+		ContainerType:   req.ContainerType,
+		CipherMode:      0,
+	}
+	if cfg.ContainerType == 0 {
+		cfg.ContainerType = 1
+	}
+	if cfg.FragmentCount == 0 {
+		cfg.FragmentCount = 100
+	}
+
+	res, err := testutil.WriteSparseVirtualContainer(cfg)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	slog.Info("[sparse-container] wrote",
+		"baseName", req.BaseName,
+		"virtualGB", res.VirtualTotal/(1024*1024*1024),
+		"physicalKB", res.PhysicalUsed/1024,
+		"isSparse", res.IsSparse,
+		"durationMs", res.DurationMs,
+	)
+	c.JSON(http.StatusOK, res)
+}
+
+// handleSparseContainerProbeGin 探测 1 个 fragment 的读路径
+//
+// GET /api/dev/sparse-container/probe?mainPath=/tmp/.../x.sccg&fragmentIdx=0&fragmentSizeGB=128
+// Response: EdgeProbeResult (seek/read duration + heap + physical/virtual size)
+func (s *Server) handleSparseContainerProbeGin(c *gin.Context) {
+	mainPath := c.Query("mainPath")
+	if mainPath == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "mainPath required"})
+		return
+	}
+	fragmentIdx := 0
+	if v := c.Query("fragmentIdx"); v != "" {
+		fmt.Sscanf(v, "%d", &fragmentIdx)
+	}
+	fragmentSizeGB := 128
+	if v := c.Query("fragmentSizeGB"); v != "" {
+		fmt.Sscanf(v, "%d", &fragmentSizeGB)
+	}
+	fragmentSize := int64(fragmentSizeGB) * 1024 * 1024 * 1024
+
+	probe, err := testutil.ReadSparseContainerEdgeProbe(mainPath, fragmentIdx, fragmentSize)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	slog.Info("[sparse-container] probe",
+		"mainPath", mainPath,
+		"fragmentIdx", fragmentIdx,
+		"seekMs", probe.SeekDurationMs,
+		"readMs", probe.ReadDurationMs,
+		"heapInUseKB", probe.HeapInUseKB,
+	)
+	c.JSON(http.StatusOK, probe)
+}
+
+// handleSparseContainerCleanupGin 清理 sparse 容器产物
+//
+// DELETE /api/dev/sparse-container?baseName=xxx
+// 默认清理 /tmp/encv-sparse-test/ 下所有 .sccg 产物
+func (s *Server) handleSparseContainerCleanupGin(c *gin.Context) {
+	baseName := c.Query("baseName")
+	outputDir := "/tmp/encv-sparse-test"
+
+	if baseName == "" {
+		// 清理整个目录
+		if err := os.RemoveAll(outputDir); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		slog.Info("[sparse-container] cleaned up entire output dir", "dir", outputDir)
+	} else {
+		if err := testutil.CleanupSparseContainer(outputDir, baseName); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		slog.Info("[sparse-container] cleaned up", "baseName", baseName)
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "baseName": baseName, "outputDir": outputDir})
 }
 
 func (s *Server) handleTagsListGin(c *gin.Context) {

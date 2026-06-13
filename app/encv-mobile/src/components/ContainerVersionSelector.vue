@@ -1,20 +1,16 @@
 <template>
   <div class="version-selector">
     <ion-radio-group :value="modelValue" @ionChange="handleChange">
-      <ion-item
+      <RadioItem
         v-for="ver in versions"
         :key="ver.version"
-        :class="['version-item', `version-status-${ver.status}`]"
+        :value="ver.version"
+        :selected="modelValue"
         :disabled="ver.status === 'deprecated'"
+        :class="['version-item', `version-status-${ver.status}`]"
+        @select="(v) => emit('update:modelValue', v as number)"
       >
-        <ion-radio
-          :value="ver.version"
-          :disabled="ver.status === 'deprecated'"
-          slot="start"
-        ></ion-radio>
-        <ion-label>
-          <span class="version-label">{{ ver.label }}</span>
-        </ion-label>
+        <span class="version-label">{{ ver.label }}</span>
         <ion-badge
           v-if="ver.status === 'recommended'"
           color="success"
@@ -27,7 +23,7 @@
           slot="end"
           class="status-badge"
         >{{ t('containerVersion.deprecated') }}</ion-badge>
-      </ion-item>
+      </RadioItem>
     </ion-radio-group>
   </div>
 </template>
@@ -36,19 +32,18 @@
 import { computed } from 'vue'
 import {
   IonRadioGroup,
-  IonRadio,
-  IonItem,
-  IonLabel,
   IonBadge,
 } from '@ionic/vue'
 import type { ContainerVersionInfo } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
+import { CONTAINER_VERSIONS, DEFAULT_CONTAINER_VERSION } from '@/constants/containerVersion'
+import RadioItem from './RadioItem.vue'
 
 const props = withDefaults(defineProps<{
   modelValue: number
   versions?: ContainerVersionInfo[]
 }>(), {
-  modelValue: 4,
+  modelValue: DEFAULT_CONTAINER_VERSION,
 })
 
 const emit = defineEmits<{
@@ -57,13 +52,10 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-const defaultVersions: ContainerVersionInfo[] = [
-  { version: 2, status: 'deprecated', label: 'V2' },
-  { version: 3, status: 'stable', label: 'V3' },
-  { version: 4, status: 'recommended', label: 'V4' },
-]
-
-const versions = computed(() => props.versions || defaultVersions)
+// 🆕 2026-06-11 v2 cleanup：版本列表从 constants/containerVersion.ts 统一派生
+// 命名规则：ECv = ENCV Container，大写 EC，小写 v，避免与项目内 v2 架构命名混淆。
+// 注：ECV2 已在 SupportedVersions 中移除，不再可选。
+const versions = computed<ContainerVersionInfo[]>(() => props.versions ?? [...CONTAINER_VERSIONS])
 
 function handleChange(event: CustomEvent) {
   emit('update:modelValue', event.detail.value as number)
@@ -78,6 +70,13 @@ function handleChange(event: CustomEvent) {
 .version-item {
   --padding-start: 8px;
   --inner-padding-end: 12px;
+  cursor: pointer;
+}
+
+.version-item.item-disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  pointer-events: auto;
 }
 
 .version-item.version-status-deprecated {

@@ -1446,4 +1446,250 @@ describe('useAgent', () => {
       expect(capturedErr?.code).toBe('unknown')
     })
   })
+
+  // ─── Task 3: tool_call 状态机（success / failed / cancelled / TIMEOUT） ───
+  // 核心契约：
+  //   1. tool_call 创建后 status='pending'，armToolCallTimeout 启动 30s 看门狗
+  //   2. tool_result { is_error: false } → tool_call.status='success' + output 填充
+  //   3. tool_result { is_error: true, errorMessage } → tool_call.status='failed'
+  //      + errorCode / errorMessage 填充；错误消息原样透传（后端已本地化）
+  //   4. tool_result { status: 'cancelled' } → tool_call.status='cancelled'
+  //   5. 30s 内无 tool_result → 自动 status='failed' + errorCode='TIMEOUT'
+  //   6. 状态机严格单向：tool_call 处于 failed/cancelled/success 终态时，
+  //      后续 tool_status / tool_result 不会把它再覆盖（防止陈旧重放）
+  //   7. 收到 tool_result 时 clearToolCallTimeout 必须清除 timer（不泄漏）
+  //   8. 派生 computed：runningTools / hasRunningTool / allToolCalls 正确反映
+  describe('Task 3: tool_call 状态机', () => {
+    it('success: tool_result is_error=false → tool_call.status=success + output 填充', async () => {
+      const sse = sseLine('tool_call', {
+        id: 'tc-success',
+        name: 'list_files',
+        args: '{}',
+        auto_run: true,
+        kind: 'readOnly',
+      }) +
+      sseLine('tool_result', {
+        id: 'tc-success',
+        name: 'list_files',
+        result: '{"files":["a.txt","b.txt"]}',
+        is_error: false,
+        status: 'success',
+        duration_ms: 120,
+      }) +
+      sseLine('stream_end', {})
+      fetchSpy.mockImplementation(urlAwareMock(fetchReturningStream(makeSSEStream([sse]))))
+
+      const { send, messages, runningTools, hasRunningTool } = useAgent()
+      await send('list')
+
+      const tc = messages.value[1].tool_calls[0]
+      expect(tc.id).toBe('tc-success')
+      expect(tc.status).toBe('success')
+      // output 字段：后端 result 是 JSON 字符串时，前端尝试 JSON.parse 还原为对象
+      expect(tc.output).toEqual({ files: ['a.txt', 'b.txt'] })
+      // finishedAt 应被填充
+      expect(typeof tc.finishedAt).toBe('number')
+      // errorCode/errorMessage 不应在 success 时填充
+      expect(tc.errorCode).toBeUndefined()
+      expect(tc.errorMessage).toBeUndefined()
+      // 终态后 runningTools 立刻清空
+      expect(runningTools.value.length).toBe(0)
+      expect(hasRunningTool.value).toBe(false)
+    })
+
+    it('failed: tool_result is_error=true → tool_call.status=failed + errorCode/errorMessage 填充', async () => {
+      const sse = sseLine('tool_call', {
+        id: 'tc-fail',
+        name: 'search_files',
+        args: '{"path":"/nonexistent"}',
+        auto_run: true,
+        kind: 'readOnly',
+      }) +
+      sseLine('tool_result', {
+        id: 'tc-fail',
+        name: 'search_files',
+        result: '文件未找到: /nonexistent',
+        is_error: true,
+        status: 'error',
+        duration_ms: 50,
+        errorCode: 'ENOENT',
+        errorMessage: '文件未找到: /nonexistent',
+      }) +
+      sseLine('stream_end', {})
+      fetchSpy.mockImplementation(urlAwareMock(fetchReturningStream(makeSSEStream([sse]))))
+
+      const { send, messages } = useAgent()
+      await send('search')
+
+      const tc = messages.value[1].tool_calls[0]
+      // 关键修复点：之前 status 仍显示 success，现在正确显示 failed
+      expect(tc.status).toBe('failed')
+      expect(tc.errorCode).toBe('ENOENT')
+      // 错误消息原样透传（后端已本地化）
+      expect(tc.errorMessage).toBe('文件未找到: /nonexistent')
+      expect(typeof tc.finishedAt).toBe('number')
+    })
+
+    it('cancelled: tool_result status=cancelled → tool_call.status=cancelled', async () => {
+      const sse = sseLine('tool_call', {
+        id: 'tc-cancel',
+        name: 'delete_file',
+        args: '{}',
+        auto_run: false,
+        kind: 'fileChange',
+      }) +
+      sseLine('tool_result', {
+        id: 'tc-cancel',
+        name: 'delete_file',
+        result: '',
+        is_error: false,
+        status: 'cancelled',
+        duration_ms: 0,
+      }) +
+      sseLine('stream_end', {})
+      fetchSpy.mockImplementation(urlAwareMock(fetchReturningStream(makeSSEStream([sse]))))
+
+      const { send, messages } = useAgent()
+      await send('delete')
+
+      const tc = messages.value[1].tool_calls[0]
+      expect(tc.status).toBe('cancelled')
+      // 取消状态不属于失败，errorCode 不应被设置
+      expect(tc.errorCode).toBeUndefined()
+      expect(typeof tc.finishedAt).toBe('number')
+    })
+
+    it('TIMEOUT: 30s 无 tool_result → tool_call.status=failed + errorCode=TIMEOUT', async () => {
+      // 启用 fake timers，让 30s 超时立即可推进
+      vi.useFakeTimers()
+      try {
+        // 只发 tool_call 事件，**永远不**发 tool_result。stream_end 推一个
+        // 让 send() 正常返回。注意：stream_end 到达会切回 idle 但不会
+        // 清除 30s timer（armToolCallTimeout 是在 tool_call 时启动的，
+        // 直到 tool_result 到达或 timer 本身 fire）。
+        const sse = sseLine('tool_call', {
+          id: 'tc-hang',
+          name: 'command_run',
+          args: '{"command":"sleep 999"}',
+          auto_run: true,
+          kind: 'command',
+        }) +
+        sseLine('stream_end', {})
+        fetchSpy.mockImplementation(urlAwareMock(fetchReturningStream(makeSSEStream([sse]))))
+
+        const { send, messages } = useAgent()
+        await send('run long')
+
+        // 初始：tool_call 已创建，status=pending，timer 已 arm
+        const tc = messages.value[1].tool_calls[0]
+        expect(tc.id).toBe('tc-hang')
+        expect(tc.status).toBe('pending')
+
+        // 推进 fake timers 30s（不真等 30s）
+        await vi.advanceTimersByTimeAsync(30_000)
+
+        // 30s 后：tool_call 应被自动标记 failed + errorCode='TIMEOUT'
+        // 注意：reactive ref 触发后需要读取最新值
+        const tcAfter = messages.value[1].tool_calls[0]
+        expect(tcAfter.status).toBe('failed')
+        expect(tcAfter.errorCode).toBe('TIMEOUT')
+        // 错误消息：硬编码的中文文案（透传，不依赖后端）
+        expect(tcAfter.errorMessage).toContain('30s')
+        expect(typeof tcAfter.finishedAt).toBe('number')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('单向: 终态后 tool_status success 不会把 failed 覆盖回 success（防陈旧重放）', async () => {
+      const sse = sseLine('tool_call', {
+        id: 'tc-once',
+        name: 'op',
+        args: '{}',
+        auto_run: true,
+        kind: 'readOnly',
+      }) +
+      sseLine('tool_result', {
+        id: 'tc-once',
+        name: 'op',
+        result: 'boom',
+        is_error: true,
+        status: 'error',
+        duration_ms: 10,
+        errorCode: 'BOOM',
+        errorMessage: 'boom',
+      }) +
+      // 异常：服务端在 tool_result 失败后又推 tool_status=success（陈旧）
+      sseLine('tool_status', { id: 'tc-once', status: 'success' }) +
+      sseLine('stream_end', {})
+      fetchSpy.mockImplementation(urlAwareMock(fetchReturningStream(makeSSEStream([sse]))))
+
+      const { send, messages } = useAgent()
+      await send('q')
+
+      const tc = messages.value[1].tool_calls[0]
+      // 第一次 tool_result 失败后：failed
+      expect(tc.status).toBe('failed')
+      // 后续 tool_status=success 不应覆盖：仍为 failed
+      expect(tc.status).toBe('failed')
+      expect(tc.errorCode).toBe('BOOM')
+    })
+
+    it('runningTools / hasRunningTool 派生 computed 正确反映状态', async () => {
+      // 推 2 个 tool_call：第一个 30s 内无 result（用 fake timer 推进 1s），
+      // 第二个 正常收到 result 变 success
+      vi.useFakeTimers()
+      try {
+        const sse = sseLine('tool_call', {
+          id: 'tc-r1',
+          name: 'op1',
+          args: '{}',
+          auto_run: true,
+          kind: 'readOnly',
+        }) +
+        sseLine('tool_call', {
+          id: 'tc-r2',
+          name: 'op2',
+          args: '{}',
+          auto_run: true,
+          kind: 'readOnly',
+        }) +
+        sseLine('tool_status', { id: 'tc-r1', status: 'running' }) +
+        sseLine('tool_result', {
+          id: 'tc-r2',
+          name: 'op2',
+          result: '{}',
+          is_error: false,
+          status: 'success',
+          duration_ms: 5,
+        }) +
+        sseLine('stream_end', {})
+        fetchSpy.mockImplementation(urlAwareMock(fetchReturningStream(makeSSEStream([sse]))))
+
+        const { send, messages, runningTools, hasRunningTool, allToolCalls } = useAgent()
+        await send('q')
+
+        // tc-r1: pending → running（via tool_status）
+        // tc-r2: pending → success（via tool_result）
+        const tc1 = messages.value[1].tool_calls[0]
+        const tc2 = messages.value[1].tool_calls[1]
+        expect(tc1.id).toBe('tc-r1')
+        expect(tc2.id).toBe('tc-r2')
+        expect(tc1.status).toBe('running')
+        // running 状态时 startedAt 应被填充
+        expect(typeof tc1.startedAt).toBe('number')
+        expect(tc2.status).toBe('success')
+        expect(typeof tc2.finishedAt).toBe('number')
+
+        // 派生 computed：tc-r1 running + tc-r2 已 success → 仅 tc-r1
+        expect(runningTools.value.length).toBe(1)
+        expect(runningTools.value[0].id).toBe('tc-r1')
+        expect(hasRunningTool.value).toBe(true)
+        // allToolCalls：2 条全部
+        expect(allToolCalls.value.length).toBe(2)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
 })

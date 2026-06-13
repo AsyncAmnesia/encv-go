@@ -182,13 +182,73 @@ func (s *MobileService) DeleteFile(queryPath string) error {
 		return &ForbiddenError{Err: err}
 	}
 
-	slog.Warn("DeleteFile", "path", queryPath)
-	err = os.Remove(absPath)
+	// 🆕 2026-06-10 修复 #1：安全防御 — 禁止删除 servingDir 根目录
+	// 历史 bug：servingDir=/storage/emulated/0 → queryPath="/" 解析后 absPath 恰为根
+	//   用户长按"删除"后会把所有 mock 数据、用户文件一锅端
+	// 修复：absPath == servingDir 时拒绝
+	if absPath == s.servingDir {
+		slog.Warn("DeleteFile: refuse to delete servingDir root", "path", queryPath)
+		return &ForbiddenError{Err: errors.New("cannot delete the root of the serving directory")}
+	}
+
+	slog.Warn("DeleteFile", "path", queryPath, "absPath", absPath)
+
+	// 🆕 2026-06-10 修复 #1：细化 stat 错误处理
+	// 历史 bug：os.Remove/RemoveAll 失败时只 log + return err → 500 + 前端不友好
+	// 修复：先 stat，区分 NotFound / Permission / Other；返回结构化 error type
+	info, statErr := os.Stat(absPath)
+	if statErr != nil {
+		if os.IsNotExist(statErr) {
+			slog.Info("DeleteFile: not found", "path", queryPath)
+			return &NotFoundError{Err: statErr}
+		}
+		if os.IsPermission(statErr) {
+			slog.Warn("DeleteFile: permission denied on stat", "path", queryPath)
+			return &PermissionError{Err: statErr}
+		}
+		slog.Error("DeleteFile: stat failed", "path", queryPath, "error", statErr)
+		return statErr
+	}
+
+	// 🆕 文件 / 目录分别处理 + 各自的详细错误
+	if info.IsDir() {
+		// 删除前统计文件数 + 子目录数，用于详细日志
+		fileCount := 0
+		dirCount := 0
+		_ = filepath.WalkDir(absPath, func(p string, d os.DirEntry, _ error) error {
+			if d == nil {
+				return nil
+			}
+			if d.IsDir() {
+				dirCount++
+			} else {
+				fileCount++
+			}
+			return nil
+		})
+		slog.Warn("DeleteFile: removing directory",
+			"path", queryPath,
+			"absPath", absPath,
+			"fileCount", fileCount,
+			"subDirCount", dirCount-1, // 减去自身
+		)
+		// os.RemoveAll 永远不会因为 "directory not empty" 失败（它会递归删子项）
+		// 唯一可能的失败：权限不足 / 文件被占用 / 跨设备 / 路径太长等
+		err = os.RemoveAll(absPath)
+	} else {
+		slog.Warn("DeleteFile: removing file", "path", queryPath, "absPath", absPath, "size", info.Size())
+		err = os.Remove(absPath)
+	}
+
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &NotFoundError{Err: err}
 		}
-		slog.Error("Remove failed", "path", absPath, "error", err)
+		if os.IsPermission(err) {
+			slog.Warn("DeleteFile: permission denied on remove", "path", queryPath, "error", err)
+			return &PermissionError{Err: err}
+		}
+		slog.Error("DeleteFile: remove failed", "path", queryPath, "absPath", absPath, "error", err)
 		return err
 	}
 

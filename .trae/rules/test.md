@@ -3,6 +3,8 @@
 > **核心原则：零侵入、配置驱动、可开关。**
 > **所有 mock 和后门机制不得修改 `config.user.json` 或任何生产代码逻辑路径。**
 
+> **完整内容 + 历史踩坑**：[详情文档](../rule-library/test.md)
+
 ---
 
 ## 一、Mock 文件系统（Vite 中间件层）
@@ -55,45 +57,7 @@ interface MockFileItem {
 | **ENCV 容器文件** | `video.sccgv`（后缀来自插件配置） | `isEncrypted=true` |
 | 子目录 | `Movies/`, `Documents/` | `isDirectory=true` |
 
-#### 1.3.2 子目录支持
-
-- `/Movies/` → 包含容器格式视频文件
-- `/Documents/` → 包含普通文档和加密文档
-- 支持任意深度的目录导航（至少 2 层）
-
-#### 1.3.3 插件列表（`GET /api/plugins`）
-
-```typescript
-interface MockPluginMeta {
-  name: string
-  supportedExtensions: string[]
-  supportedMimePrefixes: string[]
-  containerExtension: string
-  taskOptions: TaskOptions
-}
-```
-
-**必须返回的插件**：
-
-| 插件名 | containerExtension | 用途 |
-|--------|-------------------|------|
-| `video` | `.sccgv` | 视频加密容器 |
-| `image` | `.sccgi` | 图片加密容器 |
-| `audio` | `.sccga` | 音频加密容器 |
-| `text` | `.sccgt` | 文本加密容器 |
-| `wps` | `.sccgwps` | WPS 加密容器 |
-| `pdf` | `.sccgpdf` | PDF 加密容器 |
-
-#### 1.3.4 其他 Mock 端点
-
-| 端点 | Mock 响应 |
-|------|----------|
-| `GET /health` | `{ status: 'ok' }` （当 mock 激活时） |
-| `GET /api/config` | 含 `plugin_settings.alist_encrypt.suffix` 的完整配置 |
-| `GET /api/tasks` | `[]` （空任务列表） |
-| `POST /api/tasks` | 返回模拟任务对象 |
-| `GET /api/files/tags` | `[]` （空标签列表） |
-| `GET /api/permissions` | `{ storage: true }` |
+**Mock 数据规范详细**（子目录支持、插件列表、其他端点）→ 详见 [详情文档 §1.3](../rule-library/test.md#13-mock-数据规范)
 
 ### 1.4 配置读取协议
 
@@ -139,64 +103,9 @@ declare global {
 }
 ```
 
-### 2.3 后门函数规格
+**5 个后门函数的实现细节**（simulateLongPress / simulateFileClick / addMockFile / triggerActionSheet / openNewTaskModal） → 详见 [详情文档 §2.3](../rule-library/test.md#23-后门函数规格)
 
-#### 2.3.1 `simulateLongPress(fileName: string)`
-
-**功能**：模拟对指定文件的 long-press 操作，弹出 action sheet。
-
-**实现方式**：
-1. 在 Files.vue 的 `setup()` 中检测 `window.__ENCV_TEST` 存在性
-2. 查找 `files.value` 中 name 匹配的 FileItem
-3. 调用 `handleLongPress(file)` 
-
-**使用场景**：
-```javascript
-// 浏览器控制台或 Puppeteer
-await window.__ENCV_TEST.simulateLongPress('secret.ae')
-// → 弹出 action sheet，包含"流式预览"+"解密"按钮
-```
-
-#### 2.3.2 `simulateFileClick(fileName: string)`
-
-**功能**：模拟对指定文件的单击操作。
-
-**使用场景**：
-```javascript
-await window.__ENCV_TEST.simulateFileClick('sample.mp4')
-// → 触发 handleFileClick → 可能跳转播放器
-```
-
-#### 2.3.3 `getMockFiles() / setMockFiles() / addMockFile() / removeMockFile()`
-
-**功能**：运行时读写 mock 文件列表。
-
-**使用场景**：
-```javascript
-// 动态添加一个加密文件
-window.__ENCV_TEST.addMockFile({
-  name: 'test-secret.ae',
-  path: '/test-secret.ae',
-  isDirectory: false,
-  size: 1024,
-  modified: '2026-05-30T12:00:00Z'
-})
-```
-
-#### 2.3.4 `triggerActionSheet(fileName: string)`
-
-**功能**：`simulateLongPress` 的别名，语义更明确。
-
-#### 2.3.5 `openNewTaskModal(sourcePath?, taskType?)`
-
-**功能**：直接打开新建任务 modal。
-
-**使用场景**：
-```javascript
-await window.__ENCV_TEST.openNewTaskModal('/test.txt', 'encrypt')
-```
-
-### 2.4 后门注册机制
+### 2.3 后门注册机制
 
 **位置**：`src/composables/useTestBackdoor.ts`（新文件，仅 DEV 编译）
 
@@ -222,21 +131,6 @@ export function useTestBackdoor(files: Ref<FileItem[]>, options: {
 }
 ```
 
-**Files.vue 集成**：
-```vue
-<script setup lang="ts">
-// 仅 DEV 模式导入（PROD 时被消除）
-if (import.meta.env.DEV) {
-  const { useTestBackdoor } = await import('@/composables/useTestBackdoor')
-  useTestBackdoor(files, {
-    onLongPress: handleLongPress,
-    onClick: handleFileClick,
-    navigateTo: navigateTo,
-  })
-}
-</script>
-```
-
 ---
 
 ## 三、浏览器自动化测试协议
@@ -254,7 +148,7 @@ Step 5: 检查 console 日志（error/warn 数量）
 Step 6: 清理状态（关闭 modal/sheet）
 ```
 
-### 3.2 必须覆盖的测试场景
+### 3.2 必须覆盖的测试场景（T1-T10）
 
 | # | 场景 | 操作 | 验证点 |
 |---|------|------|--------|
@@ -279,10 +173,19 @@ Step 6: 清理状态（关闭 modal/sheet）
 
 ---
 
-## 四、禁止事项
+## 四、禁止事项（速查）
 
 1. **❌ 禁止修改 `config.user.json`** — Mock 数据完全自包含
 2. **❌ 禁止在生产构建中包含后门代码** — 使用 `import.meta.env.DEV` 守卫
 3. **❌ 禁止在后门中跳过权限检查** — 后门只模拟用户操作，不绕过业务逻辑
 4. **❌ 禁止硬编码具体后缀值到 spec/测试代码** — 使用 `__mock_suffix` 参数或 `TEST_SUFFIX` 注入
 5. **❌ 禁止将 mock 文件提交到版本控制的 `mock/` 目录以外** — 保持隔离
+
+---
+
+## 五、引用其他规则
+
+- [mock-data-architecture.md](./mock-data-architecture.md) — Mock 字节必须同源
+- [development.md](./development.md) — dev mode 激活条件
+
+> 拆分：2026-06-11

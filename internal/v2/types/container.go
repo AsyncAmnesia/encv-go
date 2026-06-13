@@ -28,10 +28,12 @@ const (
 )
 
 const (
-	ContainerV2             = 2
-	ContainerV3             = 3
-	ContainerV4             = 4
-	DefaultContainerVersion = ContainerV4
+	// ContainerECv2 / ContainerECv3 / ContainerECv4 是 ENCV 容器格式的版本号。
+	// 命名规则：ECv = ENCV Container，大写 EC，小写 v，避免与项目内 v2 架构命名混淆。
+	ContainerECv2            = 2
+	ContainerECv3            = 3
+	ContainerECv4            = 4
+	DefaultContainerVersion  = ContainerECv4
 )
 
 type VersionStatus string
@@ -73,15 +75,21 @@ var (
 	}
 )
 
-var SupportedVersions = []int{ContainerV2, ContainerV3, ContainerV4}
+// SupportedVersions 是当前**支持创建新容器**的版本列表。
+// ECv2 (2024 旧版) 已从项目中移除（仅保留底层读路径供存量 ECv2 容器在野外被读取）。
+// ECv3 标记为 deprecated（仍可创建/读取，但强烈建议迁 ECv4），ECv4 是当前推荐版本。
+var SupportedVersions = []int{ContainerECv3, ContainerECv4}
 
+// GetVersionStatus 返回版本在「支持列表」中的状态：
+//   - supported version（ECv3/ECv4）：返回对应状态（deprecated/recommended）
+//   - unsupported version（含 ECv2、其他未知）：返回空字符串
+//
+// 注意：ECv2 已从 SupportedVersions 移除，但保留 ContainerECv2 常量供 detector 识别存量文件。
 func GetVersionStatus(version int) VersionStatus {
 	switch version {
-	case ContainerV2:
+	case ContainerECv3:
 		return VersionStatusDeprecated
-	case ContainerV3:
-		return VersionStatusStable
-	case ContainerV4:
+	case ContainerECv4:
 		return VersionStatusRecommended
 	default:
 		return ""
@@ -99,6 +107,15 @@ func IsValidVersion(version int) bool {
 
 func IsDeprecatedVersion(version int) bool {
 	return GetVersionStatus(version) == VersionStatusDeprecated
+}
+
+// IsRecommendedVersion 返回容器版本是否是当前推荐版本（仅 ECv4）
+// 与 IsDeprecatedVersion 互斥：
+//   - IsRecommendedVersion(v) = true  ⇔ v == ContainerECv4
+//   - IsDeprecatedVersion(v)  = true  ⇔ v ∈ {ContainerECv2, ContainerECv3}
+//   - 二者都 = false                  ⇔ v 是 SupportedVersions 之外的未知版本
+func IsRecommendedVersion(version int) bool {
+	return GetVersionStatus(version) == VersionStatusRecommended
 }
 
 // FragmentType 定义分片的用途类型，使其意图更加明确

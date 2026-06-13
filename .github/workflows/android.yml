@@ -98,17 +98,11 @@ jobs:
           restore-keys: |
             gradle-
 
-      - name: Cache ffmpeg/x264 build (intermediates)
-        id: cache-ffmpeg
-        uses: actions/cache@v4
-        with:
-          path: app/encv-mobile/scripts/.ffmpeg-build
-          key: ffmpeg-build-${{ hashFiles('app/encv-mobile/scripts/build-ffmpeg-android.sh') }}
-          restore-keys: |
-            ffmpeg-build-
-
-      # Note: jniLibs output cache removed — it can be polluted by plugin .so files from previous builds.
-      # The ffmpeg build intermediates cache above is sufficient; rebuilding .so output takes <5s.
+      # ffmpeg 编译已拆分到独立工作流 build-ffmpeg-lib.yml:
+      #   - 产物: release "ffmpeg-native-libs" 下的 ffmpeg-jniLibs-arm64-v8a-v$VERSION.zip
+      #   - 触发: workflow_dispatch on build-ffmpeg-lib.yml
+      # 此处不重复编译,直接下载预编产物到 jniLibs/arm64-v8a/。
+      # 失败时: ::error:: 提示先去跑 build-ffmpeg-lib.yml。
 
       - name: Install frontend dependencies
         run: cd app/encv-mobile && pnpm install --frozen-lockfile
@@ -157,17 +151,70 @@ jobs:
           echo "✅ MPV libs extracted:"
           ls -lhR jniLibs/
 
-      - name: Build ffmpeg shared libraries for Android
-        run: cd app/encv-mobile && bash scripts/build-ffmpeg-android.sh
+      - name: Download FFmpeg native libraries from Release
+        run: |
+          # 模式与 MPV 一致：从 release "ffmpeg-native-libs" 下载预编产物
+          # 产物名约定: ffmpeg-jniLibs-arm64-v8a-v$FFMPEG_LIB_VERSION.zip
+          # zip 内是 arm64-v8a/{libffmpeg.so, libffprobe.so, libffmpeg-worker.so, build-info.json}
+          set -e
+          JNI_BASE="app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a"
+          mkdir -p "$JNI_BASE"
 
-      - name: Upload FFmpeg build logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ffmpeg-build-logs
-          path: app/encv-mobile/scripts/.ffmpeg-build/logs/
-          retention-days: 7
-          if-no-files-found: ignore
+          ASSET_URL=$(curl -sf \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/ffmpeg-native-libs" \
+            | jq -r '.assets[] | select(.name | startswith("ffmpeg-jniLibs-arm64")) | .browser_download_url')
+
+          if [ -z "$ASSET_URL" ]; then
+            echo "::error::No FFmpeg lib asset found in release 'ffmpeg-native-libs'."
+            echo "::error::Run the 'Build FFmpeg Native Libraries' workflow first, then re-run this build."
+            echo ""
+            echo "Available releases:"
+            curl -sf "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases" \
+              | jq -r '.[] | "  - " + .tag_name' || echo "  (could not list releases)"
+            exit 1
+          fi
+
+          echo "Downloading: $ASSET_URL"
+          curl -fSL -o /tmp/ffmpeg-jniLibs.zip "$ASSET_URL"
+
+          # 解压到临时目录,验证产物后拷到 jniLibs/
+          rm -rf /tmp/ffmpeg-extract && mkdir -p /tmp/ffmpeg-extract
+          unzip -o /tmp/ffmpeg-jniLibs.zip -d /tmp/ffmpeg-extract/
+
+          # zip 结构: <zip-root>/arm64-v8a/*.so
+          SRC_ARM64=$(find /tmp/ffmpeg-extract -mindepth 1 -maxdepth 1 -type d -name "arm64-v8a" | head -1)
+          if [ -z "$SRC_ARM64" ]; then
+            echo "::error::ffmpeg-jniLibs.zip missing 'arm64-v8a/' directory"
+            unzip -l /tmp/ffmpeg-jniLibs.zip
+            exit 1
+          fi
+
+          cp -r "$SRC_ARM64"/* "$JNI_BASE/"
+
+          echo "✅ FFmpeg libs installed:"
+          ls -lh "$JNI_BASE/"
+
+          # 验证关键符号
+          NM="${{ env.ANDROID_HOME }}/ndk/${{ env.NDK_VERSION }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+          for required in "libffmpeg.so:ffmpeg_run" "libffmpeg.so:ffmpeg_reset" "libffprobe.so:ffprobe_run" "libffprobe.so:ffprobe_reset" "libffmpeg-worker.so:main"; do
+            lib="${required%:*}"
+            sym="${required#*:}"
+            if ! $NM -D "$JNI_BASE/$lib" | grep -q " ${sym}$"; then
+              echo "::error::$lib missing symbol: $sym (build-ffmpeg-lib.yml may have failed silently)"
+              exit 1
+            fi
+            echo "  ✅ $lib: $sym"
+          done
+
+          # 验证 build-info.json
+          if ! jq -e '.ffmpeg_version and .abi and .external_libs' "$JNI_BASE/build-info.json" > /dev/null; then
+            echo "::error::build-info.json invalid (expected fields: ffmpeg_version, abi, external_libs)"
+            cat "$JNI_BASE/build-info.json"
+            exit 1
+          fi
+          echo ""
+          echo "=== build-info.json ==="
+          jq '{ffmpeg_version, abi, api_level, external_libs, encoders: .enabled_encoders | length, decoders: .enabled_decoders | length}' "$JNI_BASE/build-info.json"
 
       - name: Run Go unit tests
         run: |

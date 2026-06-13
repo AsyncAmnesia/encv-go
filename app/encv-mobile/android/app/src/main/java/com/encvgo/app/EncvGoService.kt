@@ -32,6 +32,11 @@ class EncvGoService : Service() {
         private const val MAX_PORT_SCAN = 10
         private const val START_TIMEOUT_MS = 10_000L
         private const val POLL_INTERVAL_MS = 200L
+        // 🆕 2026-06-12 Phase 4：心跳文件 mtime 探活阈值。
+        // 8s = 5s ffmpeg timeout + 3s 容差（worker 启动 + 调度 + cgo dlopen）。
+        // 真机 cgo ffmpeg_run 二次 hang 时，Process.isAlive() 仍 true，
+        // 只能靠 mtime 探活主动发现 hang → 强杀重启。
+        private const val HEARTBEAT_STALE_MS = 8_000L
 
         const val ACTION_START = "com.encvgo.action.START"
         const val ACTION_STOP = "com.encvgo.action.STOP"
@@ -97,23 +102,49 @@ class EncvGoService : Service() {
     private val processReady = AtomicBoolean(false)
     private var wakeLock: PowerManager.WakeLock? = null
 
+    // 🆕 2026-06-12 Phase 4：心跳文件路径（与 Go 端 ENCV_HEARTBEAT_PATH 同步）
+    // Go 进程每次 ffmpeg 调用后 write 当前时间戳到这个文件；
+    // Kotlin 1s poll lastModified()，>HEARTBEAT_STALE_MS 没更新即判 hang。
+    // 路径优先 ENCV_SERVING_DIR（真机 servingDir），fallback 缓存目录。
+    private val heartbeatFile: File by lazy {
+        val dir = System.getenv("ENCV_SERVING_DIR") ?: System.getenv("ENCV_CACHE_DIR")
+            ?: filesDir.absolutePath
+        File(dir, ".encv_heartbeat")
+    }
+
+    // 🆕 2026-06-12 崩溃根因修复：goProcess 死时自动重启（带指数退避 + 最多 3 次）
+    //   死因：真机 libffmpeg.so 没编 encoder → go_GenerateMP3 走 NativeRunner → cgo panic
+    //         cgo panic 跨 cgo boundary 杀整个进程 → 之前前端只看到 "Failed to fetch"
+    //   修复：后台线程 1s poll process.isAlive；死 → publishFailure(完整 stderr) → 重启
+    private var restartAttempts = 0
+    private val MAX_RESTART_ATTEMPTS = 3
+    private val restartExecutor = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r ->
+        Thread(r, "encv-go-restart").apply { isDaemon = true }
+    }
+
     override fun onCreate() {
         super.onCreate()
         instance = this
         createNotificationChannel()
+        startProcessAliveMonitor()  // 🆕 2026-06-12：进程死后自动重启
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         currentSource = intent?.getStringExtra(EXTRA_SOURCE) ?: "manual"
-        when (intent?.action) {
-            ACTION_STOP -> worker.execute { stopGoProcess("stopped", stopService = true) }
-            ACTION_RESTART, ACTION_EXTERNAL_RESTART -> worker.execute {
-                restartGoProcess(currentSource, intent?.getStringExtra(EXTRA_COMMAND))
+        intent?.let { it ->
+            when (it.action) {
+                ACTION_STOP -> worker.execute { stopGoProcess("stopped", stopService = true) }
+                ACTION_RESTART, ACTION_EXTERNAL_RESTART -> worker.execute {
+                    restartGoProcess(currentSource, it.getStringExtra(EXTRA_COMMAND))
+                }
+                ACTION_STATUS -> publishStatus(lastError)
+                ACTION_START, ACTION_EXTERNAL_START -> worker.execute {
+                    startGoProcess(currentSource, it.getStringExtra(EXTRA_COMMAND))
+                }
             }
-            ACTION_STATUS -> publishStatus(lastError)
-            ACTION_START, ACTION_EXTERNAL_START, null -> worker.execute {
-                startGoProcess(currentSource, intent?.getStringExtra(EXTRA_COMMAND))
-            }
+        } ?: run {
+            // 无 intent 视为默认 start（向后兼容旧版无 action 调用）
+            worker.execute { startGoProcess(currentSource, null) }
         }
         return START_STICKY
     }
@@ -124,7 +155,108 @@ class EncvGoService : Service() {
         instance = null
         stopGoProcess("service_destroyed", stopService = false)
         worker.shutdownNow()
+        restartExecutor.shutdownNow()  // 🆕 2026-06-12
         super.onDestroy()
+    }
+
+    // 🆕 2026-06-12 Phase 4：mtime 探活 + 自动重启
+    //
+    // 双判探活：
+    //   1) Process.isAlive()=false → 进程真死（exit/crash）→ 老逻辑处理
+    //   2) heartbeatFile.lastModified() 超过 HEARTBEAT_STALE_MS 没更新 →
+    //      Go 进程 OS 层还活着（cgo ffmpeg_run 阻塞 OS thread 不响应 ctx cancel）
+    //      但 Go runtime 调度被污染 → kill + restart
+    //
+    // 触发后 publishFailure reason="go_hang:..."（前端按 go_hang 分类）
+    private fun startProcessAliveMonitor() {
+        restartExecutor.scheduleWithFixedDelay({
+            val proc = goProcess ?: return@scheduleWithFixedDelay
+            val wasReady = processReady.get()
+            if (!wasReady) return@scheduleWithFixedDelay  // 启动阶段失败由 startGoProcess 自己处理
+
+            // ① 进程真死 → 老逻辑
+            if (!proc.isAlive) {
+                processReady.set(false)
+                restartAttempts += 1
+                val exitCode = try { proc.exitValue() } catch (e: Exception) { -1 }
+                val tail = outputBuffer.toString().takeLast(2 * 1024)
+                val reason = "go_exit:$exitCode|attempts=$restartAttempts|output:${if (tail.isEmpty()) "(empty)" else tail}"
+                publishFailure(reason, "alive_monitor", null)
+                lastExitCode = exitCode
+                scheduleAutoRestart(reason)
+                return@scheduleWithFixedDelay
+            }
+
+            // 进程还活着 → 检查 mtime 心跳
+            val mtimeMs = try { heartbeatFile.lastModified() } catch (e: Throwable) { 0L }
+            if (mtimeMs == 0L) {
+                // 心跳文件还没建（go 进程刚启动还没跑过 ffmpeg）→ 不判 hang
+                // 但要等首次 ffmpeg 调用 5s 内必须更新；如果等超过 60s 还没建文件
+                // 说明 Go 端 ENCV_HEARTBEAT_PATH 配置错 — 这种情况判定为 hang
+                if (restartAttempts > 0 && (restartAttempts * 1_000L) > 60_000L) {
+                    handleHang("heartbeat_file_never_created_after_${restartAttempts}s")
+                }
+                return@scheduleWithFixedDelay
+            }
+            val ageMs = System.currentTimeMillis() - mtimeMs
+            if (ageMs > HEARTBEAT_STALE_MS) {
+                handleHang("heartbeat_stale_${ageMs}ms")
+                return@scheduleWithFixedDelay
+            }
+
+            // 进程健康 — 重置重启计数
+            if (restartAttempts > 0) {
+                restartAttempts = 0
+            }
+        }, 1, 1, java.util.concurrent.TimeUnit.SECONDS)
+    }
+
+    // 🆕 2026-06-12 Phase 4：mtime 探活触发 hang 处理
+    //   - 不依赖 isAlive()（cgo hang 时仍 true）
+    //   - 强杀 + 1s/2s/4s 退避重启
+    //   - 通过 publishFailure 推 CustomEvent('encv:backend-status') 给前端
+    private fun handleHang(reason: String) {
+        processReady.set(false)
+        restartAttempts += 1
+        val tail = outputBuffer.toString().takeLast(2 * 1024)
+        val fullReason = "go_hang:$reason|attempts=$restartAttempts|output:${if (tail.isEmpty()) "(empty)" else tail}"
+        Log.e(TAG, "⚠️  Backend hang detected: $reason — destroying and scheduling restart")
+        publishFailure(fullReason, "alive_monitor", null)
+        try {
+            goProcess?.destroyForcibly()
+        } catch (e: Throwable) {
+            Log.w(TAG, "destroyForcibly failed", e)
+        }
+        scheduleAutoRestart(fullReason)
+    }
+
+    // 提取自 startProcessAliveMonitor，复用于 go_exit / go_hang 两条路径
+    private fun scheduleAutoRestart(reason: String) {
+        if (restartAttempts > MAX_RESTART_ATTEMPTS) {
+            Log.e(TAG, "❌ Go process died/hung $restartAttempts times; giving up auto-restart")
+            return
+        }
+        val delayMs = (1L shl (restartAttempts - 1)) * 1000L  // 1s / 2s / 4s
+        Log.w(TAG, "Auto-restart in ${delayMs}ms (attempt ${restartAttempts}/${MAX_RESTART_ATTEMPTS}): $reason")
+        restartExecutor.schedule({
+            try {
+                startGoProcess("auto_restart:$reason", null)
+            } catch (e: Throwable) {
+                Log.e(TAG, "auto-restart failed", e)
+            }
+        }, delayMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+    }
+
+    // 🆕 2026-06-12 Phase 4：启动后立即 touch 心跳文件，避免 8s 内 mtime=0 误判 hang
+    //   Go 进程接管后每次 ffmpeg 调用会自己更新 mtime。
+    //   这里只是 initial bootstrap。
+    private fun touchHeartbeat() {
+        try {
+            heartbeatFile.parentFile?.mkdirs()
+            heartbeatFile.writeText(System.currentTimeMillis().toString())
+        } catch (e: Throwable) {
+            Log.w(TAG, "Failed to touch heartbeat file (探活降级为仅 isAlive)", e)
+        }
     }
 
     private fun startGoProcess(source: String, command: String?) {
@@ -153,10 +285,23 @@ class EncvGoService : Service() {
                 environment()["ENCV_CONFIG_PATH"] = configPath
                 environment()["ENCV_MOBILE"] = "1"
                 environment()["HOME"] = filesDir.absolutePath
+                // 🆕 2026-06-11 Phase 2: 跟 ENCV_LIB_DIR 同源
+                // - ENCV_LIB_DIR 给 cgo CallFFmpegNative 用（dlopen libffmpeg.so）
+                // - ENCV_FFMPEG_WORKER 给 ffmpeg-worker 路径用（workerClient.locateWorker 优先选这个）
+                //   改用 subprocess worker 调 ffmpeg 后，父进程 ctx cancel 时可以 SIGKILL worker
+                //   解锁（之前 in-process cgo 阻塞 OS thread 没法 cancel，hang spinner forever）
                 environment()["ENCV_LIB_DIR"] = applicationInfo.nativeLibraryDir
+                environment()["ENCV_FFMPEG_WORKER"] =
+                    File(applicationInfo.nativeLibraryDir, "libffmpeg-worker.so").absolutePath
+                // 🆕 2026-06-12 Phase 4：worker 写心跳到 servingDir/.encv_heartbeat
+                environment()["ENCV_SERVING_DIR"] = System.getenv("ENCV_SERVING_DIR")
+                    ?: "/storage/emulated/0"  // 真机默认 servingDir
                 redirectErrorStream(true)
                 directory(filesDir)
             }.start()
+
+            // 🆕 2026-06-12 Phase 4：bootstrap 心跳文件 — Kotlin 端 1s poll mtime 前必须有文件
+            touchHeartbeat()
 
             monitorProcessOutput(startupGeneration.incrementAndGet(), source, command)
             waitForBackendReady(startupGeneration.get(), source, command)

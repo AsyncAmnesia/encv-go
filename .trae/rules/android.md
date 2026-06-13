@@ -1,12 +1,12 @@
 # Android 构建系统规则
 
-> 来自 CI 实战踩坑 + Gradle 插件解析机制分析。
+> **核心原则**：Gradle 仓库解析采用「短路求值」策略——源的可信度必须与排列优先级成正比（官方源优先，镜像源兜底）；AGP 强制 `isMinifyEnabled` 与 `isShrinkResources` 硬耦合。
+
+> **完整内容 + 历史踩坑**：[详情文档](../rule-library/android.md)
 
 ---
 
-## 一、依赖仓库顺序铁律（违反 = 构建失败）
-
-> **关键认知**：Gradle 仓库解析采用「短路求值」策略——按配置顺序逐个搜索，命中即停止。因此**源的可信度必须与排列优先级成正比**。
+## 一、依赖仓库顺序铁律（必读）
 
 ### 1.1 `pluginManagement` 仓库顺序
 
@@ -21,9 +21,8 @@ Gradle 解析 plugin 时按 `pluginManagement.repositories` 列表**顺序搜索
 | **`gradlePluginPortal()`** | **❌ 不能** | **Plugin Marker POM 格式不同** |
 | **`plugins.gradle.org/m2/`** | N/A | Plugin Portal 的直接 Maven 仓库 |
 
-**✅ 正确配置**：
+**✅ 正确配置**（settings.gradle.kts）：
 ```kotlin
-// settings.gradle.kts
 pluginManagement {
     repositories {
         mavenCentral()           // ① 标准 Maven Central
@@ -41,7 +40,6 @@ pluginManagement {
 
 **❌ 错误配置**：
 ```kotlin
-// gradlePluginPortal() 放在末尾 → 阿里云先返回空 → 可能超时
 pluginManagement {
     repositories {
         mavenCentral()
@@ -56,7 +54,7 @@ pluginManagement {
 
 ### 1.2 `dependencyResolutionManagement` 仓库顺序
 
-与 `pluginManagement` 类似，但额外注意：
+与 `pluginManagement` 类似，但额外注意加 `jitpack.io`：
 
 ```kotlin
 dependencyResolutionManagement {
@@ -75,28 +73,7 @@ dependencyResolutionManagement {
 }
 ```
 
-### 1.3 为什么阿里云不能代理 Gradle Plugin Portal
-
-Gradle Plugin Portal 使用特殊的 **Plugin Marker POM** 格式：
-
-```
-请求: io.github.lnzz123:combolite-aar2apk:1.1.1
-  → Portal 返回 Marker POM:
-    <groupId>io.github.lnzz123</groupId>
-    <artifactId>combolite-aar2apk</artifactId>
-    <version>1.1.1</version>
-    → 其中 <dependencies> 指向实际插件:
-      <groupId>io.github.lnzz123</groupId>
-      <artifactId>combolite-aar2apk.gradle.plugin</artifactId>
-      <version>1.1.1</version>
-
-阿里云 gradle-plugin 镜像:
-  → 只缓存标准 Maven 坐标 (group:artifact:version)
-  → 不理解 Plugin Marker POM 的间接引用机制
-  → 返回 404 或空结果
-```
-
-### 1.4 ComboLite 依赖坐标参考
+### 1.3 ComboLite 依赖坐标参考
 
 | 依赖 | Group ID | Artifact ID | 版本 | 仓库 |
 |------|----------|-------------|------|------|
@@ -107,15 +84,12 @@ Gradle Plugin Portal 使用特殊的 **Plugin Marker POM** 格式：
 
 ## 二、版本管理
 
-### 2.1 当前依赖版本（libs.versions.toml）
-
 | 依赖 | 版本 | 用途 |
 |------|------|------|
 | combolite (core) | 2.0.2 | ComboLite 核心 runtime |
 | combolite-aar2apk | 1.1.1 | AAR→APK 转换 Gradle 插件 |
 
-### 2.2 升级注意事项
-
+**升级注意事项**：
 - **combolite-core 升级时必须同步检查**：新版本是否引入了新的 `::function.javaMethod` 使用点（需要 R8 保持禁用）
 - **aar2apk 插件升级时必须检查**：是否引入了新的 buildType 或 DSL 变更
 - **两者版本独立**：core 和 aar2apk 有独立的版本号体系，不需要保持一致
@@ -124,18 +98,9 @@ Gradle Plugin Portal 使用特殊的 **Plugin Marker POM** 格式：
 
 ## 三、AGP 构建选项约束
 
-### 3.1 isMinifyEnabled 与 isShrinkResources 硬耦合
+### 3.1 `isMinifyEnabled` 与 `isShrinkResources` 硬耦合
 
 **AGP（Android Gradle Plugin）在配置阶段强制检查：`isShrinkResources=true` 必须配合 `isMinifyEnabled=true`。**
-
-```kotlin
-// AGP 源码: AndroidResourcesCreationConfigImpl.kt:91
-if (!buildType.isMinifyEnabled && androidResources.shrink) {
-    issueReporter.reportError(
-        "Removing unused resources requires unused code shrinking to be turned on."
-    )
-}
-```
 
 **原因**：ResourceShrinker 的依赖图分析需要 R8/ProGuard 先生成完整的类→资源映射文件。
 
@@ -148,84 +113,40 @@ if (!buildType.isMinifyEnabled && androidResources.shrink) {
 | C | `false` | `true` | ❌ AGP EvalException（CI 实测确认） |
 | D | `true` | `false` | ⚠️ 技术可行但无意义（代码 shrink 不 shrink resource） |
 
-### 错误 D：「单独开启 isShrinkResources」
-
-> **症状**：`EvalIssueException: Removing unused resources requires unused code shrinking to be turned on.`
-> **根因**：AGP 源码级硬约束，无法绕过
-> **修复**：两者同时为 `false`（ComboLite 项目），或同时为 `true`（非 ComboLite 项目）
+> **错误 C**：「单独开启 isShrinkResources」→ 报 `EvalIssueException: Removing unused resources requires unused code shrinking to be turned on.` → **AGP 源码级硬约束，无法绕过**
 
 ---
 
 ## 四、常见错误模式
 
-### 错误 A：「pluginManagement 中 gradlePluginPortal 放在末尾」
-
-> **症状**：CI 构建 `Plugin [id: 'xxx', version: 'x.y.z'] was not found in any of the following sources`
-> **根因**：阿里云镜像先被搜索且返回空/超时，gradlePluginPortal 来不及 fallback
-> **修复**：将 `google()` 和 `gradlePluginPortal()` 移到列表前 3 位
-
-### 错误 B：「遗漏 jitpack.io」
-
-> **症状**：某些第三方库（如 ComboLite）在 dependencyResolutionManagement 中找不到
-> **根因**：ComboLite 发布在 JitPack 上，不在 Maven Central
-> **修复**：`dependencyResolutionManagement.repositories` 中添加 `maven { url = uri("https://jitpack.io") }`
-
-### 错误 C：「find path 排除 build.gradle.kts 文件」
-
-> **症状**：CI guard 从未真正检查过构建配置文件
-> **根因**：`find ... -not -path "*build*"` 把 `build.gradle.kts` 也排除了（文件名含 "build"）
-> **修复**：使用 `-not -path "*/build/*"` （只排除目录）
+| 错误 | 症状 | 根因 | 修复 |
+|------|------|------|------|
+| **A** | `Plugin [id: 'xxx', version: 'x.y.z'] was not found` | `gradlePluginPortal` 放在阿里云镜像后 → 镜像先返回空/超时，gradlePluginPortal 来不及 fallback | 将 `google()` 和 `gradlePluginPortal()` 移到列表前 3 位 |
+| **B** | ComboLite 找不到 | `dependencyResolutionManagement` 没加 `jitpack.io`（ComboLite 发在 JitPack） | 加 `maven { url = uri("https://jitpack.io") }` |
+| **C** | EvalIssueException | `isShrinkResources=true` 但 `isMinifyEnabled=false` | 两者同时为 `false`（ComboLite 项目） |
 
 ---
 
-## 五、gomobile + sqlite 选型铁律（plugin-openlist 必读）
+## 五、gomobile + sqlite 选型铁律
 
-> **核心原则：gomobile bind 产物（AAR 内的 libgojni.so）若引入 sqlite，必须用 `github.com/glebarez/sqlite`（pure-Go），禁止 `gorm.io/driver/sqlite` / `mattn/go-sqlite3`（CGO）。**
+> ⚠️ **plugin-openlist 必读**：gomobile bind 产物（AAR 内的 libgojni.so）若引入 sqlite，**必须用 `github.com/glebarez/sqlite`（pure-Go）**，禁止 `gorm.io/driver/sqlite` / `mattn/go-sqlite3`（CGO）。
 
-### 5.1 为什么 mattn/go-sqlite3 在 gomobile 路径下是雷
+**核心铁律**：
+1. **SHALL** 导入 `github.com/glebarez/sqlite`
+2. **SHALL NOT** 导入 `gorm.io/driver/sqlite`（其内部链入 mattn）
+3. **SHALL NOT** 直接导入 `github.com/mattn/go-sqlite3`
 
-`github.com/mattn/go-sqlite3` 是 **CGO 绑定驱动**——通过 `#cgo` 指令桥接 C 语言版的 `sqlite3.c`：
+**为什么 mattn 是雷**：`mattn/go-sqlite3` 是 CGO 绑定驱动——通过 `#cgo` 指令桥接 C 语言版的 `sqlite3.c`，编译要求 `CGO_ENABLED=1` + 主机 gcc/clang，gomobile bind 表现必须配 NDK clang（常见 `-fPIC` / `setresuid` / musl 报错），AAR 体积 ~42 MB。
 
-| 维度 | mattn/go-sqlite3（CGO） | glebarez/sqlite（pure-Go） |
-|------|------------------------|---------------------------|
-| 编译要求 | `CGO_ENABLED=1` + 主机 gcc/clang | `CGO_ENABLED=0` 也可 |
-| 跨 ABI 稳定性 | 依赖目标平台 libc / NDK toolchain | 零系统依赖，arm64-v8a ELF 跨设备一致 |
-| gomobile bind 表现 | 必须给 gomobile 配 NDK clang，否则 host gcc 产错 ELF；常见 `-fPIC` / `setresuid` / musl 报错 | 直接 `go build` 产出，零摩擦 |
-| AAR 体积 | ~42 MB（带 SQLite C 静态库） | ~30 MB（纯 Go transpiled 字节码） |
-| 写性能 | 100% 基准 | 70-80%（OpenList 元数据场景不可感知） |
-| 与上游 OpenList API | 100% 兼容 | 100% 兼容（同 GORM Dialector 接口） |
+**glebarez 优势**：纯 Go 字节码，`CGO_ENABLED=0` 也可，零系统依赖，arm64-v8a ELF 跨设备一致，AAR ~30 MB，写性能 70-80%（元数据场景不可感知）。
 
-### 5.2 铁律
+**完整对比 + 验证命令 + 历史踩坑** → 详见 [详情文档 §五](../rule-library/android.md#五gomobile--sqlite-选型铁律plugin-openlist-必读)
 
-> 任何走 `gomobile bind` 路径产出的 Go 代码（即 `libgojni.so`），如需 sqlite 持久化：
-> 1. **SHALL** 导入 `github.com/glebarez/sqlite`
-> 2. **SHALL NOT** 导入 `gorm.io/driver/sqlite`（其内部链入 mattn）
-> 3. **SHALL NOT** 直接导入 `github.com/mattn/go-sqlite3`
+---
 
-> 非 gomobile 路径的普通 Go 二进制（encv-go 子进程、CLI 工具）目前未强制，但建议一致使用 `glebarez/sqlite` 以减少供应链碎片——见 `implement-mobile-backend-api/spec.md`「本地存储 sqlite 驱动 SHALL 使用 glebarez/sqlite」。
+## 六、引用其他规则
 
-### 5.3 验证
+- [combolite.md](./combolite.md) — R8 禁用铁律源头、kotlin-reflect @Metadata 破坏机制
+- [capacitor.md](./capacitor.md) — Capacitor 项目构建配置参考
 
-```bash
-# 检查 gomobile 路径下是否违规引入 mattn
-cd fork && grep -rln '"github.com/mattn/go-sqlite3"\|"gorm.io/driver/sqlite"' . | head
-# 应为空
-
-# CGO_ENABLED=0 自检
-cd fork && CGO_ENABLED=0 go build ./...
-# 应通过（说明纯 Go）
-```
-
-### 5.4 应急回退（不应走到这一步）
-
-若 fork 仍使用 mattn 且 gomobile 撞 NDK toolchain 兼容坑，`scripts/build-openlist-aar.sh` 内置 **B2 兜底**：
-
-- 自动设 `CC=<NDK>/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang`
-- 强制 `CGO_ENABLED=1`
-- 但这只是「让 CI 跑过」，长期方案仍是切 glebarez（见 `.trae/documents/openlist-aar-sqlite-cgo-multi-solution.md` §三 B1）
-
-### 5.5 历史踩坑
-
-> **症状**：`gomobile bind` 报 `undefined: LogCallback`，补全后下一轮报 `# github.com/mattn/go-sqlite3` 或 `-fPIC` 失败
-> **根因**：fork 用 `gorm.io/driver/sqlite` 链入 mattn CGO 库，gomobile 的 NDK toolchain 默认不开启 CGO 路径解析
-> **修复**：fork 切 `glebarez/sqlite`（A1+B1 路径，spec 主推）；或脚本兜底强 CGO（A2+B2 路径，临时 CI 绿线）
+> 拆分：2026-06-11

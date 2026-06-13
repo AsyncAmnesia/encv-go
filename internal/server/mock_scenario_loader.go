@@ -187,8 +187,15 @@ func (l *ScenarioLoader) parseFile(path string) (*LoadedScenario, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read file: %w", err)
 	}
-	ext := strings.ToLower(filepath.Ext(path))
+	return parseLoadedScenarioBytes(data, path)
+}
+
+// parseLoadedScenarioBytes 从字节解析单个 YAML/JSON 剧本。
+// 文件名仅用于日志/扩展名推断。返回 *LoadedScenario（未转换、未校验）
+// 以便调用方按需 Validate + ConvertToMockScenario。
+func parseLoadedScenarioBytes(data []byte, filename string) (*LoadedScenario, error) {
 	var s LoadedScenario
+	ext := strings.ToLower(filepath.Ext(filename))
 	switch ext {
 	case ".json":
 		if err := json.Unmarshal(data, &s); err != nil {
@@ -293,13 +300,11 @@ func (l *ScenarioLoader) Watch(ctx context.Context) error {
 }
 
 // ════════════════════════════════════════════════════════════════
-// Go Fallback 注入器（在 T3 集成时绑定）
+// 兼容性保留
 // ════════════════════════════════════════════════════════════════
 
-// defaultGoFallback 注入 12 个 v1 + 8 个 v2 内置 Go 字面量剧本。
-// 此函数由 Server 启动时设置（避免循环引用）。
+// defaultGoFallback 保留为占位（向后兼容，调用方已全部切到 mockScenariosBuiltin）。
+// 当前实现：直接复用 package-level 变量。No-op。
 func defaultGoFallback() []*MockScenario {
-	// 复用 NewMockEngine 的 builtin 集合 + v2 scenarios
-	eng := NewMockEngine()
-	return eng.AllScenarios()
+	return mockScenariosBuiltin
 }

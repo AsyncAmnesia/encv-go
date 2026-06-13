@@ -56,6 +56,34 @@
           "default": false,
           "description": "是否严格禁止使用已弃用版本创建容器"
         },
+        "v4_cipher_mode": {
+          "type": "integer",
+          "enum": [0, 1],
+          "default": 0,
+          "title": "v4 Container Cipher Mode",
+          "description": "v4 容器加密算法：0 = AES-128-CTR (默认，推荐)，1 = AES-256-CTR (可选，更高强度)"
+        },
+        "v4_compression_mode": {
+          "type": "string",
+          "enum": ["none", "zstd"],
+          "default": "none",
+          "title": "v4 Container Compression Mode",
+          "description": "v4 容器压缩算法：none = 不压缩（默认），zstd = zstd seekable 压缩（适合纯文本/重复二进制，可节省 30-70% 空间）"
+        },
+        "v4_enable_hmac": {
+          "type": "boolean",
+          "default": true,
+          "title": "v4 Container Enable HMAC",
+          "description": "v4 容器是否启用 HMAC-SHA1-80 完整性校验（防 CTR 比特翻转攻击）。建议开启；旧 v4 容器自动 fallback 到无 HMAC 模式"
+        },
+        "v4_zstd_block_size": {
+          "type": "integer",
+          "default": 65536,
+          "minimum": 1024,
+          "maximum": 1048576,
+          "title": "v4 zstd Block Size",
+          "description": "zstd seekable 压缩块大小（字节）。默认 65536 (64KB)。范围 1KB-1MB。越大压缩率越好但 seek 越慢"
+        },
         "output_path": {
           "type": "string",
           "description": "--- 加密/解密设置 ---\nOutputPath 加密后的文件输出目录。"

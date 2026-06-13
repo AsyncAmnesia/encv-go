@@ -24,6 +24,16 @@ type Config struct {
 	// StrictDeprecatedVersion 是否严格禁止使用已弃用版本创建容器
 	StrictDeprecatedVersion bool `json:"strict_deprecated_version"`
 
+	// --- v4 容器能力 ---
+	// V4CipherMode v4 容器加密算法：0=AES-128-CTR（默认，推荐），1=AES-256-CTR（可选，更高强度）
+	V4CipherMode int `json:"v4_cipher_mode"`
+	// V4CompressionMode v4 容器压缩算法：none=不压缩（默认），zstd=zstd seekable 压缩
+	V4CompressionMode string `json:"v4_compression_mode"`
+	// V4EnableHMAC v4 容器是否启用 HMAC-SHA1-80 完整性校验（防 CTR 比特翻转攻击）
+	V4EnableHMAC bool `json:"v4_enable_hmac"`
+	// V4ZstdBlockSize zstd seekable 压缩块大小（字节），范围 1024-1048576，默认 65536
+	V4ZstdBlockSize int `json:"v4_zstd_block_size"`
+
 	// --- 加密/解密设置 ---
 	// OutputPath 加密后的文件输出目录。
 	OutputPath string `json:"output_path"`
@@ -218,6 +228,10 @@ func DefaultConfig() *Config {
 	return &Config{
 		OutputPath:              "./encrypted",
 		DefaultContainerVersion: 4,
+		V4CipherMode:            0,           // 默认 AES-128-CTR
+		V4CompressionMode:       "none",      // 默认不压缩
+		V4EnableHMAC:            true,        // 默认启用 HMAC-SHA1-80
+		V4ZstdBlockSize:         65536,       // 默认 64KB zstd 块
 		Server:                  types.HttpServer{Port: 1999, Dir: "./"},
 		Webdav: types.WebdavServer{
 			Root: "",

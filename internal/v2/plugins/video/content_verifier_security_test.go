@@ -357,7 +357,8 @@ func TestVerify_TamperedCRC32(t *testing.T) {
 
 		headerSize := int(types.EnvelopeHeaderSize_v4)
 
-		segHeaderSize := 18
+		// DataCRC32 字段在 SegmentHeader 末尾 - 4 字节处（v4 升级布局 34 字节中 offset 18）
+		segHeaderSize := int(types.SegmentHeaderSize)
 		if headerSize+segHeaderSize > len(containerData) {
 			t.Fatalf("V4 container too small for segment header (size=%d)", len(containerData))
 		}

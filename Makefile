@@ -30,8 +30,7 @@ dev-backend:
 
 # 启动后端（移动端预览模式，mobile 配置段作为 overlay 自动生效）
 # ENCV_MOBILE=1 或 ENCV_DEV_PREVIEW=1 均可触发 ApplyMobileOverlay
+# 2026-06-10：不再预生成 mock 数据（Node CLI 脚本已删），由用户主动调后端 /api/mock/generate。
 dev-mobile:
-	@echo "Generating mock data to mobile server.dir..."
-	@cd app/encv-mobile && npx tsx scripts/generate-mock-files.ts --dir /storage/emulated/0
-	@echo "Starting backend (mobile preview mode)..."
+	@echo "Starting backend (mobile preview mode, no mock pre-generation)..."
 	ENCV_MOBILE=1 ENCV_DEV_PREVIEW=1 go run ./cmd/encv start

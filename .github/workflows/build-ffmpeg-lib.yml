@@ -1,0 +1,224 @@
+name: Build FFmpeg Native Libraries
+
+# 与 build-mpv-lib.yml 风格一致：workflow_dispatch 手动触发，
+# 编完后上传到固定 release tag "ffmpeg-native-libs"（overwrite_files: true）。
+# 主工作流 android.yml 直接下载该 release 产物，不在主工作流内编 ffmpeg。
+#
+# 为什么单独工作流：
+#   - ffmpeg 交叉编译 30-60min，从主工作流拆出来大幅降低主编译时长
+#   - 失败隔离：ffmpeg 编译失败不阻塞主 APK 构建
+#   - 多 ABI 共享同一 release，避免重复编译
+#   - cache 命中率更高（脚本 + manifest 变化才全量重编）
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch / ref to build (default: current)'
+        required: false
+        default: ''
+        type: string
+      ffmpeg_abi:
+        description: 'Android ABI'
+        required: false
+        default: 'arm64-v8a'
+        type: choice
+        options:
+          - arm64-v8a
+          - x86_64
+          - armeabi-v7a
+      ffmpeg_api:
+        description: 'Android API level'
+        required: false
+        default: '24'
+        type: string
+
+env:
+  NDK_VERSION: "26.1.10909125"
+  FFMPEG_LIB_VERSION: "1.0.0"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # 必需：写 release
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch || github.ref_name }}
+          submodules: recursive
+
+      - name: Setup Go (for libffmpeg-worker.so)
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ./go.mod
+          cache-dependency-path: ./go.sum
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Cache Android NDK
+        id: cache-ndk
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_HOME }}/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}-v1
+
+      - name: Install Android NDK
+        if: steps.cache-ndk.outputs.cache-hit != 'true'
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+        run: |
+          echo "y" | sdkmanager --install "ndk;${{ env.NDK_VERSION }}" > /dev/null 2>&1
+          echo "✅ NDK installed"
+
+      # === ffmpeg-builder 源码 cache（focal + lame + ffmpeg tarball 复用） ===
+      - name: Cache ffmpeg-builder sources
+        id: cache-src
+        uses: actions/cache@v4
+        with:
+          path: app/encv-mobile/build/ffmpeg/android-${{ inputs.ffmpeg_abi }}/src
+          key: ffmpeg-sources-v1-${{ inputs.ffmpeg_abi }}
+          restore-keys: |
+            ffmpeg-sources-v1-${{ inputs.ffmpeg_abi }}
+            ffmpeg-sources-v1-
+
+      # === ffmpeg-builder build cache（deps-install + ffmpeg-install + fftools-build） ===
+      - name: Cache ffmpeg-builder build intermediates
+        id: cache-build
+        uses: actions/cache@v4
+        with:
+          path: |
+            app/encv-mobile/build/ffmpeg/android-${{ inputs.ffmpeg_abi }}/deps-install
+            app/encv-mobile/build/ffmpeg/android-${{ inputs.ffmpeg_abi }}/ffmpeg-install
+            app/encv-mobile/build/ffmpeg/android-${{ inputs.ffmpeg_abi }}/fftools-build
+            app/encv-mobile/build/ffmpeg/android-${{ inputs.ffmpeg_abi }}/BUILD_ROOT
+          key: ffmpeg-build-v${{ env.FFMPEG_LIB_VERSION }}-${{ inputs.ffmpeg_abi }}-${{ inputs.ffmpeg_api }}-${{ hashFiles('app/encv-mobile/scripts/ffmpeg-feature-manifest.json', 'app/encv-mobile/scripts/ffmpeg-builder/**/*.sh', 'app/encv-mobile/scripts/ffmpeg-builder/Makefile') }}
+          restore-keys: |
+            ffmpeg-build-v${{ env.FFMPEG_LIB_VERSION }}-${{ inputs.ffmpeg_abi }}-${{ inputs.ffmpeg_api }}-
+
+      - name: Show disk space before build
+        run: df -h
+
+      - name: Build ffmpeg via ffmpeg-builder
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/${{ env.NDK_VERSION }}
+        run: |
+          cd app/encv-mobile
+          set -o pipefail
+          make android \
+            ANDROID_ABI=${{ inputs.ffmpeg_abi }} \
+            ANDROID_API=${{ inputs.ffmpeg_api }} \
+            2>&1 | tee /tmp/ffmpeg-build.log
+        timeout-minutes: 90
+
+      - name: Verify output artifacts
+        if: success()
+        run: |
+          set -e
+          OUT_DIR="app/encv-mobile/android/app/src/main/jniLibs/${{ inputs.ffmpeg_abi }}"
+
+          # 1) 必需文件存在
+          for f in libffmpeg.so libffprobe.so libffmpeg-worker.so build-info.json; do
+            if [ ! -f "$OUT_DIR/$f" ]; then
+              echo "::error::Missing artifact: $OUT_DIR/$f"
+              exit 1
+            fi
+            SIZE=$(ls -lh "$OUT_DIR/$f" | awk '{print $5}')
+            echo "  ✅ $f ($SIZE)"
+          done
+
+          # 2) 必需导出符号
+          NM="${{ env.ANDROID_HOME }}/ndk/${{ env.NDK_VERSION }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+
+          for sym in ffmpeg_run ffmpeg_reset; do
+            if ! $NM -D "$OUT_DIR/libffmpeg.so" | grep -q " ${sym}$"; then
+              echo "::error::libffmpeg.so missing symbol: $sym"
+              exit 1
+            fi
+            echo "  ✅ libffmpeg.so: $sym"
+          done
+
+          for sym in ffprobe_run ffprobe_reset; do
+            if ! $NM -D "$OUT_DIR/libffprobe.so" | grep -q " ${sym}$"; then
+              echo "::error::libffprobe.so missing symbol: $sym"
+              exit 1
+            fi
+            echo "  ✅ libffprobe.so: $sym"
+          done
+
+          if ! $NM -D "$OUT_DIR/libffmpeg-worker.so" | grep -q " main$"; then
+            echo "::error::libffmpeg-worker.so missing 'main' symbol"
+            exit 1
+          fi
+          echo "  ✅ libffmpeg-worker.so: main"
+
+          # 3) build-info.json 关键字段
+          jq -e '.ffmpeg_version, .external_libs, .abi' "$OUT_DIR/build-info.json" > /dev/null
+          echo "  ✅ build-info.json schema valid"
+
+          echo ""
+          echo "=== Summary ==="
+          cat "$OUT_DIR/build-info.json" | jq '{
+            ffmpeg_version: .ffmpeg_version,
+            external_libs: .external_libs,
+            abi: .abi,
+            api_level: .api_level,
+            target_os: .target_os,
+            encoders: .enabled_encoders | length,
+            decoders: .enabled_decoders | length,
+            manifest_sha256: .manifest_sha256
+          }'
+
+      - name: Package jniLibs as zip
+        if: success()
+        run: |
+          cd app/encv-mobile/android/app/src/main/jniLibs
+          ZIP_NAME="ffmpeg-jniLibs-${{ inputs.ffmpeg_abi }}-v${{ env.FFMPEG_LIB_VERSION }}.zip"
+          zip -r9 "${{ runner.temp }}/$ZIP_NAME" "${{ inputs.ffmpeg_abi }}/"
+          echo "📦 Package created:"
+          unzip -l "${{ runner.temp }}/$ZIP_NAME"
+          echo "zip_path=${{ runner.temp }}/$ZIP_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Upload FFmpeg build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-build-logs
+          path: |
+            app/encv-mobile/build/ffmpeg/android-${{ inputs.ffmpeg_abi }}/logs
+            /tmp/ffmpeg-build.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload to GitHub Release (ffmpeg-native-libs)
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ffmpeg-native-libs
+          name: "FFmpeg Native Libraries (auto-generated)"
+          body: |
+            Auto-generated FFmpeg native libraries for Android.
+            **Do not manually edit this release.**
+
+            - Generated by: `build-ffmpeg-lib` workflow
+            - Commit: `${{ github.sha }}`
+            - ABI: `${{ inputs.ffmpeg_abi }}`
+            - API level: `${{ inputs.ffmpeg_api }}`
+            - Triggered by: `${{ github.actor }}`
+
+            Consumed by `android.yml` workflow via tag `ffmpeg-native-libs`.
+          overwrite_files: true
+          files: ${{ steps.package.outputs.zip_path }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cleanup local jniLibs (避免污染主工作流)
+        if: always()
+        run: |
+          # 注意：cache 路径在 build/ 下不冲突，但 jniLibs/ 是 gitignore 文件路径
+          # 清理防止 commit 时误带
+          rm -rf app/encv-mobile/android/app/src/main/jniLibs/${{ inputs.ffmpeg_abi }}
+          echo "✅ jniLibs cleaned"

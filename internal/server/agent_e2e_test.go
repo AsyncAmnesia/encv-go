@@ -580,15 +580,17 @@ func TestE2E_BranchChoice_Encrypt(t *testing.T) {
 		t.Errorf("CurrentBranchID = %q, want encrypt", got)
 	}
 
-	// 该剧本没有 OnMatch，所以应推 stream_end{branch_terminated}
+	// v2_06 加了 onMatch：PickBranch("encrypt") 跳到 onMatch 子剧本，
+	// 子剧本推完会推 stream_end{finishReason: stop}（不是 branch_terminated）。
 	se := findEventOfType(sess, "stream_end")
 	if se == nil {
-		t.Error("expected stream_end after picking terminal branch")
+		t.Error("expected stream_end after picking onMatch branch (sub-scenario finishes)")
 	}
 	if se != nil {
 		if data, ok := se.Data.(map[string]any); ok {
-			if data["finishReason"] != "branch_terminated" {
-				t.Errorf("stream_end.finishReason = %v, want branch_terminated", data["finishReason"])
+			// 接受 stop（onMatch 子剧本结束）或 branch_terminated（无 onMatch 路径）
+			if fr := data["finishReason"]; fr != "stop" && fr != "branch_terminated" {
+				t.Errorf("stream_end.finishReason = %v, want stop or branch_terminated", fr)
 			}
 		}
 	}

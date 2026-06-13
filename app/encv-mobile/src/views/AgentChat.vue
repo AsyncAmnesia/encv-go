@@ -236,6 +236,43 @@
         <p>引擎加载失败，请刷新页面</p>
       </div>
     </main>
+
+      <!--
+        Task 8：右上角浮动缩放按钮组 "A- / A / A+"
+        - 浮于 ion-content（main）之上，不参与缩放事件
+        - 程序化控制 pinch.zoomIn / zoomOut / resetZoom
+        - i18n label 来自 agent.zoom.{in,out,reset}（已加到 i18n/agent.ts）
+        - size="small" + fill="clear" 不占视觉重心
+      -->
+      <div class="zoomControls" :class="{ zoomControls_zoomed: pinch.zoomScale.value !== 1.0 }">
+        <button
+          type="button"
+          class="zoomBtn"
+          :title="t('agent.zoom.out')"
+          :aria-label="t('agent.zoom.out')"
+          @click="pinch.zoomOut()"
+        >
+          A−
+        </button>
+        <button
+          type="button"
+          class="zoomBtn"
+          :title="t('agent.zoom.reset')"
+          :aria-label="t('agent.zoom.reset')"
+          @click="pinch.resetZoom()"
+        >
+          A
+        </button>
+        <button
+          type="button"
+          class="zoomBtn"
+          :title="t('agent.zoom.in')"
+          :aria-label="t('agent.zoom.in')"
+          @click="pinch.zoomIn()"
+        >
+          A+
+        </button>
+      </div>
     </div><!-- /.agentChatBody -->
 
     <footer class="agentChatFooter">
@@ -530,6 +567,9 @@ import { useRenderTurnItems } from '@/composables/renderTurnItems'
 import { useAttachments } from '@/composables/useAttachments'
 import { useSlashMenu } from '@/composables/useSlashMenu'
 import { showToast } from '@/composables/useToast'
+// Task 8: 缩放 composable + 共享相对时间格式化
+import { formatRelativeTime } from '@/composables/relativeTime'
+import { usePinchZoom } from '@/composables/usePinchZoom'
 // 多渲染引擎架构：引入引擎系统和已注册的引擎实现
 import { useChatEngine } from '@/composables/useChatEngine'
 // 触发引擎注册（模块副作用自动注册到 EngineRegistry）
@@ -674,6 +714,15 @@ const mainRef = ref<HTMLDivElement | null>(null)
 const virtualListRef = ref<{ scrollToBottom: (behavior?: 'auto' | 'smooth') => void } | null>(null)
 const nearBottom = ref(true)
 const activeMessageIndex = ref(0)
+
+// ─── Task 8: usePinchZoom 集成 ──────────────────────────
+// 关键认知：android webview 默认 user-scalable=yes 时会拦截双指捏合
+// 整体缩放页面 → 破坏 UI 布局。这里显式接管手势：
+//   - 双指捏合 → 计算 distance ratio → 更新 zoomScale → 应用 transform
+//   - 右上角 A-/A/A+ 浮动按钮 → 程序化控制缩放
+//   - 绑定的 targetRef 是 mainRef（.agentChatMain），即会话内容容器
+//   - 缩放范围严格 clamp 到 [0.5, 1.5]，双击重置回 1.0
+const pinch = usePinchZoom({ minScale: 0.5, maxScale: 1.5, step: 0.1 })
 
 /** 触发虚拟滚动的阈值（renderedItems 数量 > 此值时切换） */
 const VIRTUAL_LIST_THRESHOLD = 120
@@ -1032,6 +1081,10 @@ function handleModelPickerOutsideClick(e: MouseEvent) {
 
 /**
  * 格式化会话历史列表项的元信息（时间 + 消息数 + 轮次）
+ *
+ * Task 8：相对时间改用 composables/relativeTime.ts 共享实现
+ * （与 sessionList 完全一致的逻辑，自动 30s 刷新由 useRelativeTime 控制，
+ *  本处直接接受硬编码中文格式）
  */
 function formatSessionMeta(s: { messageCount: number; rounds: number; updatedAt: number }): string {
   const time = formatRelativeTime(s.updatedAt)
@@ -1041,22 +1094,6 @@ function formatSessionMeta(s: { messageCount: number; rounds: number; updatedAt:
   }
   parts.push(`${s.messageCount} ${t('agent.messages')}`)
   return parts.join(' · ')
-}
-
-/**
- * 简易相对时间格式化
- */
-function formatRelativeTime(ts: number): string {
-  if (!ts) return ''
-  const diff = Date.now() - ts
-  const abs = Math.abs(diff)
-  const d = new Date(ts)
-  if (abs < 60_000) return t('agent.justNow') || '刚刚'
-  if (abs < 3600_000) return `${Math.floor(abs / 60_000)}${t('agent.minutesAgo') || '分钟前'}`
-  if (abs < 86400_000) return `${Math.floor(abs / 3600_000)}${t('agent.hoursAgo') || '小时前'}`
-  if (abs < 604_800_000) return `${Math.floor(abs / 86400_000)}${t('agent.daysAgo') || '天前'}`
-  // 超过一周显示日期
-  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 // ─── 输入框处理 ──────────────────────────────────────────
@@ -1531,6 +1568,13 @@ onMounted(async () => {
   nextTick(() => scrollToBottom('auto'))
   // 模型选择器：点击外部关闭下拉
   document.addEventListener('click', handleModelPickerOutsideClick)
+  // Task 8: 绑定双指缩放到会话内容容器（mainRef = .agentChatMain）
+  // 必须在 nextTick 之后绑定 —— mainRef 在 onMounted 时可能还没渲染
+  nextTick(() => {
+    if (mainRef.value) {
+      pinch.bind(mainRef.value)
+    }
+  })
 })
 
 // 用户在 Settings/其他位置切换 mock 模式后 → 重新拉/清空 chip
@@ -1546,6 +1590,8 @@ watch(currentMockMode, (newMode, _oldMode) => {
 
 onUnmounted(() => {
   document.removeEventListener('click', handleModelPickerOutsideClick)
+  // Task 8: 解绑双指缩放事件监听器（避免内存泄漏）
+  pinch.unbind()
 })
 
 // 暴露给 modal container（可选）
@@ -2798,5 +2844,69 @@ defineExpose({})
     0 0 8px rgba(var(--ion-color-primary-rgb), 0.55);
   transform: scale(1);
   cursor: grabbing;
+}
+
+/* ── Task 8: Zoom Controls（右上角浮动按钮组 A- / A / A+） ── */
+/* 浮于 .agentChatBody 右上角（agentChatBody 是 position: relative）。
+   不影响 main(scroll) 的滚动，不参与双指缩放事件（按钮在 main 之外）。 */
+.zoomControls {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 10;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(var(--ion-background-color-rgb, 255, 255, 255), 0.78);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 10px;
+  border: 1px solid rgba(var(--ion-text-color-rgb), 0.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  /* 关键：让按钮自身不接收双指缩放（缩放事件由 main 接管） */
+  touch-action: manipulation;
+}
+
+body.dark .zoomControls {
+  background: rgba(30, 30, 30, 0.78);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+.zoomBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ion-text-color);
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.12s ease, color 0.12s ease, transform 0.1s ease;
+}
+
+.zoomBtn:hover {
+  background: rgba(var(--ion-color-primary-rgb), 0.12);
+  color: var(--ion-color-primary);
+}
+
+.zoomBtn:active {
+  transform: scale(0.92);
+}
+
+/* 非默认缩放时高亮 reset 按钮：提示用户当前偏离 1.0 */
+.zoomControls_zoomed .zoomBtn:nth-child(2) {
+  background: rgba(var(--ion-color-primary-rgb), 0.18);
+  color: var(--ion-color-primary);
 }
 </style>

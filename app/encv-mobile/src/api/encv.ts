@@ -1,8 +1,46 @@
 const SERVER_URL_KEY = 'encv-server-url'
 export const DEFAULT_API_BASE_URL = 'http://127.0.0.1:2025'
+// 🆕 2026-06-10 沙箱 OpenPreview 浏览器专用：必须用**同源** fetch。
+//   - OpenPreview 浏览器在 agent-tool-host 上，访问 127.0.0.1/localhost
+//     解析到 agent-tool-host 自己的端口（不存在 :16666）→ 永远 connect refused
+//   - trae 反代已经把 trae.cn/api/* 完整代理到 :16000 → :16666 → :2025
+//     （curl -s http://127.0.0.1:16000/api/config 直接 200，proxy 链路 OK）
+//   - 所以 sandbox 浏览器下 baseUrl 必须是**同源**（window.location.origin），
+//     fetch 走同源相对 URL，让 trae 反代处理；或者直接返回 '' 让浏览器补 origin
+//   - 沙箱本地（非 OpenPreview）的 loopback 浏览器走原 127.0.0.1:16666 路径
+//   - APK 真机（capacitor://）直连 127.0.0.1:2025
+export const DEV_SANDBOX_ENTRY = 'http://127.0.0.1:16666'
+
+/** 判断当前是否在 OpenPreview 浏览器（agent-tool-host 提供的 trae 域名 mock 浏览器）
+ *
+ * 🆕 2026-06-10 修复：把 trae 反代端口 16000 也算上
+ *   背景：trae 反代 16000 不支持 WebSocket upgrade，OpenPreview 工具激活时
+ *   location 可能是 `http://127.0.0.1:16000`（trae 把页面代理到 16000），
+ *   这种情况下 origin.hostname === '127.0.0.1'，原 trae 域名正则匹配不到。
+ *   必须靠端口 16000 嗅探。
+ */
+export function isOpenPreviewBrowser(): boolean {
+  if (typeof window === 'undefined' || !window.location) return false
+  const origin = window.location.origin
+  const port = window.location.port
+  return (
+    /trae\.cn$/i.test(origin) ||
+    /agent-sandbox/i.test(origin) ||
+    /^run-agent-/i.test(origin) ||
+    port === '16000'  // 🆕 trae 反代端口
+  )
+}
 
 export function getApiBaseUrl(): string {
-  if (import.meta.env.DEV) return ''
+  if (import.meta.env.DEV) {
+    // OpenPreview 浏览器（trae 域名）→ 必须同源，让 trae 反代处理
+    if (isOpenPreviewBrowser()) {
+      return typeof window !== 'undefined' ? window.location.origin : ''
+    }
+    const stored = localStorage.getItem(SERVER_URL_KEY)
+    if (stored) return stored
+    return DEV_SANDBOX_ENTRY
+  }
   return localStorage.getItem(SERVER_URL_KEY) || DEFAULT_API_BASE_URL
 }
 
@@ -278,14 +316,29 @@ export async function checkServerStatus(): Promise<{ online: boolean; error?: st
 }
 
 export async function deleteFile(path: string): Promise<void> {
+  // 🆕 2026-06-10 修复 #1：deleteFile 500 错误没有可读 message
+  // 历史 bug：只 throw "HTTP error! status: 500" → 用户看到红色 toast 不知道为啥
+  // 修复：把 response body 的 error 字段也读出来，throw 带详细 message
   console.debug('[API] deleteFile:', path)
   const baseUrl = getApiBaseUrl()
   const response = await fetch(`${baseUrl}/api/files?path=${proxySafeEncode(path)}`, {
     method: 'DELETE',
   })
   if (!response.ok) {
-    console.error('[API] deleteFile failed:', response.status)
-    throw new Error(`HTTP error! status: ${response.status}`)
+    // 4xx/5xx 都尝试读 JSON body（后端 writeServiceErrorGin 总是返回 {error: ...}）
+    let detail = ''
+    try {
+      const data = await response.json()
+      detail = data?.error || data?.message || ''
+    } catch {
+      // body 不是 JSON — 读 raw text
+      try { detail = (await response.text()).slice(0, 200) } catch { /* noop */ }
+    }
+    const fullMsg = detail
+      ? `[API] deleteFile failed: ${response.status} ${response.statusText} — ${detail}`
+      : `[API] deleteFile failed: ${response.status} ${response.statusText}`
+    console.error(fullMsg, { path, status: response.status })
+    throw new Error(detail || `HTTP error! status: ${response.status}`)
   }
 }
 
@@ -328,10 +381,11 @@ export async function uploadFile(targetPath: string, file: File): Promise<FileIt
 export interface ServiceGuardResult {
   ready: boolean
   servingDir: string
-  marker?: string
-  found?: string[]
+  expected: string
+  envDevPreview?: boolean
+  envMobile?: boolean
   detail?: string
-  hint?: string
+  remediation?: Array<{ scenario: string; command?: string; steps?: string[]; explain?: string }>
   error?: string
 }
 
@@ -403,6 +457,14 @@ export interface EncvTask {
   steps?: TaskStep[]
   createdAt: string
   completedAt?: string
+  // 🆕 2026-06-10 修复 v4：triggeredBy + runId 直接放 task 对象上
+  // 历史：分组依赖 localStorage.useTaskTrigger，跨 session / localStorage 清空后全失效
+  //   → 「任务组只在一开始的时候正确显示」+「插件没正确识别，任务依旧全部平铺」
+  // 修复：这两个字段在 submitAction 返回时就写到 task 对象上，不再只存 localStorage
+  //   - 当前 session：直接读 t.triggeredBy / t.runId（O(1) 内存访问）
+  //   - 跨 session：localStorage 作 fallback（旧 task 没有这 2 字段，try useTaskTrigger）
+  triggeredBy?: 'user' | 'automation' | 'ai_agent'
+  runId?: string
 }
 
 export async function getTasks(): Promise<EncvTask[]> {
@@ -424,12 +486,16 @@ export async function createTask(
   pluginName?: string,
   extraFields?: Record<string, string>,
   secondaryPassword?: string,
+  cipherMode?: number,
+  compressionMode?: 'none' | 'zstd',
 ): Promise<EncvTask> {
   console.info('[API] createTask:', type, sourcePath, targetPath || '',
     'hasPassword:', !!password, 'version:', version ?? 'default',
     'pluginName:', pluginName ?? 'auto',
     'hasExtraFields:', extraFields && Object.keys(extraFields).length > 0,
-    'hasSecondaryPassword:', !!secondaryPassword)
+    'hasSecondaryPassword:', !!secondaryPassword,
+    'cipherMode:', cipherMode ?? 0,
+    'compressionMode:', compressionMode ?? 'none')
   const baseUrl = getApiBaseUrl()
   const body: Record<string, unknown> = { type, sourcePath }
   if (targetPath) body.targetPath = targetPath
@@ -438,6 +504,8 @@ export async function createTask(
   if (pluginName) body.pluginName = pluginName
   if (extraFields && Object.keys(extraFields).length > 0) body.extraFields = extraFields
   if (secondaryPassword) body.secondaryPassword = secondaryPassword
+  if (cipherMode !== undefined) body.cipherMode = cipherMode
+  if (compressionMode !== undefined) body.compressionMode = compressionMode
   const response = await fetch(`${baseUrl}/api/tasks`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -934,6 +1002,26 @@ export async function fetchContainerVersions(): Promise<ContainerVersionsRespons
   const response = await fetch(`${baseUrl}/api/container/versions`)
   if (!response.ok) throw new Error('Failed to fetch container versions')
   return response.json()
+}
+
+export interface WebDavLocalInfo {
+  enabled: boolean
+  authRequired: boolean
+  username: string
+  password: string
+  webdavPath: string
+  serverBaseUrl: string
+}
+
+/**
+ * 拉取后端本地 webdav endpoint 元信息（账号/密码/是否启用）
+ * 用于构造 Basic Auth header，避免触发浏览器 401 弹窗
+ */
+export async function fetchWebDavLocalInfo(): Promise<WebDavLocalInfo> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/webdav/local-info`)
+  if (!response.ok) throw new Error(`Failed to fetch webdav local info: ${response.status}`)
+  return response.json() as Promise<WebDavLocalInfo>
 }
 
 export type DecryptErrorCode = 'wrong_password' | 'data_corrupted' | 'decrypt_failed' | 'deprecated_version'
