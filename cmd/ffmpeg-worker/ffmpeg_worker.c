@@ -37,7 +37,9 @@ static void setup_timeout(int timeout_ms) {
     if (timeout_ms <= 0) return;
     struct sigaction sa = {.sa_handler = timeout_sig_handler};
     sigaction(SIGALRM, &sa, NULL);
-    ualarm((unsigned int)timeout_ms * 1000, 0);
+    // Android NDK 只支持秒级 alarm
+     unsigned int seconds = (timeout_ms + 999) / 1000;
+     alarm(seconds > 0 ? seconds : 1);
 }
 
 // ========== 极简 JSON 解析（无依赖，专门针对我们的协议） ==========
