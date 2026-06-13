@@ -77,16 +77,6 @@
             </ion-label>
           </ion-item>
           <ion-item>
-            <ion-icon :icon="hardwareChipOutline" slot="start"></ion-icon>
-            <ion-label>
-              <div class="lib-title-row">
-                <h3 class="lib-name">x264</h3>
-                <ion-badge color="medium" class="lib-badge version-badge">{{ buildInfo.x264_version }}</ion-badge>
-                <ion-badge color="danger" class="lib-badge license-badge">{{ buildInfo.x264_license }}</ion-badge>
-              </div>
-            </ion-label>
-          </ion-item>
-          <ion-item>
             <ion-icon :icon="constructOutline" slot="start"></ion-icon>
             <ion-label>
               <h3>{{ t('engine.ndkVersion') }}</h3>
@@ -272,19 +262,6 @@
               </div>
             </ion-accordion>
           </ion-accordion-group>
-        </ion-list>
-
-        <ion-list v-if="buildInfo.x264_configure_opts">
-          <ion-list-header>
-            <ion-label>x264</ion-label>
-          </ion-list-header>
-          <ion-item>
-            <ion-icon :icon="hardwareChipOutline" slot="start"></ion-icon>
-            <ion-label class="ion-text-wrap">
-              <h3>{{ t('engine.configureOpts') }}</h3>
-              <p class="mono-text cflags-text">{{ buildInfo.x264_configure_opts }}</p>
-            </ion-label>
-          </ion-item>
         </ion-list>
       </template>
     </ion-content>
