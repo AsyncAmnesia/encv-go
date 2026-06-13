@@ -167,7 +167,9 @@ if [ ! -f "${OGG_INSTALL}/lib/libogg.a" ]; then
     curl -fSL "https://downloads.xiph.org/releases/ogg/libogg-${OGG_VERSION}.tar.xz" \
         -o libogg.tar.xz || { echo "❌ Failed to download libogg"; exit 1; }
     tar xf libogg.tar.xz && rm libogg.tar.xz || { echo "❌ Failed to extract libogg"; exit 1; }
-    OGG_SRC_DIR=$(find "${BUILD_DIR}" -maxdepth 1 -type d -name "ogg-*" | head -1)
+    # Xiph.org 解压目录名历史上是 libogg-X.Y.Z（带 lib- 前缀），但其他项目可能只叫 ogg-X.Y.Z
+    # 兜底匹配：任何含 ogg 的顶层目录
+    OGG_SRC_DIR=$(find "${BUILD_DIR}" -maxdepth 1 -type d -name "*ogg*" | head -1)
     if [ -z "$OGG_SRC_DIR" ]; then
         echo "❌ libogg source directory not found after extraction"
         ls -la "${BUILD_DIR}"
@@ -216,7 +218,9 @@ if [ ! -f "${FLAC_INSTALL}/lib/libFLAC.a" ]; then
     curl -fSL "https://downloads.xiph.org/releases/flac/flac-${FLAC_VERSION}.tar.xz" \
         -o flac.tar.xz || { echo "❌ Failed to download libFLAC"; exit 1; }
     tar xf flac.tar.xz && rm flac.tar.xz || { echo "❌ Failed to extract libFLAC"; exit 1; }
-    FLAC_SRC_DIR=$(find "${BUILD_DIR}" -maxdepth 1 -type d -name "flac-*" | head -1)
+    # Xiph.org 解压目录名历史上是 flac-X.Y.Z（不带 lib- 前缀），但部分 fork 用 libflac-X.Y.Z
+    # 兜底匹配：任何含 flac 的顶层目录
+    FLAC_SRC_DIR=$(find "${BUILD_DIR}" -maxdepth 1 -type d -name "*flac*" | head -1)
     if [ -z "$FLAC_SRC_DIR" ]; then
         echo "❌ libFLAC source directory not found after extraction"
         ls -la "${BUILD_DIR}"
