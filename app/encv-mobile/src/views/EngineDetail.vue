@@ -277,7 +277,7 @@ import {
 } from '@ionic/vue'
 import {
   videocamOutline, searchOutline, refresh as refreshIcon,
-  hardwareChipOutline, constructOutline, phonePortraitOutline,
+  constructOutline, phonePortraitOutline,
   settingsOutline, linkOutline, calendarOutline, codeSlashOutline,
   downloadOutline, cloudUploadOutline, filmOutline, documentOutline,
   globeOutline, filterOutline, cubeOutline, codeWorkingOutline,
@@ -316,9 +316,9 @@ onMounted(async () => {
   } catch {}
   try {
     buildInfo.value = await fetchBuildInfo()
-  } catch {
+  } catch (e) {
     buildInfoError.value = true
-    buildInfoErrorMessage.value = e?.message || e?.toString() || 'Unknown error'  // ✅ 捕获详细错误
+    buildInfoErrorMessage.value = (e as Error)?.message || String(e) || 'Unknown error'
     console.error('[EngineDetail] build info load error:', e)  // ✅ 控制台也打出来
   } finally {
     buildInfoLoading.value = false
