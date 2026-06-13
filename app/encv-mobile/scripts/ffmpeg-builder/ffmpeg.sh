@@ -24,9 +24,9 @@ patch_ffmpeg_main() {
     local ffprobe_c="${src_dir}/fftools/ffprobe.c"
 
     # ffmpeg.c
-    sed -i 's/^int main(/int ffmpeg_run(/' "$ffmpeg_c"
-    sed -i 's/^int main(void)/int ffmpeg_run(void)/' "$ffmpeg_c"
-    sed -i 's/^int wmain(/int ffmpeg_run(/' "$ffmpeg_c"
+    sed -i 's/int main(/int ffmpeg_run(/' "$ffmpeg_c"
+    sed -i 's/int main(void)/int ffmpeg_run(void)/' "$ffmpeg_c"
+    sed -i 's/int wmain(/int ffmpeg_run(/' "$ffmpeg_c"
     if ! grep -q "void ffmpeg_reset" "$ffmpeg_c"; then
         cat >> "$ffmpeg_c" << 'PATCH'
 
@@ -36,8 +36,8 @@ PATCH
     fi
 
     # ffprobe.c
-    sed -i 's/^int main(/int ffprobe_run(/' "$ffprobe_c"
-    sed -i 's/^int main(void)/int ffprobe_run(void)/' "$ffprobe_c"
+    sed -i 's/int main(/int ffprobe_run(/' "$ffprobe_c"
+    sed -i 's/int main(void)/int ffprobe_run(void)/' "$ffprobe_c"
     if ! grep -q "void ffprobe_reset" "$ffprobe_c"; then
         cat >> "$ffprobe_c" << 'PATCH'
 
