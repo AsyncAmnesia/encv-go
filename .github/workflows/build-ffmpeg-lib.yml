@@ -102,7 +102,8 @@ jobs:
 
           # 调 ffmpeg-builder 自己的 show-output-dir 拿权威 OUTPUT_LIB_DIR
           # （默认派生：build/ffmpeg/android-${HOST_ARCH}/out/${ANDROID_ABI}/）
-          OUTPUT_DIR=$(cd "$MOBILE_DIR" && make --no-print-directory show-output-dir ANDROID_ABI="$ANDROID_ABI" ANDROID_API="$ANDROID_API")
+          # 关键：make 必须在 BUILDER_DIR 跑（Makefile 在那），cd 到 MOBILE_DIR 找不到 Makefile
+          OUTPUT_DIR=$(cd "$BUILDER_DIR" && make --no-print-directory show-output-dir ANDROID_ABI="$ANDROID_ABI" ANDROID_API="$ANDROID_API")
 
           if [ -z "$OUTPUT_DIR" ]; then
             echo "::error::make show-output-dir returned empty (ffmpeg-builder init failed?)"
@@ -165,7 +166,10 @@ jobs:
           # （resolve_output_lib_dir 走 OUT_DIR 优先分支），不去 mkdir 默认路径
           OUT_DIR: ${{ steps.paths.outputs.OUTPUT_DIR }}
         run: |
-          cd "${{ steps.paths.outputs.MOBILE_DIR }}"
+          # 关键：make 必须在 BUILDER_DIR 跑（Makefile 在那）。
+          # cd 到 MOBILE_DIR 跑 make 会让 make 找不到 Makefile 但静默
+          # 输出 "Nothing to be done"（exit 0），看似成功实则啥都没编。
+          cd "${{ steps.paths.outputs.BUILDER_DIR }}"
           set -o pipefail
           make android \
             ANDROID_ABI=${{ inputs.ffmpeg_abi }} \
