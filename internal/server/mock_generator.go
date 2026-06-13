@@ -831,7 +831,10 @@ func executeMockSpec(sp *mockFileSpec) {
 	defer func() { _ = os.Remove(dstPath) }()
 
 	// 3. 跑 ffmpeg
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// 🆕 2026-06-12 Phase 4：timeout 10s → 5s。
+	// 5s 上限基于"单次 ffmpeg -c copy / 软编 mp3 30-50MB 输入 < 2s"的实测。
+	// 真机 cgo hang 时不再等 30s 才超时；硬上限 5s（worker hard timer + 500ms 兜底）
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_, ffmpegStderr, ffmpegExit, runErr := ffmpeg.RunWithOutput(ctx, sp.ffmpegArgs...)
 	if runErr != nil {

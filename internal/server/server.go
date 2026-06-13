@@ -222,6 +222,15 @@ func (s *Server) Start(version string) (string, error) {
 		return "", fmt.Errorf("failed to resolve absolute path for directory '%s': %w", dir, err)
 	}
 	s.mobileSvc.SetServingDir(s.servingDir)
+	// 🆕 2026-06-12 Phase 4：设 ENCV_HEARTBEAT_PATH 让 ffmpeg worker 知道写哪个文件
+	// 路径：<servingDir>/.encv_heartbeat
+	// Kotlin EncvGoService 1s poll 这个文件 lastModified()，>8s 没更新判 hang → kill+restart
+	heartbeatPath := filepath.Join(s.servingDir, ".encv_heartbeat")
+	if err := os.Setenv("ENCV_HEARTBEAT_PATH", heartbeatPath); err != nil {
+		slog.Warn("Failed to set ENCV_HEARTBEAT_PATH (heartbeat will be disabled)", "error", err)
+	} else {
+		slog.Info("Heartbeat file path set", "path", heartbeatPath)
+	}
 	chunkNamers := plugins.GetAllRegisteredChunkNamers()
 	s.chunkNamers = chunkNamers
 	s.mobileSvc.SetEncryptedFileDeps(s.readerService, s.contentHandler, chunkNamers)

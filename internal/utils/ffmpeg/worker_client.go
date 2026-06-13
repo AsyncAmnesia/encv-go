@@ -29,6 +29,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -167,7 +168,7 @@ func (c *workerClient) RunWithOutput(ctx context.Context, args []string) ([]byte
 	req := workerRequest{
 		Args:      args,
 		FFmpegBin: c.ffmpeg,
-		LibDir:    os.Getenv("ENCV_LIB_DIR"), // 🆕 Phase 2：传给 worker，让 worker 走 cgo 路径
+		LibDir:    os.Getenv("ENCV_LIB_DIR"),
 		TimeoutMs: timeoutMs,
 	}
 	reqBytes, _ := json.Marshal(req)
@@ -182,8 +183,17 @@ func (c *workerClient) RunWithOutput(ctx context.Context, args []string) ([]byte
 		return nil, "", -1, fmt.Errorf("start worker: %w", err)
 	}
 
-	// 双保险：父进程 ctx cancel → exec.CommandContext 发 SIGKILL
-	// 内部 worker 也有 timeoutMs 软超时（双保险）
+	// 🆕 2026-06-12 Phase 4 hard timeout：ctx cancel 之外再套一层 AfterFunc SIGKILL
+	// 防御：万一 ctx cancel 失败（cgo 把 Go 调度搞死），500ms 之后无条件 SIGKILL worker
+	var hardTimer *time.Timer
+	if timeoutMs > 0 {
+		hardTimer = time.AfterFunc(time.Duration(timeoutMs+500)*time.Millisecond, func() {
+			if cmd.Process != nil {
+				_ = cmd.Process.Kill()
+			}
+		})
+	}
+
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 
@@ -191,10 +201,12 @@ func (c *workerClient) RunWithOutput(ctx context.Context, args []string) ([]byte
 	select {
 	case runErr = <-done:
 	case <-ctx.Done():
-		// exec.CommandContext 已发 SIGKILL（Go 1.20+ 默认 SIGKILL on cancel）
 		_ = cmd.Process.Kill()
 		<-done
 		runErr = ctx.Err()
+	}
+	if hardTimer != nil {
+		hardTimer.Stop()
 	}
 
 	// 解析 worker stdout（最后一行 JSON）
@@ -206,13 +218,12 @@ func (c *workerClient) RunWithOutput(ctx context.Context, args []string) ([]byte
 		} else {
 			exitCode = -1
 		}
-		// 即使 worker 被 SIGKILL，stdout 可能为空，直接返回
 		if stdout == "" {
+			writeHeartbeat() // 即使失败也要更新心跳（让 Kotlin 知道父进程还活着）
 			return nil, stderrBuf.String(), exitCode, runErr
 		}
 	}
 
-	// stdout 最后一行是 JSON 响应（worker 用 fmt.Println 输出，会带 \n）
 	var resp workerResponse
 	for _, line := range strings.Split(strings.TrimRight(stdout, "\n"), "\n") {
 		line = strings.TrimSpace(line)
@@ -224,13 +235,23 @@ func (c *workerClient) RunWithOutput(ctx context.Context, args []string) ([]byte
 		}
 	}
 
-	// 把 worker 报告的 error 透出
 	finalErr := runErr
 	if finalErr == nil && resp.Error != "" {
 		finalErr = fmt.Errorf("ffmpeg worker reported: %s", resp.Error)
 	}
 
+	writeHeartbeat() // 🆕 每次 ffmpeg 调用后写心跳 → Kotlin 端判 mtime 是否 stale
 	return []byte(resp.Stdout), resp.Stderr + stderrBuf.String(), resp.ExitCode, finalErr
+}
+
+// writeHeartbeat 写当前时间戳到 $ENCV_HEARTBEAT_PATH，供 Kotlin EncvGoService 探活
+// 失败也忽略（探活是 best-effort，不能因为写不了心跳就让 ffmpeg 调用失败）
+func writeHeartbeat() {
+	path := os.Getenv("ENCV_HEARTBEAT_PATH")
+	if path == "" {
+		return
+	}
+	_ = os.WriteFile(path, []byte(strconv.FormatInt(time.Now().UnixMilli(), 10)), 0644)
 }
 
 // Probe is a thin convenience wrapper.

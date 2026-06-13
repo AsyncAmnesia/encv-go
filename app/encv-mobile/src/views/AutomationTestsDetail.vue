@@ -322,13 +322,18 @@ function onBackendStatus(ev: Event) {
   const error = detail.error
   if (running || !error) return  // 只在 running=false + error 有值时显示
   const raw = (error || '').toString()
-  const source = raw.startsWith('go_exit') ? 'mockGenerate'
-    : raw.startsWith('timeout') ? 'mockGenerate'
+  // 🆕 2026-06-12 Phase 4：go_hang（cgo ffmpeg_run 阻塞，Kotlin 端 mtime 探活触发）
+  //   与 go_exit 区分：hang 是 Kotlin 主动 kill+restart；exit 是进程真退出
+  const isHang = raw.startsWith('go_hang')
+  const source = raw.startsWith('go_exit') || isHang || raw.startsWith('timeout') ? 'mockGenerate'
     : raw.startsWith('no_binary') ? 'loadPlugins'
     : 'loadPlugins'
+  const title = isHang
+    ? '后端无响应（hang 8s+），已自动重启'
+    : '后端服务已退出'
   inlineError.value = {
     source,
-    title: '后端服务已退出',
+    title,
     message: raw,
     detail: detail.port ? `port=${detail.port}` : '',
     at: Date.now(),

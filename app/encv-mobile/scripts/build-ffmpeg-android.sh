@@ -4,6 +4,8 @@ set -euo pipefail
 FFMPEG_VERSION="8.0"
 X264_VERSION="stable"
 LAME_VERSION="3.100"
+FLAC_VERSION="1.4.3"
+OGG_VERSION="1.3.5"
 NDK_VERSION="26.1.10909125"
 API_LEVEL=24
 ABI="arm64-v8a"
@@ -61,6 +63,8 @@ fi
 
 X264_INSTALL="${BUILD_DIR}/x264-install"
 LAME_INSTALL="${BUILD_DIR}/lame-install"
+OGG_INSTALL="${BUILD_DIR}/ogg-install"
+FLAC_INSTALL="${BUILD_DIR}/flac-install"
 if [ ! -f "${X264_INSTALL}/lib/libx264.a" ]; then
     if [ ! -d "x264" ]; then
         echo "Downloading x264..."
@@ -153,6 +157,107 @@ else
     echo "✅ libmp3lame already built, skipping"
 fi
 
+# === Build libogg (BSD 3-clause, container for FLAC) ===
+# libogg is the bitstream container that FLAC and Vorbis use. Required because
+# ffmpeg's --enable-libflac links against libFLAC which depends on libogg.
+# We use the Xiph.org reference implementation (BSD 3-clause, safe to ship).
+if [ ! -f "${OGG_INSTALL}/lib/libogg.a" ]; then
+    cd "${BUILD_DIR}"
+    echo "Downloading libogg ${OGG_VERSION}..."
+    curl -fSL "https://downloads.xiph.org/releases/ogg/libogg-${OGG_VERSION}.tar.xz" \
+        -o libogg.tar.xz || { echo "❌ Failed to download libogg"; exit 1; }
+    tar xf libogg.tar.xz && rm libogg.tar.xz || { echo "❌ Failed to extract libogg"; exit 1; }
+    OGG_SRC_DIR=$(find "${BUILD_DIR}" -maxdepth 1 -type d -name "ogg-*" | head -1)
+    if [ -z "$OGG_SRC_DIR" ]; then
+        echo "❌ libogg source directory not found after extraction"
+        ls -la "${BUILD_DIR}"
+        exit 1
+    fi
+
+    echo "=== Building libogg (source: ${OGG_SRC_DIR}) ==="
+    cd "${OGG_SRC_DIR}"
+    CC="$CC" AR="$AR" RANLIB="$RANLIB" STRIP="$STRIP" \
+    ./configure \
+        --host=${ARCH}-linux-android \
+        --prefix="${OGG_INSTALL}" \
+        --enable-static \
+        --disable-shared \
+        --disable-doc \
+        --with-pic=yes \
+        > "${LOG_DIR}/ogg-configure.log" 2>&1 || {
+        echo "❌ ogg configure failed (see ${LOG_DIR}/ogg-configure.log)"
+        tail -30 "${LOG_DIR}/ogg-configure.log"
+        exit 1
+    }
+    echo "ogg configure done (log: ${LOG_DIR}/ogg-configure.log)"
+
+    make -j$(nproc) > "${LOG_DIR}/ogg-make.log" 2>&1 || {
+        echo "❌ ogg make failed (see ${LOG_DIR}/ogg-make.log)"
+        tail -30 "${LOG_DIR}/ogg-make.log"
+        exit 1
+    }
+    make install > "${LOG_DIR}/ogg-install.log" 2>&1 || {
+        echo "❌ ogg install failed (see ${LOG_DIR}/ogg-install.log)"
+        tail -30 "${LOG_DIR}/ogg-install.log"
+        exit 1
+    }
+    echo "✅ libogg built and installed"
+else
+    echo "✅ libogg already built, skipping"
+fi
+
+# === Build libFLAC (BSD 3-clause, FLAC encoder/decoder) ===
+# libFLAC is the reference FLAC codec from Xiph.org. It depends on libogg.
+# ffmpeg links it via --enable-libflac to provide the `flac` encoder/decoder
+# (ffmpeg's native FLAC is also enabled, but libFLAC gives better compat).
+if [ ! -f "${FLAC_INSTALL}/lib/libFLAC.a" ]; then
+    cd "${BUILD_DIR}"
+    echo "Downloading libFLAC ${FLAC_VERSION}..."
+    curl -fSL "https://downloads.xiph.org/releases/flac/flac-${FLAC_VERSION}.tar.xz" \
+        -o flac.tar.xz || { echo "❌ Failed to download libFLAC"; exit 1; }
+    tar xf flac.tar.xz && rm flac.tar.xz || { echo "❌ Failed to extract libFLAC"; exit 1; }
+    FLAC_SRC_DIR=$(find "${BUILD_DIR}" -maxdepth 1 -type d -name "flac-*" | head -1)
+    if [ -z "$FLAC_SRC_DIR" ]; then
+        echo "❌ libFLAC source directory not found after extraction"
+        ls -la "${BUILD_DIR}"
+        exit 1
+    fi
+
+    echo "=== Building libFLAC (source: ${FLAC_SRC_DIR}) ==="
+    cd "${FLAC_SRC_DIR}"
+    CC="$CC" AR="$AR" RANLIB="$RANLIB" STRIP="$STRIP" \
+    ./configure \
+        --host=${ARCH}-linux-android \
+        --prefix="${FLAC_INSTALL}" \
+        --enable-static \
+        --disable-shared \
+        --disable-xmms-plugin \
+        --disable-doxygen-docs \
+        --disable-cpplibs \
+        --with-ogg="${OGG_INSTALL}" \
+        --with-pic=yes \
+        > "${LOG_DIR}/flac-configure.log" 2>&1 || {
+        echo "❌ flac configure failed (see ${LOG_DIR}/flac-configure.log)"
+        tail -30 "${LOG_DIR}/flac-configure.log"
+        exit 1
+    }
+    echo "flac configure done (log: ${LOG_DIR}/flac-configure.log)"
+
+    make -j$(nproc) > "${LOG_DIR}/flac-make.log" 2>&1 || {
+        echo "❌ flac make failed (see ${LOG_DIR}/flac-make.log)"
+        tail -30 "${LOG_DIR}/flac-make.log)"
+        exit 1
+    }
+    make install > "${LOG_DIR}/flac-install.log" 2>&1 || {
+        echo "❌ flac install failed (see ${LOG_DIR}/flac-install.log)"
+        tail -30 "${LOG_DIR}/flac-install.log"
+        exit 1
+    }
+    echo "✅ libFLAC built and installed"
+else
+    echo "✅ libFLAC already built, skipping"
+fi
+
 echo "=== Patching ffmpeg source ==="
 cd "${BUILD_DIR}/ffmpeg-${FFMPEG_VERSION}"
 
@@ -239,8 +344,8 @@ sed -i 's/-lpthread//g; s/-ldl//g' "${X264_INSTALL}/lib/pkgconfig/x264.pc" 2>/de
 
 cat > "${BUILD_DIR}/pkg-config-wrapper" << PCEOF
 #!/bin/bash
-export PKG_CONFIG_PATH="${X264_INSTALL}/lib/pkgconfig"
-export PKG_CONFIG_LIBDIR="${X264_INSTALL}/lib/pkgconfig"
+export PKG_CONFIG_PATH="${X264_INSTALL}/lib/pkgconfig:${LAME_INSTALL}/lib/pkgconfig:${OGG_INSTALL}/lib/pkgconfig:${FLAC_INSTALL}/lib/pkgconfig"
+export PKG_CONFIG_LIBDIR="${X264_INSTALL}/lib/pkgconfig:${LAME_INSTALL}/lib/pkgconfig:${OGG_INSTALL}/lib/pkgconfig:${FLAC_INSTALL}/lib/pkgconfig"
 export PKG_CONFIG_ALLOW_SYSTEM_CFLAGS=1
 export PKG_CONFIG_ALLOW_SYSTEM_LIBS=1
 exec pkg-config "\$@"
@@ -283,13 +388,18 @@ echo "=== Configuring ffmpeg ==="
     --enable-small \
     --enable-libx264 \
     --enable-libmp3lame \
+    --enable-libflac \
+    --enable-libogg \
     --enable-gpl \
+    --enable-nonfree \
     --disable-resource-compression \
     --pkg-config="${BUILD_DIR}/pkg-config-wrapper" \
     --extra-cflags="-fPIC -ffunction-sections -fdata-sections -DANDROID \
         -I${X264_INSTALL}/include \
-        -I${LAME_INSTALL}/include" \
-    --extra-ldflags="-L${X264_INSTALL}/lib -L${LAME_INSTALL}/lib -lm" \
+        -I${LAME_INSTALL}/include \
+        -I${OGG_INSTALL}/include \
+        -I${FLAC_INSTALL}/include" \
+    --extra-ldflags="-L${X264_INSTALL}/lib -L${LAME_INSTALL}/lib -L${OGG_INSTALL}/lib -L${FLAC_INSTALL}/lib -lm" \
     --extra-libs="-lm" || {
     echo "=== ffmpeg configure FAILED ==="
     echo "=== Last 80 lines of config.log ==="
@@ -357,8 +467,10 @@ CFLAGS="-std=c11 -fPIC -ffunction-sections -fdata-sections -DANDROID -D_POSIX_C_
   -I${FFMPEG_SRC}/fftools/graph \
   -I${FFMPEG_SRC}/fftools/resources \
   -I${X264_INSTALL}/include \
-  -I${LAME_INSTALL}/include"
-LDFLAGS="-L${FFMPEG_INSTALL}/lib -L${X264_INSTALL}/lib -L${LAME_INSTALL}/lib"
+  -I${LAME_INSTALL}/include \
+  -I${OGG_INSTALL}/include \
+  -I${FLAC_INSTALL}/include"
+LDFLAGS="-L${FFMPEG_INSTALL}/lib -L${X264_INSTALL}/lib -L${LAME_INSTALL}/lib -L${OGG_INSTALL}/lib -L${FLAC_INSTALL}/lib"
 
 STATIC_LIBS=""
 for lib in libavformat libavcodec libavutil libswresample libswscale libavfilter libavdevice; do
@@ -440,6 +552,8 @@ $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffmpeg.so" \
     $STATIC_LIBS \
     ${X264_INSTALL}/lib/libx264.a \
     ${LAME_INSTALL}/lib/libmp3lame.a \
+    ${OGG_INSTALL}/lib/libogg.a \
+    ${FLAC_INSTALL}/lib/libFLAC.a \
     -lm -lz -llog \
     -Wl,-u,ffmpeg_run \
     -Wl,-u,ffmpeg_reset \
@@ -461,6 +575,8 @@ $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffprobe.so" \
     $STATIC_LIBS \
     ${X264_INSTALL}/lib/libx264.a \
     ${LAME_INSTALL}/lib/libmp3lame.a \
+    ${OGG_INSTALL}/lib/libogg.a \
+    ${FLAC_INSTALL}/lib/libFLAC.a \
     -lm -lz -llog \
     -Wl,-u,ffprobe_run \
     -Wl,-u,ffprobe_reset \
@@ -567,6 +683,53 @@ ASSETS_DIR="${PROJECT_DIR}/android/app/src/main/assets"
 mkdir -p "$ASSETS_DIR"
 cp "${OUTPUT_DIR}/build-info.json" "${ASSETS_DIR}/"
 echo "✅ Copied build-info.json to Android assets"
+
+echo "=== Building libffmpeg-worker.so (Go subprocess wrapper for cgo) ==="
+# 真机架构：cgo ffmpeg_run 阻塞 OS thread，Go 进程没法用 ctx cancel unblock。
+# 解决：父进程 os.Exec 启一个子进程（libffmpeg-worker.so）专门跑 ffmpeg_run；
+# 父进程的 exec.CommandContext + SIGKILL 杀 worker → 父进程 unblock。
+# Worker 内部 cgo dlopen libffmpeg.so 调 ffmpeg_run（cgo 阻塞在 worker 进程里）。
+#
+# 设计文档见 [internal/utils/ffmpeg/worker_runner.go] 和 [cmd/ffmpeg-worker/main_android.go]
+# 父进程 (libencv-go.so) 通过 os.Exec("libffmpeg-worker.so") 启动，stdin/stdout JSON 通信。
+if ! command -v go &>/dev/null; then
+    echo "❌ Go toolchain not found, cannot build libffmpeg-worker.so"
+    echo "   Install with: mise install go 1.21+"
+    exit 1
+fi
+
+WORKER_BUILD_DIR="${BUILD_DIR}/ffmpeg-worker"
+mkdir -p "${WORKER_BUILD_DIR}"
+
+# 设置 cgo 链接路径：worker 内部要 cgo 调 libffmpeg.so
+# 但 worker 启动后才 dlopen（运行时）—— 这里只需要 link 进 worker 自己的 deps
+# 所以 CGO_LDFLAGS 只链 -llog -ldl -lm（系统库），运行时 dlopen libffmpeg.so
+GOOS=android GOARCH=arm64 CGO_ENABLED=1 \
+    CC="${CC}" \
+    CXX="${TOOLCHAIN}/bin/clang++" \
+    CGO_CFLAGS="-fPIC -DANDROID -I${TOOLCHAIN}/sysroot/usr/include" \
+    CGO_LDFLAGS="-llog -ldl -lm -Wl,-rpath,${FFMPEG_INSTALL}/lib" \
+    PKG_CONFIG_PATH="${X264_INSTALL}/lib/pkgconfig:${LAME_INSTALL}/lib/pkgconfig:${OGG_INSTALL}/lib/pkgconfig:${FLAC_INSTALL}/lib/pkgconfig" \
+    go build -C /workspace -buildmode=c-shared \
+    -ldflags='-s -w -Wl,-soname,libffmpeg-worker.so' \
+    -o "${FTOOLS_BUILD}/libffmpeg-worker.so" \
+    ./cmd/ffmpeg-worker/ > "${LOG_DIR}/ffmpeg-worker-build.log" 2>&1 || {
+    echo "❌ Failed to build libffmpeg-worker.so (see ${LOG_DIR}/ffmpeg-worker-build.log)"
+    tail -30 "${LOG_DIR}/ffmpeg-worker-build.log"
+    exit 1
+}
+
+cp "${FTOOLS_BUILD}/libffmpeg-worker.so" "$OUTPUT_DIR/"
+$STRIP --strip-all "${OUTPUT_DIR}/libffmpeg-worker.so" 2>/dev/null || true
+
+# 验证导出符号：worker 应有 main (Go c-shared 入口点)
+if ! ${NM} -D "${OUTPUT_DIR}/libffmpeg-worker.so" 2>/dev/null | grep -q " main$"; then
+    echo "❌ libffmpeg-worker.so missing 'main' symbol"
+    ${NM} -D "${OUTPUT_DIR}/libffmpeg-worker.so" | grep -E " T " | head -5
+    exit 1
+fi
+WORKER_SIZE=$(ls -lh "${OUTPUT_DIR}/libffmpeg-worker.so" | awk '{print $5}')
+echo "✅ Copied and stripped libffmpeg-worker.so (${WORKER_SIZE})"
 
 echo "=== Build complete ==="
 echo "Output: $OUTPUT_DIR"
