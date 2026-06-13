@@ -56,6 +56,37 @@ build_worker() {
     if [ ! -d "$SYSROOT/usr/lib" ]; then
         die "NDK sysroot missing: $SYSROOT (target_android_setup 没设 SYSROOT?)"
     fi
+    
+    # =================================================================
+    # FIX: Go 1.25 cmd/link HARDCODES -lpthread for Android targets
+    # Android bionic has NO separate libpthread.so (pthread is in libc.so)
+    # Solution: create a linker script stub that redirects to libc.so
+    # =================================================================
+    local android_arch_dir
+    case "${TARGET_ARCH:-}" in
+        aarch64) android_arch_dir="aarch64-linux-android" ;;  # arm64-v8a
+        x86_64)  android_arch_dir="x86_64-linux-android" ;;
+        armv7)   android_arch_dir="arm-linux-androideabi" ;;
+        x86)     android_arch_dir="i686-linux-android" ;;
+        *)       die "unknown TARGET_ARCH: ${TARGET_ARCH:-}" ;;
+    esac
+
+    local pthread_stub_dir="${SYSROOT}/usr/lib/${android_arch_dir}"
+    local pthread_stub="${pthread_stub_dir}/libpthread.so"
+
+    mkdir -p "$pthread_stub_dir"
+
+    # Create a linker script that tells ld: libpthread.so = libc.so
+    echo 'INPUT(-lc)' > "$pthread_stub"
+    log_info "Go 1.25 FIX: created libpthread.so stub → $pthread_stub"
+    log_info "  Stub content: INPUT(-lc) (redirects pthread to libc.so)"
+
+    # Also create in parent dir as fallback
+    echo 'INPUT(-lc)' > "${SYSROOT}/usr/lib/libpthread.so" 2>/dev/null || true
+    # =================================================================
+    # END FIX
+    # =================================================================
+
     local cgo_cflags="--sysroot=${SYSROOT} -fPIC -DANDROID -I${SYSROOT}/usr/include"
     local cgo_ldflags="--sysroot=${SYSROOT} -llog -ldl -lm"
     # 运行时 dlopen libffmpeg.so，rpath 帮助非 dlopen 时的 fallback
