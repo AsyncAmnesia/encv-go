@@ -134,9 +134,9 @@ jobs:
             ffmpeg-build-v${{ env.FFMPEG_LIB_VERSION }}-${{ inputs.ffmpeg_abi }}-${{ inputs.ffmpeg_api }}-
             ${{
               hashFiles(
-                env.MONOREPO_MOBILE_DIR + '/scripts/ffmpeg-feature-manifest.json',
-                env.MONOREPO_MOBILE_DIR + '/scripts/ffmpeg-builder/**/*.sh',
-                env.MONOREPO_MOBILE_DIR + '/scripts/ffmpeg-builder/Makefile'
+                format('{0}/scripts/ffmpeg-feature-manifest.json', env.MONOREPO_MOBILE_DIR),
+                format('{0}/scripts/ffmpeg-builder/**/*.sh', env.MONOREPO_MOBILE_DIR),
+                format('{0}/scripts/ffmpeg-builder/Makefile', env.MONOREPO_MOBILE_DIR)
               )
             }}
           restore-keys: |
