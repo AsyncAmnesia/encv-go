@@ -170,8 +170,16 @@ generate_build_info() {
 
     local ndk_version="host"
     if [ "${NEEDS_ANDROID_NDK:-0}" = "1" ]; then
-        ndk_version="$(basename "$(dirname "$(dirname "$TOOLCHAIN_BIN")")")"
+        # 优雅：正则匹配 /ndk/xxx/，不依赖路径层数
+        if [[ "$TOOLCHAIN_BIN" =~ /ndk/([^/]+)/ ]]; then
+            ndk_version="${BASH_REMATCH[1]}"
+        elif [ -n "${ANDROID_NDK_HOME:-}" ]; then
+            ndk_version="$(basename "$ANDROID_NDK_HOME")"
+        else
+            ndk_version="unknown"
+        fi
     fi
+
 
     local api_level=0
     [ -n "${ANDROID_API:-}" ] && api_level="$ANDROID_API"
