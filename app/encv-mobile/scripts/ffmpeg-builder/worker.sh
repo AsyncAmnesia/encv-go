@@ -102,35 +102,15 @@ build_worker() {
         *)       die "unknown TARGET_ARCH for go cross-compile: ${TARGET_ARCH:-}" ;;
     esac
 
-    # === go build -C（关键：用 -C 进 gomod_root，不写死路径） ===
-    # Go 1.25+ 关键变化：-ldflags 不再透传 -Wl,xxx 给系统 linker（flag provided but not defined）
-    # 必须用 -extldflags 透传 external linker flags
-    # 旧 Go（≤1.24）: -ldflags='-s -w -Wl,-soname,libffmpeg-worker.so'
-    # 新 Go（≥1.25）: -ldflags='-s -w -extldflags=-Wl,-soname,libffmpeg-worker.so'
-    # 二者都设 SONAME=c-shared 包名外的自定义名（dlopen("libffmpeg-worker.so") 需要 SONAME 匹配）
-    #
-    # --sysroot 已在 CGO_CFLAGS / CGO_LDFLAGS 处理（LD 看 sysroot 才能找 bionic libpthread.so）。
-    # 这里 -extldflags 只设 -soname。
-    log_cmd "go build -C $gomod_root -buildmode=c-shared ./cmd/ffmpeg-worker/ → $worker_out"
-    if ! GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=1 \
-        CC="$CC" \
-        CXX="${TOOLCHAIN_BIN}/clang++" \
-        CGO_CFLAGS="$cgo_cflags" \
-        CGO_LDFLAGS="$cgo_ldflags" \
-        PKG_CONFIG_PATH="${DEPS_INSTALL_DIR}/lib/pkgconfig" \
-        go build -C "$gomod_root" -buildmode=pie \
-        -ldflags='-s -w' \
-        -o "$worker_out" \
-        ./cmd/ffmpeg-worker/ \
-        > "${LOG_DIR}/ffmpeg-worker-build.log" 2>&1; then
-        log_error "worker build failed (see ${LOG_DIR}/ffmpeg-worker-build.log)"
-        tail -30 "${LOG_DIR}/ffmpeg-worker-build.log" >&2 || true
-        die "worker build failed"
-    fi
-    log_ok "worker built: $worker_out"
+    # 删除原来所有 Go build 的代码，换成这一行：
+log_cmd "CC ffmpeg_worker.c → $worker_out"
+$CC -fPIE -pie -O2 -s \
+    -o "$worker_out" \
+    "${gomod_root}/cmd/ffmpeg-worker/ffmpeg_worker.c" \
+    -ldl
 
-    # === copy + strip ===
-    cp "$worker_out" "${OUTPUT_LIB_DIR}/"
-    $STRIP --strip-all "${OUTPUT_LIB_DIR}/libffmpeg-worker.so" 2>/dev/null || true
+cp "$worker_out" "${OUTPUT_LIB_DIR}/"
+log_ok "worker built: $(ls -lh "${OUTPUT_LIB_DIR}/libffmpeg-worker.so" | awk '{print $5}')"
+
 
 }
