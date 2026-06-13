@@ -584,6 +584,16 @@ if ! command -v go &>/dev/null; then
     exit 1
 fi
 
+# 🆕 2026-06-12 Phase 4 fix：CI runner checkout 根不一定是 /workspace。
+# 用 git rev-parse 动态拿 Go module root（cmd/ffmpeg-worker/ 必须在 Go module 内才能编译）。
+# fallback: PROJECT_DIR 父目录（脚本跟 Go module 在同一仓库时成立）。
+GOMOD_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || cd "${PROJECT_DIR}/.." && pwd)"
+if [ ! -d "${GOMOD_ROOT}/cmd/ffmpeg-worker" ]; then
+    echo "❌ Go module root has no cmd/ffmpeg-worker/: ${GOMOD_ROOT}"
+    exit 1
+fi
+echo "Go module root: ${GOMOD_ROOT}"
+
 WORKER_BUILD_DIR="${BUILD_DIR}/ffmpeg-worker"
 mkdir -p "${WORKER_BUILD_DIR}"
 
@@ -596,7 +606,7 @@ GOOS=android GOARCH=arm64 CGO_ENABLED=1 \
     CGO_CFLAGS="-fPIC -DANDROID -I${TOOLCHAIN}/sysroot/usr/include" \
     CGO_LDFLAGS="-llog -ldl -lm -Wl,-rpath,${FFMPEG_INSTALL}/lib" \
     PKG_CONFIG_PATH="${X264_INSTALL}/lib/pkgconfig:${LAME_INSTALL}/lib/pkgconfig" \
-    go build -C /workspace -buildmode=c-shared \
+    go build -C "${GOMOD_ROOT}" -buildmode=c-shared \
     -ldflags='-s -w -Wl,-soname,libffmpeg-worker.so' \
     -o "${FTOOLS_BUILD}/libffmpeg-worker.so" \
     ./cmd/ffmpeg-worker/ > "${LOG_DIR}/ffmpeg-worker-build.log" 2>&1 || {
