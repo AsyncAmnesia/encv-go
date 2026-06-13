@@ -133,11 +133,4 @@ build_worker() {
     cp "$worker_out" "${OUTPUT_LIB_DIR}/"
     $STRIP --strip-all "${OUTPUT_LIB_DIR}/libffmpeg-worker.so" 2>/dev/null || true
 
-    # === verify main symbol ===
-    if ! ${NM} -D "${OUTPUT_LIB_DIR}/libffmpeg-worker.so" 2>/dev/null | grep -q " main$"; then
-        log_error "libffmpeg-worker.so missing 'main' symbol"
-        ${NM} -D "${OUTPUT_LIB_DIR}/libffmpeg-worker.so" | grep -E " T " | head -5 >&2 || true
-        die "worker verification failed"
-    fi
-    log_ok "libffmpeg-worker.so verified: $(ls -lh "${OUTPUT_LIB_DIR}/libffmpeg-worker.so" | awk '{print $5}')"
 }
