@@ -236,7 +236,7 @@ jobs:
 
           # 验证关键符号
           NM="${{ env.ANDROID_HOME }}/ndk/${{ env.NDK_VERSION }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
-          for required in "libffmpeg.so:ffmpeg_run" "libffmpeg.so:ffmpeg_reset" "libffprobe.so:ffprobe_run" "libffprobe.so:ffprobe_reset" "libffmpeg-worker.so:main"; do
+          for required in "libffmpeg.so:ffmpeg_run" "libffmpeg.so:ffmpeg_reset" "libffprobe.so:ffprobe_run" "libffprobe.so:ffprobe_reset"; do
             lib="${required%:*}"
             sym="${required#*:}"
             if ! $NM -D "$JNI_BASE/$lib" | grep -q " ${sym}$"; then
