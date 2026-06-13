@@ -9,6 +9,11 @@ name: Build FFmpeg Native Libraries
 #   - 失败隔离：ffmpeg 编译失败不阻塞主 APK 构建
 #   - 多 ABI 共享同一 release，避免重复编译
 #   - cache 命中率更高（脚本 + manifest 变化才全量重编）
+#
+# 零硬编码原则：
+#   - MONOREPO_MOBILE_DIR = 唯一集中硬编码（仓内 monorepo 结构）
+#   - 所有 path 用 $GITHUB_WORKSPACE + $MONOREPO_MOBILE_DIR 派生
+#   - GITHUB_WORKSPACE 是 GitHub Actions 自动提供的 checkout 根（跨 runner 一致）
 
 on:
   workflow_dispatch:
@@ -36,6 +41,9 @@ on:
 env:
   NDK_VERSION: "26.1.10909125"
   FFMPEG_LIB_VERSION: "1.0.0"
+  # 唯一 monorepo 子工程硬编码（仓内结构，集中配置 1 处）
+  # 若重构 monorepo 改这里 + android.yml 同名 env 即可
+  MONOREPO_MOBILE_DIR: "app/encv-mobile"
 
 jobs:
   build:
@@ -74,12 +82,36 @@ jobs:
           echo "y" | sdkmanager --install "ndk;${{ env.NDK_VERSION }}" > /dev/null 2>&1
           echo "✅ NDK installed"
 
-      # === ffmpeg-builder 源码 cache（focal + lame + ffmpeg tarball 复用） ===
+      # === 派生路径：GITHUB_WORKSPACE + MONOREPO_MOBILE_DIR 拼出所有子路径 ===
+      - name: Compute monorepo paths
+        id: paths
+        run: |
+          # 全部基于 GITHUB_WORKSPACE 派生，不写死 /home/runner
+          MOBILE_DIR="${GITHUB_WORKSPACE}/${MONOREPO_MOBILE_DIR}"
+          BUILDER_DIR="${MOBILE_DIR}/scripts/ffmpeg-builder"
+          BUILD_DIR="${MOBILE_DIR}/build/ffmpeg/android-${{ inputs.ffmpeg_abi }}"
+          JNI_BASE="${MOBILE_DIR}/android/app/src/main/jniLibs/${{ inputs.ffmpeg_abi }}"
+
+          for v in MOBILE_DIR BUILDER_DIR BUILD_DIR JNI_BASE; do
+              eval "val=\$$v"
+              if [ -z "$val" ]; then
+                  echo "::error::$v is empty"; exit 1
+              fi
+          done
+          [ -d "$BUILDER_DIR" ] || { echo "::error::BUILDER_DIR missing: $BUILDER_DIR"; exit 1; }
+
+          echo "MOBILE_DIR=$MOBILE_DIR"   >> "$GITHUB_OUTPUT"
+          echo "BUILDER_DIR=$BUILDER_DIR" >> "$GITHUB_OUTPUT"
+          echo "BUILD_DIR=$BUILD_DIR"     >> "$GITHUB_OUTPUT"
+          echo "JNI_BASE=$JNI_BASE"       >> "$GITHUB_OUTPUT"
+          echo "✅ paths derived"
+
+      # === ffmpeg-builder 源码 cache（x264 + lame + ffmpeg tarball 复用） ===
       - name: Cache ffmpeg-builder sources
         id: cache-src
         uses: actions/cache@v4
         with:
-          path: app/encv-mobile/build/ffmpeg/android-${{ inputs.ffmpeg_abi }}/src
+          path: ${{ steps.paths.outputs.BUILD_DIR }}/src
           key: ffmpeg-sources-v1-${{ inputs.ffmpeg_abi }}
           restore-keys: |
             ffmpeg-sources-v1-${{ inputs.ffmpeg_abi }}
@@ -91,11 +123,18 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            app/encv-mobile/build/ffmpeg/android-${{ inputs.ffmpeg_abi }}/deps-install
-            app/encv-mobile/build/ffmpeg/android-${{ inputs.ffmpeg_abi }}/ffmpeg-install
-            app/encv-mobile/build/ffmpeg/android-${{ inputs.ffmpeg_abi }}/fftools-build
-            app/encv-mobile/build/ffmpeg/android-${{ inputs.ffmpeg_abi }}/BUILD_ROOT
-          key: ffmpeg-build-v${{ env.FFMPEG_LIB_VERSION }}-${{ inputs.ffmpeg_abi }}-${{ inputs.ffmpeg_api }}-${{ hashFiles('app/encv-mobile/scripts/ffmpeg-feature-manifest.json', 'app/encv-mobile/scripts/ffmpeg-builder/**/*.sh', 'app/encv-mobile/scripts/ffmpeg-builder/Makefile') }}
+            ${{ steps.paths.outputs.BUILD_DIR }}/deps-install
+            ${{ steps.paths.outputs.BUILD_DIR }}/ffmpeg-install
+            ${{ steps.paths.outputs.BUILD_DIR }}/fftools-build
+          key: >-
+            ffmpeg-build-v${{ env.FFMPEG_LIB_VERSION }}-${{ inputs.ffmpeg_abi }}-${{ inputs.ffmpeg_api }}-
+            ${{
+              hashFiles(
+                env.MONOREPO_MOBILE_DIR + '/scripts/ffmpeg-feature-manifest.json',
+                env.MONOREPO_MOBILE_DIR + '/scripts/ffmpeg-builder/**/*.sh',
+                env.MONOREPO_MOBILE_DIR + '/scripts/ffmpeg-builder/Makefile'
+              )
+            }}
           restore-keys: |
             ffmpeg-build-v${{ env.FFMPEG_LIB_VERSION }}-${{ inputs.ffmpeg_abi }}-${{ inputs.ffmpeg_api }}-
 
@@ -106,7 +145,7 @@ jobs:
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/${{ env.NDK_VERSION }}
         run: |
-          cd app/encv-mobile
+          cd "${{ steps.paths.outputs.MOBILE_DIR }}"
           set -o pipefail
           make android \
             ANDROID_ABI=${{ inputs.ffmpeg_abi }} \
@@ -116,9 +155,12 @@ jobs:
 
       - name: Verify output artifacts
         if: success()
+        env:
+          JNI_BASE: ${{ steps.paths.outputs.JNI_BASE }}
         run: |
           set -e
-          OUT_DIR="app/encv-mobile/android/app/src/main/jniLibs/${{ inputs.ffmpeg_abi }}"
+          OUT_DIR="$JNI_BASE"
+          [ -d "$OUT_DIR" ] || { echo "::error::JNI_BASE missing: $OUT_DIR"; exit 1; }
 
           # 1) 必需文件存在
           for f in libffmpeg.so libffprobe.so libffmpeg-worker.so build-info.json; do
@@ -161,7 +203,7 @@ jobs:
 
           echo ""
           echo "=== Summary ==="
-          cat "$OUT_DIR/build-info.json" | jq '{
+          jq '{
             ffmpeg_version: .ffmpeg_version,
             external_libs: .external_libs,
             abi: .abi,
@@ -170,14 +212,22 @@ jobs:
             encoders: .enabled_encoders | length,
             decoders: .enabled_decoders | length,
             manifest_sha256: .manifest_sha256
-          }'
+          }' "$OUT_DIR/build-info.json"
 
       - name: Package jniLibs as zip
         if: success()
+        env:
+          JNI_BASE: ${{ steps.paths.outputs.JNI_BASE }}
         run: |
-          cd app/encv-mobile/android/app/src/main/jniLibs
+          cd "${{ steps.paths.outputs.MOBILE_DIR }}/android/app/src/main/jniLibs"
           ZIP_NAME="ffmpeg-jniLibs-${{ inputs.ffmpeg_abi }}-v${{ env.FFMPEG_LIB_VERSION }}.zip"
-          zip -r9 "${{ runner.temp }}/$ZIP_NAME" "${{ inputs.ffmpeg_abi }}/"
+          ABI_DIR="${{ inputs.ffmpeg_abi }}"
+          # 验证 ABI 目录存在且在预期路径
+          if [ ! -d "$ABI_DIR" ]; then
+              echo "::error::ABI directory not found: $(pwd)/$ABI_DIR"
+              exit 1
+          fi
+          zip -r9 "${{ runner.temp }}/$ZIP_NAME" "$ABI_DIR/"
           echo "📦 Package created:"
           unzip -l "${{ runner.temp }}/$ZIP_NAME"
           echo "zip_path=${{ runner.temp }}/$ZIP_NAME" >> "$GITHUB_OUTPUT"
@@ -188,7 +238,7 @@ jobs:
         with:
           name: ffmpeg-build-logs
           path: |
-            app/encv-mobile/build/ffmpeg/android-${{ inputs.ffmpeg_abi }}/logs
+            ${{ steps.paths.outputs.BUILD_DIR }}/logs
             /tmp/ffmpeg-build.log
           retention-days: 7
           if-no-files-found: ignore
@@ -217,8 +267,10 @@ jobs:
 
       - name: Cleanup local jniLibs (避免污染主工作流)
         if: always()
+        env:
+          JNI_BASE: ${{ steps.paths.outputs.JNI_BASE }}
         run: |
           # 注意：cache 路径在 build/ 下不冲突，但 jniLibs/ 是 gitignore 文件路径
           # 清理防止 commit 时误带
-          rm -rf app/encv-mobile/android/app/src/main/jniLibs/${{ inputs.ffmpeg_abi }}
+          rm -rf "$JNI_BASE"
           echo "✅ jniLibs cleaned"

@@ -21,6 +21,9 @@ on:
 
 env:
   NDK_VERSION: "26.1.10909125"
+  # 唯一 monorepo 子工程硬编码（仓内结构，集中配置 1 处）
+  # 与 build-ffmpeg-lib.yml 同步；重构 monorepo 改两处同名 env 即可
+  MONOREPO_MOBILE_DIR: "app/encv-mobile"
 
 jobs:
   build:
@@ -43,7 +46,7 @@ jobs:
         with:
           node-version: '24'
           cache: 'pnpm'
-          cache-dependency-path: app/encv-mobile/pnpm-lock.yaml
+          cache-dependency-path: ${{ env.MONOREPO_MOBILE_DIR }}/pnpm-lock.yaml
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -82,10 +85,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            app/encv-mobile/node_modules
-            app/encv-mobile/packages/components/node_modules
-            app/encv-mobile/plugin-openlist/web/node_modules
-          key: pnpm-main-${{ hashFiles('app/encv-mobile/pnpm-lock.yaml', 'app/encv-mobile/packages/**/package.json', 'app/encv-mobile/plugin-openlist/web/package.json') }}
+            ${{ env.MONOREPO_MOBILE_DIR }}/node_modules
+            ${{ env.MONOREPO_MOBILE_DIR }}/packages/components/node_modules
+            ${{ env.MONOREPO_MOBILE_DIR }}/plugin-openlist/web/node_modules
+          key: pnpm-main-${{ hashFiles('${{ env.MONOREPO_MOBILE_DIR }}/pnpm-lock.yaml', '${{ env.MONOREPO_MOBILE_DIR }}/packages/**/package.json', '${{ env.MONOREPO_MOBILE_DIR }}/plugin-openlist/web/package.json') }}
           restore-keys: |
             pnpm-main-
 
@@ -95,7 +98,7 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ hashFiles('app/encv-mobile/android/*.gradle', 'app/encv-mobile/android/app/*.gradle', 'app/encv-mobile/android/gradle/wrapper/gradle-wrapper.properties') }}
+          key: gradle-${{ hashFiles('${{ env.MONOREPO_MOBILE_DIR }}/android/*.gradle', '${{ env.MONOREPO_MOBILE_DIR }}/android/app/*.gradle', '${{ env.MONOREPO_MOBILE_DIR }}/android/gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: |
             gradle-
 
@@ -106,39 +109,73 @@ jobs:
       # 失败时: ::error:: 提示先去跑 build-ffmpeg-lib.yml。
 
       - name: Install frontend dependencies
-        run: cd app/encv-mobile && pnpm install --frozen-lockfile
+        run: cd ${{ env.MONOREPO_MOBILE_DIR }} && pnpm install --frozen-lockfile
 
       - name: TypeScript check (main app)
-        working-directory: app/encv-mobile
+        working-directory: ${{ env.MONOREPO_MOBILE_DIR }}
         run: pnpm exec vue-tsc --noEmit
 
       - name: TypeScript check (plugin-openlist/web)
         if: inputs.skip_plugin != true
-        working-directory: app/encv-mobile/plugin-openlist/web
+        working-directory: ${{ env.MONOREPO_MOBILE_DIR }}/plugin-openlist/web
         run: pnpm exec vue-tsc --noEmit
 
       - name: Build main app web
-        working-directory: app/encv-mobile
+        working-directory: ${{ env.MONOREPO_MOBILE_DIR }}
         run: pnpm run build
 
       - name: Build plugin-openlist/web → assets/openlist/
         if: inputs.skip_plugin != true
-        working-directory: app/encv-mobile
+        working-directory: ${{ env.MONOREPO_MOBILE_DIR }}
         run: bash scripts/build-plugin-openlist-web.sh
 
       - name: Run frontend unit tests (vitest)
         run: |
-          cd app/encv-mobile
+          cd ${{ env.MONOREPO_MOBILE_DIR }}
           echo "═══ Frontend Unit Tests ═══"
           pnpm exec vitest run --reporter=verbose 2>&1 | tail -30
           echo ""
           echo "═══ Frontend Test Summary ═══"
 
+      # 派生 monorepo 绝对路径供后续步骤引用。
+      # 原则: workflow 内只硬编码 MONOREPO_MOBILE_DIR (仓内结构名),
+      #       绝对路径全部由 $GITHUB_WORKSPACE 派生,跨 runner 一致。
+      - name: Compute monorepo paths
+        id: paths
+        run: |
+          MOBILE_DIR="${GITHUB_WORKSPACE}/${MONOREPO_MOBILE_DIR}"
+          ANDROID_DIR="${MOBILE_DIR}/android"
+          JNI_BASE="${ANDROID_DIR}/app/src/main/jniLibs/arm64-v8a"
+          PLUGIN_MPV_JNI="${MOBILE_DIR}/plugin-mpv-player/src/main/jniLibs/arm64-v8a"
+          PLUGIN_OPENLIST_JNI="${MOBILE_DIR}/plugin-openlist/src/main/jniLibs/arm64-v8a"
+
+          for v in MOBILE_DIR ANDROID_DIR JNI_BASE PLUGIN_MPV_JNI PLUGIN_OPENLIST_JNI; do
+            eval "val=\$$v"
+            [ -n "$val" ] || { echo "::error::$v is empty"; exit 1; }
+          done
+          [ -d "$MOBILE_DIR" ]      || { echo "::error::MOBILE_DIR missing: $MOBILE_DIR"; exit 1; }
+          [ -d "$ANDROID_DIR" ]     || { echo "::error::ANDROID_DIR missing: $ANDROID_DIR"; exit 1; }
+
+          echo "MOBILE_DIR=$MOBILE_DIR"               >> "$GITHUB_OUTPUT"
+          echo "ANDROID_DIR=$ANDROID_DIR"             >> "$GITHUB_OUTPUT"
+          echo "JNI_BASE=$JNI_BASE"                   >> "$GITHUB_OUTPUT"
+          echo "PLUGIN_MPV_JNI=$PLUGIN_MPV_JNI"       >> "$GITHUB_OUTPUT"
+          echo "PLUGIN_OPENLIST_JNI=$PLUGIN_OPENLIST_JNI" >> "$GITHUB_OUTPUT"
+
+          echo "✅ Monorepo paths:"
+          for v in MOBILE_DIR ANDROID_DIR JNI_BASE PLUGIN_MPV_JNI PLUGIN_OPENLIST_JNI; do
+            eval "val=\$$v"
+            echo "  $v = $val"
+          done
+
       - name: Download MPV native libraries from Release
         if: inputs.skip_plugin != true
+        env:
+          PLUGIN_MPV_JNI: ${{ steps.paths.outputs.PLUGIN_MPV_JNI }}
         run: |
-          cd app/encv-mobile/plugin-mpv-player/src/main
-          mkdir -p jniLibs/arm64-v8a
+          [ -n "$PLUGIN_MPV_JNI" ] || { echo "::error::PLUGIN_MPV_JNI not set (paths step missing?)"; exit 1; }
+          mkdir -p "$PLUGIN_MPV_JNI"
+          cd "$PLUGIN_MPV_JNI/.."
           ASSET_URL=$(curl -sf \
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/mpv-native-libs" \
             | jq -r '.assets[] | select(.name | startswith("mpv-jniLibs-arm64")) | .browser_download_url')
@@ -153,12 +190,14 @@ jobs:
           ls -lhR jniLibs/
 
       - name: Download FFmpeg native libraries from Release
+        env:
+          JNI_BASE: ${{ steps.paths.outputs.JNI_BASE }}
         run: |
           # 模式与 MPV 一致：从 release "ffmpeg-native-libs" 下载预编产物
           # 产物名约定: ffmpeg-jniLibs-arm64-v8a-v$FFMPEG_LIB_VERSION.zip
           # zip 内是 arm64-v8a/{libffmpeg.so, libffprobe.so, libffmpeg-worker.so, build-info.json}
           set -e
-          JNI_BASE="app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a"
+          [ -n "$JNI_BASE" ] || { echo "::error::JNI_BASE not set (paths step missing?)"; exit 1; }
           mkdir -p "$JNI_BASE"
 
           ASSET_URL=$(curl -sf \
@@ -248,28 +287,28 @@ jobs:
         run: |
           go build \
             -ldflags="-s -w -X main.version=${{ inputs.version || 'dev' }}" \
-            -o app/encv-mobile/encv-go-arm64 \
+            -o ${{ env.MONOREPO_MOBILE_DIR }}/encv-go-arm64 \
             ./cmd/encv-mobile
           echo "Go binary size:"
-          ls -lh app/encv-mobile/encv-go-arm64
+          ls -lh ${{ env.MONOREPO_MOBILE_DIR }}/encv-go-arm64
 
       # Keystore stored outside android/app to avoid accidental commit
       - name: Restore release keystore from cache
         uses: actions/cache@v4
         id: keystore-cache
         with:
-          path: app/encv-mobile/keystore
+          path: ${{ env.MONOREPO_MOBILE_DIR }}/keystore
           key: encv-release-keystore
 
       - name: Ensure release keystore exists
         run: |
-          KEYSTORE="app/encv-mobile/keystore/release.jks"
+          KEYSTORE="${{ env.MONOREPO_MOBILE_DIR }}/keystore/release.jks"
           if [ -f "$KEYSTORE" ]; then
             echo "Keystore ready:"
             ls -lh "$KEYSTORE"
           else
             echo "Creating new release keystore..."
-            mkdir -p app/encv-mobile/keystore
+            mkdir -p ${{ env.MONOREPO_MOBILE_DIR }}/keystore
             keytool -genkeypair -v -keystore "$KEYSTORE" \
               -storepass encv2025 -alias encvrelease \
               -keypass encv2025 \
@@ -282,7 +321,7 @@ jobs:
       # android/ is in git — cap copy copies web assets (dist/ → assets/public/). Required for BOTH debug and release because we use gradlew directly instead of npx cap build
       - name: Copy web assets to Android project
         run: |
-          cd app/encv-mobile
+          cd ${{ env.MONOREPO_MOBILE_DIR }}
           npx cap copy android
           echo "Android project ready:"
           ls -la android/*.gradle android/app/*.gradle
@@ -301,7 +340,7 @@ jobs:
           echo "╚══════════════════════════════════════════════════╝"
           echo ""
 
-          cd app/encv-mobile
+          cd ${{ env.MONOREPO_MOBILE_DIR }}
           TOML="android/gradle/libs.versions.toml"
           if [ ! -f "$TOML" ]; then
             echo "::error::libs.versions.toml not found at $TOML"
@@ -316,7 +355,7 @@ jobs:
 
           FAIL=0
           TOTAL=0
-          # Search ALL build.gradle.kts under app/encv-mobile/ (incl. plugin-*/ siblings of android/)
+          # Search ALL build.gradle.kts under ${{ env.MONOREPO_MOBILE_DIR }}/ (incl. plugin-*/ siblings of android/)
           for f in $(find . -name "build.gradle.kts" -not -path "*/build/*" -type f | sort); do
             REFS=$(grep -oE 'libs\.(plugins|[a-zA-Z0-9._-]+)\.[a-zA-Z0-9._-]+' "$f" 2>/dev/null | sort -u)
             for ref in $REFS; do
@@ -367,10 +406,10 @@ jobs:
 
           # Phase 1: List ALL .gradle.kts files found
           echo "📋 Phase 1: Scanning for *.gradle.kts files..."
-          echo "   Search path: app/encv-mobile/android"
+          echo "   Search path: ${{ env.MONOREPO_MOBILE_DIR }}/android"
           echo "   Exclude pattern: */build/*"
           echo ""
-          ALL_FILES=$(find app/encv-mobile/android -name "*.gradle.kts" -not -path "*/build/*" -type f | sort)
+          ALL_FILES=$(find ${{ env.MONOREPO_MOBILE_DIR }}/android -name "*.gradle.kts" -not -path "*/build/*" -type f | sort)
           FILE_COUNT=$(echo "$ALL_FILES" | grep -c .)
 
           if [ "$FILE_COUNT" -eq 0 ]; then
@@ -392,7 +431,7 @@ jobs:
           while IFS= read -r f || [ -n "$f" ]; do
             FILES_CHECKED=$((FILES_CHECKED + 1))
             BASENAME=$(basename "$f")
-            RELPATH=${f#app/encv-mobile/android/}
+            RELPATH=${f#${{ env.MONOREPO_MOBILE_DIR }}/android/}
             echo "--- [$FILES_CHECKED/$FILE_COUNT] $RELPATH ---"
 
             # Check 1: isMinifyEnabled = true → FATAL
@@ -496,17 +535,17 @@ jobs:
 
       - name: Copy Go binary to jniLibs
         run: |
-          mkdir -p app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a
-          cp app/encv-mobile/encv-go-arm64 app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a/libencv-go.so
+          mkdir -p ${{ env.MONOREPO_MOBILE_DIR }}/android/app/src/main/jniLibs/arm64-v8a
+          cp ${{ env.MONOREPO_MOBILE_DIR }}/encv-go-arm64 ${{ env.MONOREPO_MOBILE_DIR }}/android/app/src/main/jniLibs/arm64-v8a/libencv-go.so
           echo "=== Host jniLibs BEFORE build ==="
-          ls -lhR app/encv-mobile/android/app/src/main/jniLibs/
+          ls -lhR ${{ env.MONOREPO_MOBILE_DIR }}/android/app/src/main/jniLibs/
 
 
 
       - name: Verify native libraries
         run: |
           echo "═══ HOST APP jniLibs (Go backend only) ═══"
-          HOST_LIBS="app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a"
+          HOST_LIBS="${{ env.MONOREPO_MOBILE_DIR }}/android/app/src/main/jniLibs/arm64-v8a"
           for lib in libencv-go.so libffmpeg.so libffprobe.so; do
             if [ -f "$HOST_LIBS/$lib" ]; then
               echo "  ✅ $lib $(ls -lh "$HOST_LIBS/$lib" | awk '{print $5}')"
@@ -517,7 +556,7 @@ jobs:
 
           echo ""
           echo "═══ MPV PLAYER PLUGIN jniLibs ═══"
-          PLUGIN_LIBS="app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a"
+          PLUGIN_LIBS="${{ env.MONOREPO_MOBILE_DIR }}/plugin-mpv-player/src/main/jniLibs/arm64-v8a"
           if [ -d "$PLUGIN_LIBS" ]; then
             ls -lh "$PLUGIN_LIBS/"*.so 2>/dev/null | awk '{print "  ✅ "$NF" ("$5")"}'
             for lib in libmpv.so libplayer.so libavcodec.so libavformat.so libavutil.so; do
@@ -552,7 +591,7 @@ jobs:
         if: inputs.skip_plugin != true
         continue-on-error: true
         run: |
-          cd app/encv-mobile/android
+          cd ${{ env.MONOREPO_MOBILE_DIR }}/android
 
           # Ensure libplayer.so is built
           if [ ! -f "plugin-mpv-player/src/main/jniLibs/arm64-v8a/libplayer.so" ]; then
@@ -569,7 +608,7 @@ jobs:
         if: inputs.skip_plugin != true
         continue-on-error: true
         run: |
-          cd app/encv-mobile/android
+          cd ${{ env.MONOREPO_MOBILE_DIR }}/android
           BUILD_TYPE="${{ inputs.version && 'release' || 'debug' }}"
 
           ./gradlew -PincludePlugins=true "convert_plugin-mpv-player_${BUILD_TYPE}" --stacktrace
@@ -590,7 +629,7 @@ jobs:
         continue-on-error: true
         run: |
           BUILD_TYPE="${{ inputs.version && 'release' || 'debug' }}"
-          PLUGIN_APK=$(find app/encv-mobile/android/build -name "plugin-mpv-player-${BUILD_TYPE}.apk" -type f 2>/dev/null | head -1)
+          PLUGIN_APK=$(find ${{ env.MONOREPO_MOBILE_DIR }}/android/build -name "plugin-mpv-player-${BUILD_TYPE}.apk" -type f 2>/dev/null | head -1)
           if [ -f "$PLUGIN_APK" ]; then
             echo "=== Plugin APK size ==="
             ls -lh "$PLUGIN_APK"
@@ -662,7 +701,7 @@ jobs:
         if: inputs.skip_plugin != true
         run: |
           set -e
-          JNI_DIR="app/encv-mobile/plugin-openlist/src/main/jniLibs/arm64-v8a"
+          JNI_DIR="${{ env.MONOREPO_MOBILE_DIR }}/plugin-openlist/src/main/jniLibs/arm64-v8a"
           mkdir -p "$JNI_DIR"
           cp /tmp/libopenlist-arm64.so "$JNI_DIR/libopenlist.so"
           echo "=== jniLibs 拷贝结果 ==="
@@ -692,7 +731,7 @@ jobs:
                 GUARD_C_FAIL=$((GUARD_C_FAIL + 1))
               fi
             done
-          done < <(find app/encv-mobile/plugin-openlist/src -name "*.kt" 2>/dev/null)
+          done < <(find ${{ env.MONOREPO_MOBILE_DIR }}/plugin-openlist/src -name "*.kt" 2>/dev/null)
           if [ "$GUARD_C_FAIL" -gt 0 ]; then
             echo "::error::❌ Map property guard FAILED: $GUARD_C_FAIL bad access(es)"
             echo "::error::snapshot() returns Map<String,Any?>. Use snapshot[\"key\"] instead of snapshot.key"
@@ -709,7 +748,7 @@ jobs:
           echo "╔══════════════════════════════════════════════════╗"
           echo "║  kotlinc pre-flight (Phase 17 Unresolved guard) ║"
           echo "╚══════════════════════════════════════════════════╝"
-          CLASSES_JAR="app/encv-mobile/plugin-openlist/libs/openlist-classes.jar"
+          CLASSES_JAR="${{ env.MONOREPO_MOBILE_DIR }}/plugin-openlist/libs/openlist-classes.jar"
           if [ ! -f "$CLASSES_JAR" ]; then
             echo "⏭️  openlist-classes.jar not present — kotlinc pre-flight SKIPPED"
             echo "    (jar is produced by 'Build OpenList AAR' + 'Extract OpenList AAR' steps)"
@@ -739,7 +778,7 @@ jobs:
               echo "  kotlinc: $KOTLINC"
               echo "  classpath: ${CP//:/, }"
 
-              cd app/encv-mobile/plugin-openlist
+              cd ${{ env.MONOREPO_MOBILE_DIR }}/plugin-openlist
               # NOTE: `|| true` is REQUIRED because the step's shell is
               # `bash -e` (set -e from `shell: /usr/bin/bash -e {0}` header).
               # Without it, kotlinc's non-zero exit would terminate the entire
@@ -788,7 +827,7 @@ jobs:
           echo "╔══════════════════════════════════════════════════╗"
           echo "║  Gradle: compile + convert (real build)         ║"
           echo "╚══════════════════════════════════════════════════╝"
-          cd app/encv-mobile/android
+          cd ${{ env.MONOREPO_MOBILE_DIR }}/android
           BUILD_TYPE="${{ inputs.version && 'Release' || 'Debug' }}"
           APK_BUILD_TYPE="${{ inputs.version && 'release' || 'debug' }}"
           echo "=== Compiling OpenList plugin (${BUILD_TYPE}) ==="
@@ -821,19 +860,19 @@ jobs:
           #   1. :plugin-openlist 只在 -PincludePlugins=true 时被 settings.gradle.kts
           #      include,否则 ./gradlew 报 "project 'plugin-openlist' not found"
           #   2. :plugin-openlist 的 projectDir = ../plugin-openlist (相对 android/),
-          #      所以 aar 输出在 app/encv-mobile/plugin-openlist/build/outputs/aar/,
-          #      **不是** app/encv-mobile/android/plugin-openlist/build/outputs/aar/
+          #      所以 aar 输出在 ${{ env.MONOREPO_MOBILE_DIR }}/plugin-openlist/build/outputs/aar/,
+          #      **不是** ${{ env.MONOREPO_MOBILE_DIR }}/android/plugin-openlist/build/outputs/aar/
           mkdir -p /tmp/diagnostic-step385
           echo "step38.5 start ts=$(date +%s)" > /tmp/diagnostic-step385/META.txt
 
-          cd "$GITHUB_WORKSPACE/app/encv-mobile/android"
+          cd "$GITHUB_WORKSPACE/${{ env.MONOREPO_MOBILE_DIR }}/android"
           echo "=== 检查 inject 任务配置 (--dry-run, 必须带 -PincludePlugins=true) ===" | tee /tmp/diagnostic-step385/inject-dryrun.txt
           ./gradlew -PincludePlugins=true :plugin-openlist:injectOpenlistClassesToAar --dry-run 2>&1 | tail -10 >> /tmp/diagnostic-step385/inject-dryrun.txt
           echo
           echo "=== aar/classes.jar 现状 (inject 任务应当真把 openlistlib 类合并进去) ==="
           # ⚠️ 真实路径: plugin-openlist 是兄弟目录,projectDir = ../plugin-openlist
-          AAR="$GITHUB_WORKSPACE/app/encv-mobile/plugin-openlist/build/outputs/aar/plugin-openlist-release.aar"
-          AAR_DEBUG="$GITHUB_WORKSPACE/app/encv-mobile/plugin-openlist/build/outputs/aar/plugin-openlist-debug.aar"
+          AAR="$GITHUB_WORKSPACE/${{ env.MONOREPO_MOBILE_DIR }}/plugin-openlist/build/outputs/aar/plugin-openlist-release.aar"
+          AAR_DEBUG="$GITHUB_WORKSPACE/${{ env.MONOREPO_MOBILE_DIR }}/plugin-openlist/build/outputs/aar/plugin-openlist-debug.aar"
           AAR_FOUND=0
           for A in "$AAR" "$AAR_DEBUG"; do
             if [ -f "$A" ]; then
@@ -883,17 +922,17 @@ jobs:
           # aar2apk 输出在 root project (android/) 的 build/outputs/plugin-apks/<type>/
           APK_PATH=""
           for variant in release debug; do
-            P="$GITHUB_WORKSPACE/app/encv-mobile/android/build/outputs/plugin-apks/${variant}/plugin-openlist-${variant}.apk"
+            P="$GITHUB_WORKSPACE/${{ env.MONOREPO_MOBILE_DIR }}/android/build/outputs/plugin-apks/${variant}/plugin-openlist-${variant}.apk"
             [ -f "$P" ] && APK_PATH="$P" && break
           done
           if [ -z "$APK_PATH" ]; then
             # 兜底 find (兼容未来路径变动)
-            APK_PATH=$(find "$GITHUB_WORKSPACE/app/encv-mobile" -name "plugin-openlist-*.apk" -type f 2>/dev/null | head -1)
+            APK_PATH=$(find "$GITHUB_WORKSPACE/${{ env.MONOREPO_MOBILE_DIR }}" -name "plugin-openlist-*.apk" -type f 2>/dev/null | head -1)
           fi
           if [ -z "$APK_PATH" ] || [ ! -f "$APK_PATH" ]; then
             echo "❌ No plugin APK found at expected path" | tee /tmp/diagnostic-step39/REASON.txt
-            echo "查找过: $GITHUB_WORKSPACE/app/encv-mobile/android/build/outputs/plugin-apks/{release,debug}/" >> /tmp/diagnostic-step39/REASON.txt
-            echo "        $GITHUB_WORKSPACE/app/encv-mobile (兜底 find)" >> /tmp/diagnostic-step39/REASON.txt
+            echo "查找过: $GITHUB_WORKSPACE/${{ env.MONOREPO_MOBILE_DIR }}/android/build/outputs/plugin-apks/{release,debug}/" >> /tmp/diagnostic-step39/REASON.txt
+            echo "        $GITHUB_WORKSPACE/${{ env.MONOREPO_MOBILE_DIR }} (兜底 find)" >> /tmp/diagnostic-step39/REASON.txt
             echo "可能根因: step 38 失败 / convert 任务没跑 / aar2apk 输出路径变了" >> /tmp/diagnostic-step39/REASON.txt
             echo "请看 step 38.5 (Verify inject task ran) 的实际输出" >> /tmp/diagnostic-step39/REASON.txt
             exit 0
@@ -981,19 +1020,19 @@ jobs:
 
           # ⚠️ 真实路径: plugin-openlist 是 android/ 的兄弟目录
           #   settings.gradle.kts:62-63  set projectDir = ../plugin-openlist
-          #   所以 aar 输出在 app/encv-mobile/plugin-openlist/build/outputs/aar/
+          #   所以 aar 输出在 ${{ env.MONOREPO_MOBILE_DIR }}/plugin-openlist/build/outputs/aar/
           AAR_PATH=""
           for variant in release debug; do
-            P="$GITHUB_WORKSPACE/app/encv-mobile/plugin-openlist/build/outputs/aar/plugin-openlist-${variant}.aar"
+            P="$GITHUB_WORKSPACE/${{ env.MONOREPO_MOBILE_DIR }}/plugin-openlist/build/outputs/aar/plugin-openlist-${variant}.aar"
             [ -f "$P" ] && AAR_PATH="$P" && break
           done
           if [ -z "$AAR_PATH" ]; then
             # 兜底 find
-            AAR_PATH=$(find "$GITHUB_WORKSPACE/app/encv-mobile/plugin-openlist/build" -name "*.aar" -type f 2>/dev/null | head -1)
+            AAR_PATH=$(find "$GITHUB_WORKSPACE/${{ env.MONOREPO_MOBILE_DIR }}/plugin-openlist/build" -name "*.aar" -type f 2>/dev/null | head -1)
           fi
           if [ -z "$AAR_PATH" ] || [ ! -f "$AAR_PATH" ]; then
             echo "❌ No plugin-openlist AAR found (可能 plugin-openlist 编译失败)" | tee /tmp/diagnostic-step40/REASON.txt
-            echo "查找过: $GITHUB_WORKSPACE/app/encv-mobile/plugin-openlist/build/outputs/aar/" >> /tmp/diagnostic-step40/REASON.txt
+            echo "查找过: $GITHUB_WORKSPACE/${{ env.MONOREPO_MOBILE_DIR }}/plugin-openlist/build/outputs/aar/" >> /tmp/diagnostic-step40/REASON.txt
             echo "可能的根因:libs/openlist-classes.jar 不存在,compileKotlin 缺 openlistlib 引用" >> /tmp/diagnostic-step40/REASON.txt
             echo "修复:CI 步骤 'Extract OpenList AAR for plugin packaging' 必须成功" >> /tmp/diagnostic-step40/REASON.txt
             exit 0
@@ -1035,7 +1074,7 @@ jobs:
           mkdir -p /tmp/diagnostic-step41
           echo "step41 start ts=$(date +%s)" > /tmp/diagnostic-step41/META.txt
 
-          BUILD_GRADLE="$GITHUB_WORKSPACE/app/encv-mobile/plugin-openlist/build.gradle.kts"
+          BUILD_GRADLE="$GITHUB_WORKSPACE/${{ env.MONOREPO_MOBILE_DIR }}/plugin-openlist/build.gradle.kts"
           if [ ! -f "$BUILD_GRADLE" ]; then
             echo "❌ plugin-openlist/build.gradle.kts 不存在" | tee /tmp/diagnostic-step41/REASON.txt
             exit 0
@@ -1059,13 +1098,13 @@ jobs:
 
           echo
           echo "=== run injectOpenlistClassesToAar task (--dry-run) ===" | tee /tmp/diagnostic-step41/inject-dryrun.txt
-          cd "$GITHUB_WORKSPACE/app/encv-mobile/android"
+          cd "$GITHUB_WORKSPACE/${{ env.MONOREPO_MOBILE_DIR }}/android"
           # ⚠️ 必须 -PincludePlugins=true 否则 plugin-openlist 项目没注册
           ./gradlew -PincludePlugins=true :plugin-openlist:injectOpenlistClassesToAar --dry-run 2>&1 | tail -20 >> /tmp/diagnostic-step41/inject-dryrun.txt || true
 
           echo
           echo "=== libs/openlist-classes.jar 现状 ===" | tee /tmp/diagnostic-step41/classes-jar-check.txt
-          JAR="$GITHUB_WORKSPACE/app/encv-mobile/plugin-openlist/libs/openlist-classes.jar"
+          JAR="$GITHUB_WORKSPACE/${{ env.MONOREPO_MOBILE_DIR }}/plugin-openlist/libs/openlist-classes.jar"
           if [ -f "$JAR" ]; then
             ls -lh "$JAR" >> /tmp/diagnostic-step41/classes-jar-check.txt
             echo "classes.jar 含 openlistlib 类:" >> /tmp/diagnostic-step41/classes-jar-check.txt
@@ -1076,7 +1115,7 @@ jobs:
 
           echo
           echo "=== build/generated/openlistlib/ 现状 ===" | tee /tmp/diagnostic-step41/generated-check.txt
-          DIR="$GITHUB_WORKSPACE/app/encv-mobile/plugin-openlist/build/generated/openlistlib"
+          DIR="$GITHUB_WORKSPACE/${{ env.MONOREPO_MOBILE_DIR }}/plugin-openlist/build/generated/openlistlib"
           if [ -d "$DIR" ]; then
             find "$DIR" -name "*.class" | head -10 >> /tmp/diagnostic-step41/generated-check.txt
             echo "class 数量: $(find "$DIR" -name "*.class" 2>/dev/null | wc -l)" >> /tmp/diagnostic-step41/generated-check.txt
@@ -1097,7 +1136,7 @@ jobs:
           mkdir -p /tmp/diagnostic-step42
           echo "step42 start ts=$(date +%s)" > /tmp/diagnostic-step42/META.txt
 
-          cd "$GITHUB_WORKSPACE/app/encv-mobile/plugin-openlist"
+          cd "$GITHUB_WORKSPACE/${{ env.MONOREPO_MOBILE_DIR }}/plugin-openlist"
 
           if [ ! -f libs/openlist-classes.jar ]; then
             echo "❌ libs/openlist-classes.jar 不存在,跳过 kotlinc verify" | tee /tmp/diagnostic-step42/REASON.txt
@@ -1229,14 +1268,14 @@ jobs:
         env:
           BUGLY_APP_ID: ${{ secrets.BUGLY_APP_ID }}
         run: |
-          cd app/encv-mobile
+          cd ${{ env.MONOREPO_MOBILE_DIR }}
 
           if [ -n "${{ inputs.version }}" ]; then
             echo "=== Building RELEASE APK v${{ inputs.version }} ==="
 
             echo "=== Generating keystore.properties for signing ==="
             {
-              echo "storeFile=${{ github.workspace }}/app/encv-mobile/keystore/release.jks"
+              echo "storeFile=${{ github.workspace }}/${{ env.MONOREPO_MOBILE_DIR }}/keystore/release.jks"
               echo "storePassword=encv2025"
               echo "keyAlias=encvrelease"
               echo "keyPassword=encv2025"
@@ -1272,9 +1311,9 @@ jobs:
       - name: Verify APK contents
         run: |
           if [ -n "${{ inputs.version }}" ]; then
-            APK_PATH=$(find app/encv-mobile/android/app/build/outputs/apk/release -name "*.apk" ! -name "*-unsigned*" -type f | head -1)
+            APK_PATH=$(find ${{ env.MONOREPO_MOBILE_DIR }}/android/app/build/outputs/apk/release -name "*.apk" ! -name "*-unsigned*" -type f | head -1)
           else
-            APK_PATH=$(find app/encv-mobile/android/app/build/outputs/apk/debug -name "*.apk" -type f | head -1)
+            APK_PATH=$(find ${{ env.MONOREPO_MOBILE_DIR }}/android/app/build/outputs/apk/debug -name "*.apk" -type f | head -1)
           fi
           if [ -n "$APK_PATH" ]; then
             echo "=== APK size ==="
@@ -1340,13 +1379,13 @@ jobs:
           # 实际上传前**必须** ls 验证 plugin-openlist-*.apk 存在 + 大小
           # (期望 >50MB 含 libgojni.so,~2MB 仅 dex)
           echo "=== Host APK ===" | tee /tmp/diagnostic-apk-sizes.txt
-          for f in $(find app/encv-mobile/android/app/build/outputs/apk -name "*.apk" -type f 2>/dev/null); do
+          for f in $(find ${{ env.MONOREPO_MOBILE_DIR }}/android/app/build/outputs/apk -name "*.apk" -type f 2>/dev/null); do
             ls -lh "$f" | tee -a /tmp/diagnostic-apk-sizes.txt
           done
           echo | tee -a /tmp/diagnostic-apk-sizes.txt
           echo "=== Plugin APKs ===" | tee -a /tmp/diagnostic-apk-sizes.txt
           PLUGIN_FOUND=0
-          for f in $(find app/encv-mobile/android/build/outputs/plugin-apks -name "*.apk" -type f 2>/dev/null); do
+          for f in $(find ${{ env.MONOREPO_MOBILE_DIR }}/android/build/outputs/plugin-apks -name "*.apk" -type f 2>/dev/null); do
             ls -lh "$f" | tee -a /tmp/diagnostic-apk-sizes.txt
             PLUGIN_FOUND=1
           done
@@ -1356,11 +1395,11 @@ jobs:
             echo "          或 convert_plugin-openlist_release 任务被跳过" | tee -a /tmp/diagnostic-apk-sizes.txt
             # 兜底查找 (兼容 aar2apk 路径变动)
             echo "兜底 find (整个 encv-mobile):" | tee -a /tmp/diagnostic-apk-sizes.txt
-            find app/encv-mobile -name "plugin-openlist-*.apk" -type f 2>/dev/null | head -5 | tee -a /tmp/diagnostic-apk-sizes.txt
+            find ${{ env.MONOREPO_MOBILE_DIR }} -name "plugin-openlist-*.apk" -type f 2>/dev/null | head -5 | tee -a /tmp/diagnostic-apk-sizes.txt
           else
             echo "✅ plugin APK 找到" | tee -a /tmp/diagnostic-apk-sizes.txt
             echo "检查是否含 libgojni.so (期望 >50MB):" | tee -a /tmp/diagnostic-apk-sizes.txt
-            APK=$(find app/encv-mobile/android/build/outputs/plugin-apks -name "*.apk" -type f | head -1)
+            APK=$(find ${{ env.MONOREPO_MOBILE_DIR }}/android/build/outputs/plugin-apks -name "*.apk" -type f | head -1)
             unzip -l "$APK" 2>/dev/null | grep -E "libgojni|lib/" | head -10 | tee -a /tmp/diagnostic-apk-sizes.txt
             SIZE=$(stat -c%s "$APK" 2>/dev/null || stat -f%z "$APK" 2>/dev/null)
             echo "plugin APK 字节数: $SIZE (期望 >50000000)" | tee -a /tmp/diagnostic-apk-sizes.txt
@@ -1377,9 +1416,9 @@ jobs:
         with:
           name: encv-go-android${{ inputs.version && format('-v{0}', inputs.version) || '-debug' }}
           path: |
-            app/encv-mobile/android/app/build/outputs/apk/**/*.apk
-            app/encv-mobile/android/build/outputs/plugin-apks/**/*.apk
-            app/encv-mobile/android/build/**/plugin-openlist*.apk
+            ${{ env.MONOREPO_MOBILE_DIR }}/android/app/build/outputs/apk/**/*.apk
+            ${{ env.MONOREPO_MOBILE_DIR }}/android/build/outputs/plugin-apks/**/*.apk
+            ${{ env.MONOREPO_MOBILE_DIR }}/android/build/**/plugin-openlist*.apk
           retention-days: 3
           if-no-files-found: error
 
@@ -1406,12 +1445,12 @@ jobs:
           echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| Version | \`${{ inputs.version || 'debug (development)' }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Go Binary | $(ls -lh app/encv-mobile/encv-go-arm64 2>/dev/null | awk '{print $5}' || echo N/A) |" >> $GITHUB_STEP_SUMMARY
-          echo "| OpenList AAR | $(ls -lh app/encv-mobile/plugin-openlist/libs/openlist.aar 2>/dev/null | awk '{print $5}' || echo N/A) |" >> $GITHUB_STEP_SUMMARY
-          find app/encv-mobile/android/app/build/outputs/apk -name "*.apk" -type f 2>/dev/null | while read apk; do
+          echo "| Go Binary | $(ls -lh ${{ env.MONOREPO_MOBILE_DIR }}/encv-go-arm64 2>/dev/null | awk '{print $5}' || echo N/A) |" >> $GITHUB_STEP_SUMMARY
+          echo "| OpenList AAR | $(ls -lh ${{ env.MONOREPO_MOBILE_DIR }}/plugin-openlist/libs/openlist.aar 2>/dev/null | awk '{print $5}' || echo N/A) |" >> $GITHUB_STEP_SUMMARY
+          find ${{ env.MONOREPO_MOBILE_DIR }}/android/app/build/outputs/apk -name "*.apk" -type f 2>/dev/null | while read apk; do
             echo "| APK | $(basename "$apk") ($(\ls -lh "$apk" | awk '{print $5}')) |" >> $GITHUB_STEP_SUMMARY
           done
-          find app/encv-mobile/android/build -name "plugin-openlist-*.apk" -type f 2>/dev/null | while read apk; do
+          find ${{ env.MONOREPO_MOBILE_DIR }}/android/build -name "plugin-openlist-*.apk" -type f 2>/dev/null | while read apk; do
             echo "| OpenList Plugin APK | $(basename "$apk") ($(\ls -lh "$apk" | awk '{print $5}')) |" >> $GITHUB_STEP_SUMMARY
           done
           echo "" >> $GITHUB_STEP_SUMMARY

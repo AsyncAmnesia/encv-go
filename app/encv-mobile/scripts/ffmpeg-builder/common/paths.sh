@@ -29,28 +29,81 @@ source "$_THIS_DIR/exec.sh"
 unset _THIS_DIR
 
 # === 根路径检测（git rev-parse 跨平台可靠） ===
-# fallback: 脚本相对路径向上找 encv-mobile/
-# 完全不依赖 /workspace /home/runner 等硬编码
+# 不写死 monorepo 子目录结构（不假设 "app/encv-mobile"）
+# 返回 git 仓库根；monorepo 子工程位置由 detect_mobile_dir 探测
 detect_root() {
     if command -v git >/dev/null 2>&1; then
         local git_root
         git_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
-        if [ -n "$git_root" ] && [ -d "$git_root/app/encv-mobile" ]; then
+        if [ -n "$git_root" ]; then
             echo "$git_root"
             return 0
         fi
     fi
-    # fallback: 脚本在 <root>/app/encv-mobile/scripts/ffmpeg-builder/common/paths.sh
+    # fallback: 脚本在 <root>/<子工程>/scripts/ffmpeg-builder/common/paths.sh
+    # 从 ${BASH_SOURCE[0]} 向上 5 级 = git 仓库根
     local script_dir
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     local candidate
-    candidate="$(cd "$script_dir/../../../.." && pwd)"
-    if [ -d "$candidate/app/encv-mobile" ]; then
+    candidate="$(cd "$script_dir/../../../.." && pwd 2>/dev/null || true)"
+    if [ -n "$candidate" ] && [ -d "$candidate/.git" -o -d "$candidate" ]; then
         echo "$candidate"
         return 0
     fi
-    echo "❌ Cannot detect ROOT_DIR (no git toplevel, no encv-mobile in fallback)" >&2
-    return 1
+    die "Cannot detect ROOT_DIR (no git toplevel, no fallback)"
+}
+
+# === monorepo 子工程（encv-mobile/）位置探测 ===
+# 完全不写死 "app/encv-mobile" — 通过 env / file marker 探测
+#
+# 优先级：
+#   1) $MONOREPO_MOBILE_DIR env (caller 显式告知)
+#   2) find capacitor.config.{ts,js,json} (Capacitor mobile 工程最强标识)
+#   3) find AndroidManifest.xml at android/app/src/main/ (AGP 标识)
+#   4) find package.json with @capacitor/* dep (兜底)
+#
+# 返回 mobile 工程的绝对路径（父目录 = "encv-mobile"）
+detect_mobile_dir() {
+    # 1) env 优先
+    if [ -n "${MONOREPO_MOBILE_DIR:-}" ] && [ -d "${MONOREPO_MOBILE_DIR}" ]; then
+        (cd "$MONOREPO_MOBILE_DIR" && pwd)
+        return 0
+    fi
+
+    local root="${ROOT_DIR:-}"
+    if [ -z "$root" ]; then
+        root="$(detect_root)"
+    fi
+
+    # 2) Capacitor 配置（mobile 工程最强标识）
+    local found
+    found="$(find "$root" -maxdepth 4 \
+        \( -name "capacitor.config.ts" -o -name "capacitor.config.js" -o -name "capacitor.config.json" \) \
+        -not -path "*/node_modules/*" -not -path "*/build/*" -not -path "*/dist/*" \
+        2>/dev/null | head -1)"
+    if [ -n "$found" ]; then
+        dirname "$found"
+        return 0
+    fi
+
+    # 3) AndroidManifest.xml at android/app/src/main/ (AGP 标识)
+    found="$(find "$root" -maxdepth 6 -path "*/android/app/src/main/AndroidManifest.xml" \
+        -not -path "*/build/*" -not -path "*/node_modules/*" \
+        2>/dev/null | head -1)"
+    if [ -n "$found" ]; then
+        # /path/to/mobile/android/app/src/main/AndroidManifest.xml → /path/to/mobile
+        dirname "$found" | sed 's|/android/app/src/main$||'
+        return 0
+    fi
+
+    # 4) package.json 含 @capacitor/* 依赖（兜底）
+    found="$(grep -lE '"@capacitor/' "$root"/*/package.json 2>/dev/null | head -1)"
+    if [ -n "$found" ]; then
+        dirname "$found"
+        return 0
+    fi
+
+    die "Cannot detect MONOREPO_MOBILE_DIR. Set env var or ensure capacitor.config.* / AndroidManifest.xml exists"
 }
 
 # === Android NDK / SDK 路径检测（跨平台） ===
@@ -139,7 +192,7 @@ compute_paths() {
         return 1
     fi
     ROOT_DIR="$(detect_root)"
-    PROJECT_DIR="${ROOT_DIR}/app/encv-mobile"
+    PROJECT_DIR="$(detect_mobile_dir)"  # 探测 monorepo 子工程，零硬编码
     BUILDER_DIR="${PROJECT_DIR}/scripts/ffmpeg-builder"
     MANIFEST_FILE="${BUILDER_DIR}/ffmpeg-feature-manifest.json"
     if [ ! -f "$MANIFEST_FILE" ]; then
@@ -160,7 +213,38 @@ compute_paths() {
     LOG_DIR="${BUILD_ROOT}/logs"
     BUILD_DIR="${BUILD_ROOT}/src"  # 源码解压目录
 
+    # Android jniLibs 路径（runtime 由 applicationInfo.nativeLibraryDir 取）
+    # Android 标准布局: <mobile>/android/app/src/main/jniLibs
+    JNI_LIBS_BASE="$(detect_jni_libs_base)"
+
     mkdir -p "$OUTPUT_DIR" "$LOG_DIR" "$BUILD_DIR"
+}
+
+# === Android jniLibs base 路径探测 ===
+# 优先 env (CI workflow 显式传)，否则用 AGP 标准布局 + find AndroidManifest.xml 兜底
+detect_jni_libs_base() {
+    if [ -n "${ANDROID_JNI_LIBS_BASE:-}" ] && [ -d "${ANDROID_JNI_LIBS_BASE}" ]; then
+        echo "$ANDROID_JNI_LIBS_BASE"
+        return 0
+    fi
+
+    # AGP 标准布局：<mobile>/android/app/src/main/jniLibs
+    local candidate="${PROJECT_DIR}/android/app/src/main/jniLibs"
+    if [ -d "$candidate" ] || mkdir -p "$candidate" 2>/dev/null; then
+        echo "$candidate"
+        return 0
+    fi
+
+    # fallback: find AndroidManifest.xml 推断 jniLibs 位置
+    local manifest_path
+    manifest_path="$(find "${PROJECT_DIR}/android" -maxdepth 6 -name "AndroidManifest.xml" -path "*/app/src/main/*" -not -path "*/build/*" 2>/dev/null | head -1)"
+    if [ -n "$manifest_path" ]; then
+        # /path/mobile/android/app/src/main/AndroidManifest.xml → /path/mobile/android/app/src/main/jniLibs
+        dirname "$manifest_path" | sed 's|/src/main$||' | xargs -I{} echo "{}/jniLibs"
+        return 0
+    fi
+
+    die "Cannot detect JNI_LIBS_BASE (set ANDROID_JNI_LIBS_BASE or ensure AGP layout exists)"
 }
 
 # === 初始化入口（被 Makefile / 单 .sh 都调用） ===
