@@ -64,7 +64,12 @@ build_worker() {
     esac
 
     # === go build -C（关键：用 -C 进 gomod_root，不写死路径） ===
-    log_cmd "go build -C $gomod_root libffmpeg-worker.so"
+    # Go 1.25+ 关键变化：-ldflags 不再透传 -Wl,xxx 给系统 linker（flag provided but not defined）
+    # 必须用 -extldflags 透传 external linker flags
+    # 旧 Go（≤1.24）: -ldflags='-s -w -Wl,-soname,libffmpeg-worker.so'
+    # 新 Go（≥1.25）: -ldflags='-s -w -extldflags=-Wl,-soname,libffmpeg-worker.so'
+    # 二者都设 SONAME=c-shared 包名外的自定义名（dlopen("libffmpeg-worker.so") 需要 SONAME 匹配）
+    log_cmd "go build -C $gomod_root -buildmode=c-shared ./cmd/ffmpeg-worker/ → $worker_out"
     if ! GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=1 \
         CC="$CC" \
         CXX="${TOOLCHAIN_BIN}/clang++" \
@@ -72,7 +77,7 @@ build_worker() {
         CGO_LDFLAGS="$cgo_ldflags" \
         PKG_CONFIG_PATH="${DEPS_INSTALL_DIR}/lib/pkgconfig" \
         go build -C "$gomod_root" -buildmode=c-shared \
-        -ldflags='-s -w -Wl,-soname,libffmpeg-worker.so' \
+        -ldflags='-s -w -extldflags=-Wl,-soname,libffmpeg-worker.so' \
         -o "$worker_out" \
         ./cmd/ffmpeg-worker/ \
         > "${LOG_DIR}/ffmpeg-worker-build.log" 2>&1; then

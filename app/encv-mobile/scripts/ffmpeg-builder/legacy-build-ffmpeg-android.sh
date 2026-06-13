@@ -607,7 +607,7 @@ GOOS=android GOARCH=arm64 CGO_ENABLED=1 \
     CGO_LDFLAGS="-llog -ldl -lm -Wl,-rpath,${FFMPEG_INSTALL}/lib" \
     PKG_CONFIG_PATH="${X264_INSTALL}/lib/pkgconfig:${LAME_INSTALL}/lib/pkgconfig" \
     go build -C "${GOMOD_ROOT}" -buildmode=c-shared \
-    -ldflags='-s -w -Wl,-soname,libffmpeg-worker.so' \
+    -ldflags='-s -w -extldflags=-Wl,-soname,libffmpeg-worker.so' \
     -o "${FTOOLS_BUILD}/libffmpeg-worker.so" \
     ./cmd/ffmpeg-worker/ > "${LOG_DIR}/ffmpeg-worker-build.log" 2>&1 || {
     echo "❌ Failed to build libffmpeg-worker.so (see ${LOG_DIR}/ffmpeg-worker-build.log)"
