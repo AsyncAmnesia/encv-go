@@ -104,7 +104,10 @@ target_android_setup() {
     FFMPEG_INSTALL_DIR="${BUILD_ROOT}/ffmpeg-install"
     NEEDS_ANDROID_NDK=1
 
-    mkdir -p "$DEPS_INSTALL_DIR" "$FFMPEG_INSTALL_DIR"
+    # 最终 .so 落到 android/app/src/main/jniLibs/<abi>/
+    # 与 EncvGoService.kt: File(applicationInfo.nativeLibraryDir, "libffmpeg-worker.so") 对齐
+    OUTPUT_LIB_DIR="${JNI_LIBS_BASE}/${ANDROID_ABI}"
+    mkdir -p "$DEPS_INSTALL_DIR" "$FFMPEG_INSTALL_DIR" "$OUTPUT_LIB_DIR"
 
     require_toolchain CC CXX AR NM RANLIB STRIP LD
     log_info "android toolchain ready: $CC"

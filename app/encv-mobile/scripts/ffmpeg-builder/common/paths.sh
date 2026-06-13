@@ -168,7 +168,7 @@ ffmpeg_builder_init() {
     compute_paths
     export ROOT_DIR PROJECT_DIR BUILDER_DIR MANIFEST_FILE
     export HOST_OS HOST_ARCH
-    export BUILD_ROOT OUTPUT_DIR LOG_DIR BUILD_DIR
+    export BUILD_ROOT OUTPUT_DIR LOG_DIR BUILD_DIR JNI_LIBS_BASE
 }
 
 # 兼容直接 source 模式

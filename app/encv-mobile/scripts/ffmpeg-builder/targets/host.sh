@@ -53,11 +53,13 @@ target_host_setup() {
 
     DEPS_INSTALL_DIR="${BUILD_ROOT}/deps-install"
     FFMPEG_INSTALL_DIR="${BUILD_ROOT}/ffmpeg-install"
+    # host target：output 走 BUILD_ROOT/out（jniLibs 是 Android 概念，host 不需要）
+    OUTPUT_LIB_DIR="${OUTPUT_DIR}"
 
     FFMPEG_CONFIGURE_EXTRA=""
     NEEDS_ANDROID_NDK=0
 
-    mkdir -p "$DEPS_INSTALL_DIR" "$FFMPEG_INSTALL_DIR"
+    mkdir -p "$DEPS_INSTALL_DIR" "$FFMPEG_INSTALL_DIR" "$OUTPUT_LIB_DIR"
 
     require_toolchain CC CXX AR NM RANLIB STRIP PKG_CONFIG
     log_info "host toolchain ready: cc=$CC ar=$AR pkg-config=$PKG_CONFIG"
