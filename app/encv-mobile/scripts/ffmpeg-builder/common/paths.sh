@@ -213,38 +213,10 @@ compute_paths() {
     LOG_DIR="${BUILD_ROOT}/logs"
     BUILD_DIR="${BUILD_ROOT}/src"  # 源码解压目录
 
-    # Android jniLibs 路径（runtime 由 applicationInfo.nativeLibraryDir 取）
-    # Android 标准布局: <mobile>/android/app/src/main/jniLibs
-    JNI_LIBS_BASE="$(detect_jni_libs_base)"
-
+    # 架构铁律：ffmpeg-builder 不知道 jniLibs 是什么，那是 Android 应用的 AGP 概念。
+    # 主应用产物落点由 caller (workflow / Makefile 调用方) 决定；
+    # ffmpeg-builder 只负责写到 OUTPUT_DIR/<abi>/ 供 caller 拷贝/打包。
     mkdir -p "$OUTPUT_DIR" "$LOG_DIR" "$BUILD_DIR"
-}
-
-# === Android jniLibs base 路径探测 ===
-# 优先 env (CI workflow 显式传)，否则用 AGP 标准布局 + find AndroidManifest.xml 兜底
-detect_jni_libs_base() {
-    if [ -n "${ANDROID_JNI_LIBS_BASE:-}" ] && [ -d "${ANDROID_JNI_LIBS_BASE}" ]; then
-        echo "$ANDROID_JNI_LIBS_BASE"
-        return 0
-    fi
-
-    # AGP 标准布局：<mobile>/android/app/src/main/jniLibs
-    local candidate="${PROJECT_DIR}/android/app/src/main/jniLibs"
-    if [ -d "$candidate" ] || mkdir -p "$candidate" 2>/dev/null; then
-        echo "$candidate"
-        return 0
-    fi
-
-    # fallback: find AndroidManifest.xml 推断 jniLibs 位置
-    local manifest_path
-    manifest_path="$(find "${PROJECT_DIR}/android" -maxdepth 6 -name "AndroidManifest.xml" -path "*/app/src/main/*" -not -path "*/build/*" 2>/dev/null | head -1)"
-    if [ -n "$manifest_path" ]; then
-        # /path/mobile/android/app/src/main/AndroidManifest.xml → /path/mobile/android/app/src/main/jniLibs
-        dirname "$manifest_path" | sed 's|/src/main$||' | xargs -I{} echo "{}/jniLibs"
-        return 0
-    fi
-
-    die "Cannot detect JNI_LIBS_BASE (set ANDROID_JNI_LIBS_BASE or ensure AGP layout exists)"
 }
 
 # === 初始化入口（被 Makefile / 单 .sh 都调用） ===
@@ -252,7 +224,7 @@ ffmpeg_builder_init() {
     compute_paths
     export ROOT_DIR PROJECT_DIR BUILDER_DIR MANIFEST_FILE
     export HOST_OS HOST_ARCH
-    export BUILD_ROOT OUTPUT_DIR LOG_DIR BUILD_DIR JNI_LIBS_BASE
+    export BUILD_ROOT OUTPUT_DIR LOG_DIR BUILD_DIR
 }
 
 # 兼容直接 source 模式

@@ -104,9 +104,11 @@ target_android_setup() {
     FFMPEG_INSTALL_DIR="${BUILD_ROOT}/ffmpeg-install"
     NEEDS_ANDROID_NDK=1
 
-    # 最终 .so 落到 android/app/src/main/jniLibs/<abi>/
+    # 最终 .so 落到 ffmpeg-builder 自己的 OUTPUT_DIR（<project>/build/ffmpeg/android-<arch>/out/<abi>/）
+    # 不写主应用 android/app/src/main/jniLibs/：那是 caller (workflow) 的责任。
     # 与 EncvGoService.kt: File(applicationInfo.nativeLibraryDir, "libffmpeg-worker.so") 对齐
-    OUTPUT_LIB_DIR="${JNI_LIBS_BASE}/${ANDROID_ABI}"
+    # 是 workflow 拷贝到 jniLibs 之后的事，ffmpeg-builder 不知道 jniLibs 是什么。
+    OUTPUT_LIB_DIR="${OUTPUT_DIR}/${ANDROID_ABI}"
     mkdir -p "$DEPS_INSTALL_DIR" "$FFMPEG_INSTALL_DIR" "$OUTPUT_LIB_DIR"
 
     require_toolchain CC CXX AR NM RANLIB STRIP LD

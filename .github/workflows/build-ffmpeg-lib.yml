@@ -82,17 +82,21 @@ jobs:
           echo "y" | sdkmanager --install "ndk;${{ env.NDK_VERSION }}" > /dev/null 2>&1
           echo "✅ NDK installed"
 
-      # === 派生路径：GITHUB_WORKSPACE + MONOREPO_MOBILE_DIR 拼出所有子路径 ===
+      # === 派生路径：GITHUB_WORKSPACE + MONOREPO_MOBILE_DIR 拼出 ffmpeg-builder 自己的路径 ===
+      # 架构铁律：本工作流只管 ffmpeg-builder 自己的输出（OUTPUT_DIR），
+      #         不知道主应用 jniLibs 在哪。产物 zip 推到 release，caller 自己拷。
       - name: Compute monorepo paths
         id: paths
         run: |
           # 全部基于 GITHUB_WORKSPACE 派生，不写死 /home/runner
           MOBILE_DIR="${GITHUB_WORKSPACE}/${MONOREPO_MOBILE_DIR}"
           BUILDER_DIR="${MOBILE_DIR}/scripts/ffmpeg-builder"
+          # BUILD_DIR = ffmpeg-builder 自己的 build 根（<project>/build/ffmpeg/android-<arch>/）
           BUILD_DIR="${MOBILE_DIR}/build/ffmpeg/android-${{ inputs.ffmpeg_abi }}"
-          JNI_BASE="${MOBILE_DIR}/android/app/src/main/jniLibs/${{ inputs.ffmpeg_abi }}"
+          # OUTPUT_DIR = ffmpeg-builder 产物落点（<BUILD_DIR>/out/<abi>/），本工作流唯一输出目录
+          OUTPUT_DIR="${BUILD_DIR}/out/${{ inputs.ffmpeg_abi }}"
 
-          for v in MOBILE_DIR BUILDER_DIR BUILD_DIR JNI_BASE; do
+          for v in MOBILE_DIR BUILDER_DIR BUILD_DIR OUTPUT_DIR; do
               eval "val=\$$v"
               if [ -z "$val" ]; then
                   echo "::error::$v is empty"; exit 1
@@ -103,8 +107,8 @@ jobs:
           echo "MOBILE_DIR=$MOBILE_DIR"   >> "$GITHUB_OUTPUT"
           echo "BUILDER_DIR=$BUILDER_DIR" >> "$GITHUB_OUTPUT"
           echo "BUILD_DIR=$BUILD_DIR"     >> "$GITHUB_OUTPUT"
-          echo "JNI_BASE=$JNI_BASE"       >> "$GITHUB_OUTPUT"
-          echo "✅ paths derived"
+          echo "OUTPUT_DIR=$OUTPUT_DIR"   >> "$GITHUB_OUTPUT"
+          echo "✅ paths derived (ffmpeg-builder 自己的目录，不碰主应用 jniLibs)"
 
       # === ffmpeg-builder 源码 cache（x264 + lame + ffmpeg tarball 复用） ===
       - name: Cache ffmpeg-builder sources
@@ -156,11 +160,11 @@ jobs:
       - name: Verify output artifacts
         if: success()
         env:
-          JNI_BASE: ${{ steps.paths.outputs.JNI_BASE }}
+          OUTPUT_DIR: ${{ steps.paths.outputs.OUTPUT_DIR }}
         run: |
           set -e
-          OUT_DIR="$JNI_BASE"
-          [ -d "$OUT_DIR" ] || { echo "::error::JNI_BASE missing: $OUT_DIR"; exit 1; }
+          OUT_DIR="$OUTPUT_DIR"
+          [ -d "$OUT_DIR" ] || { echo "::error::OUTPUT_DIR missing: $OUT_DIR"; exit 1; }
 
           # 1) 必需文件存在
           for f in libffmpeg.so libffprobe.so libffmpeg-worker.so build-info.json; do
@@ -214,19 +218,22 @@ jobs:
             manifest_sha256: .manifest_sha256
           }' "$OUT_DIR/build-info.json"
 
-      - name: Package jniLibs as zip
+      - name: Package artifacts as zip
+        id: package
         if: success()
         env:
-          JNI_BASE: ${{ steps.paths.outputs.JNI_BASE }}
+          OUTPUT_DIR: ${{ steps.paths.outputs.OUTPUT_DIR }}
         run: |
-          cd "${{ steps.paths.outputs.MOBILE_DIR }}/android/app/src/main/jniLibs"
-          ZIP_NAME="ffmpeg-jniLibs-${{ inputs.ffmpeg_abi }}-v${{ env.FFMPEG_LIB_VERSION }}.zip"
-          ABI_DIR="${{ inputs.ffmpeg_abi }}"
-          # 验证 ABI 目录存在且在预期路径
+          # 在 OUTPUT_DIR 父目录 (build/ffmpeg/android-<abi>/out/) 打包，
+          # 保留 <abi>/ 子目录结构（与主应用 jniLibs 布局一致，caller 拷过去直接对得上）。
+          OUT_PARENT="$(dirname "$OUTPUT_DIR")"
+          ABI_DIR="$(basename "$OUTPUT_DIR")"
+          cd "$OUT_PARENT"
           if [ ! -d "$ABI_DIR" ]; then
-              echo "::error::ABI directory not found: $(pwd)/$ABI_DIR"
+              echo "::error::ABI directory not found: $OUT_PARENT/$ABI_DIR"
               exit 1
           fi
+          ZIP_NAME="ffmpeg-jniLibs-${{ inputs.ffmpeg_abi }}-v${{ env.FFMPEG_LIB_VERSION }}.zip"
           zip -r9 "${{ runner.temp }}/$ZIP_NAME" "$ABI_DIR/"
           echo "📦 Package created:"
           unzip -l "${{ runner.temp }}/$ZIP_NAME"
@@ -264,13 +271,3 @@ jobs:
           files: ${{ steps.package.outputs.zip_path }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Cleanup local jniLibs (避免污染主工作流)
-        if: always()
-        env:
-          JNI_BASE: ${{ steps.paths.outputs.JNI_BASE }}
-        run: |
-          # 注意：cache 路径在 build/ 下不冲突，但 jniLibs/ 是 gitignore 文件路径
-          # 清理防止 commit 时误带
-          rm -rf "$JNI_BASE"
-          echo "✅ jniLibs cleaned"

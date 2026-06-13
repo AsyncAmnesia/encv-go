@@ -8,7 +8,7 @@
 # 前置：build_ffmpeg 已完成（$FFMPEG_INSTALL_DIR 存在）
 # 输出：
 #   $BUILD_ROOT/fftools-build/{libffmpeg.so,libffprobe.so}
-#   $OUTPUT_LIB_DIR/{libffmpeg.so,libffprobe.so,build-info.json}  ← Android 同步到 jniLibs
+#   $OUTPUT_LIB_DIR/{libffmpeg.so,libffprobe.so,build-info.json}  ← caller 可拷到 jniLibs/
 
 set -euo pipefail
 
