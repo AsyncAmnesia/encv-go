@@ -956,8 +956,6 @@ export async function fetchFFmpegStatus(): Promise<FFmpegStatus> {
 export interface BuildInfo {
   ffmpeg_version: string
   ffmpeg_codename: string
-  x264_version: string
-  x264_configure_opts: string
   ndk_version: string
   api_level: number
   abi: string
@@ -973,7 +971,6 @@ export interface BuildInfo {
   linking: string
   cflags: string
   ffmpeg_license: string
-  x264_license: string
   app_version?: string
 }
 
