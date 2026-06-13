@@ -46,6 +46,7 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.branch || github.sha }}
           fetch-depth: 1
+          submodules: false  # 防御
 
       - name: Set up pnpm
         if: matrix.test-group == 'frontend-vitest'
@@ -151,6 +152,7 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.branch || github.sha }}
           fetch-depth: 1
+          submodules: false  # 防御
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -229,6 +231,8 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.branch || github.sha }}
           fetch-depth: 1
+          submodules: false  # 防御
+          submodules: false  # 防御
 
       - name: Set up Go
         uses: actions/setup-go@v5

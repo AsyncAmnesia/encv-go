@@ -24,6 +24,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+          submodules: false  # 防御
 
       - name: Run lint (禁止 Node.js crypto 加密 API Key)
         id: lint

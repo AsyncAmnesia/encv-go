@@ -48,7 +48,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.branch || github.ref_name }}
-          submodules: recursive
+          submodules: false  # 仓库无真实 submodule（曾经误引入 Sillot-KMP/lynx-source gitlink 已清理）
 
       - name: Setup Go (for libffmpeg-worker.so)
         uses: actions/setup-go@v5
