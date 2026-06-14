@@ -48,11 +48,9 @@
       ref="contentRef"
       class="log-content"
       :class="{ 'scrollbar-visible': scrollbarVisible }"
+      :scroll-events="true"
       @ionScroll="onContentScroll"
       @ionScrollEnd="onContentScrollEnd"
-      @wheel.passive="onUserGestureStart"
-      @touchstart.passive="onUserGestureStart"
-      @touchend.passive="onUserGestureEnd"
     >
       <div v-if="activeTab === 'frontend'" class="log-list">
         <div v-if="filteredFrontend.length === 0" class="empty-logs">
@@ -222,20 +220,28 @@ const filteredBackend = computed(() => {
 const totalCurrent = computed(() => activeTab.value === 'frontend' ? frontendLogs.value.length : backendLogs.value.length)
 const filteredCurrent = computed(() => activeTab.value === 'frontend' ? filteredFrontend.value.length : filteredBackend.value.length)
 
-// ── Pinned-to-bottom 状态机（2026-06-14 重构）─────────────────────────────
-// 取代旧的"isUserScrolling + 1500ms timeout"启发式：
-//   - nearBottom  = 几何判定（scrollTop + clientHeight 距 scrollHeight < 80px）
-//   - unreadCount = 用户离开底部期间累积的"未读"日志数
-//   - 浮动「↓ N 条新日志」按钮：未读 > 0 且不在底部时显示
-//   - 硬性覆盖 hardPaused（底栏 toggle）：true 即便在底部也不自动滚
+// ── Pinned-to-bottom 状态机（2026-06-14 v2 重构）────────────────────────────
+// 核心问题：Android WebView 上
+//  1. <ion-content> 的 @wheel/@touchstart 监听被 Ionic gesture 拦截，不冒泡
+//     → 不能用 userGestureActive 区分程序化 vs 用户滚动
+//  2. ion-content 的 getScrollElement() 在 Capacitor Android 上可能返回外层元素
+//     → 必须 DOM walk fallback 找 shadow DOM .inner-scroll
+//  3. el.scrollTo({ behavior: 'auto' }) 在 Android WebView 不等价于 scrollTop=scrollHeight
+//     → 必须直接赋值 scrollTop
+//  4. Vue 3 watch 默认 flush:'pre'（DOM 未 patch）→ 必须 flush:'post'
+//
+// 解决方案：
+//  - programmaticScrollInProgress 时间窗 flag（程序化滚动期间忽略 ionScroll）
+//  - 优先 contentRef.getScrollElement()，失败则 DOM walk
+//  - 直接 scrollTop = scrollHeight（instant）
+//  - flush:'post' watcher（DOM 已 patch）
+//  - await nextTick + requestAnimationFrame（等 layout 完成）
 // ───────────────────────────────────────────────────────────────────────────
 const NEAR_BOTTOM_THRESHOLD_PX = 80
 const nearBottom = ref(true)
 const unreadCount = ref(0)
-// 用户手势标记：仅在 wheel/touchstart→touchend 期间才更新 nearBottom
-// 这样程序化滚动触发的 ionScroll 不会被误判为"用户主动滚走"
-let userGestureActive = false
-let gestureEndTimer: ReturnType<typeof setTimeout> | null = null
+let programmaticScrollInProgress = false
+let programmaticScrollTimer: ReturnType<typeof setTimeout> | null = null
 let scrollbarTimer: ReturnType<typeof setTimeout> | null = null
 
 function onTabClick(tab: 'frontend' | 'backend') {
@@ -248,17 +254,43 @@ function onTabChange(event: CustomEvent) {
   activeTab.value = (event.detail.value || 'frontend') as 'frontend' | 'backend'
 }
 
+/**
+ * 找 ion-content 实际滚动的元素
+ * 优先级：
+ *   1. contentRef.getScrollElement()（@ionic/vue 8 官方 API）
+ *   2. shadow DOM .inner-scroll（ion-content 内部真实滚动元素）
+ *   3. DOM walk 找最近的 overflow:auto/scroll 祖先
+ *  返回 null 表示完全找不到（不应发生，但兜底）
+ */
 async function getScrollEl(): Promise<HTMLElement | null> {
   if (!contentRef.value) return null
+  // 优先级 1：官方 API
   try {
     const el = contentRef.value as any
     if (typeof el.getScrollElement === 'function') {
-      return await el.getScrollElement()
+      const r = await el.getScrollElement()
+      if (r) return r as HTMLElement
     }
-    return null
-  } catch {
-    return null
+  } catch { /* fall through */ }
+  // 优先级 2：shadow DOM .inner-scroll
+  const ionContentEl = (contentRef.value as any).$el as HTMLElement | undefined
+  if (ionContentEl?.shadowRoot) {
+    const inner = ionContentEl.shadowRoot.querySelector('.inner-scroll') as HTMLElement | null
+    if (inner) return inner
   }
+  // 优先级 3：DOM walk
+  const logList = document.querySelector('.log-list') as HTMLElement | null
+  if (logList) {
+    let current: HTMLElement | null = logList.parentElement
+    while (current && current !== document.body) {
+      const style = window.getComputedStyle(current)
+      if (style.overflowY === 'auto' || style.overflowY === 'scroll') {
+        return current
+      }
+      current = current.parentElement
+    }
+  }
+  return null
 }
 
 async function scrollToTop() {
@@ -268,17 +300,43 @@ async function scrollToTop() {
 
 /**
  * 滚动到底部（程序化）
- * - 用 scrollTo() API 替代 scrollTop=scrollHeight 同步赋值（避免布局未完成 race）
- * - smooth=false 用于自动滚（避免被新日志的缓动追上）
- * - smooth=true  用于浮动按钮点击
+ * 关键修复：
+ *  - await nextTick → 等 Vue 把新行 patch 到 DOM
+ *  - await requestAnimationFrame → 等浏览器完成 layout（scrollHeight 更新）
+ *  - 直接 scrollTop = scrollHeight（避开 Android WebView scrollTo 行为歧义）
+ *  - 设 programmaticScrollInProgress 屏蔽 ionScroll 反馈
  */
 async function scrollToBottom(smooth = false) {
-  const el = await getScrollEl()
-  if (!el) return
-  el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
-  // 程序化滚动保证最终在底：立即置位
-  nearBottom.value = true
-  unreadCount.value = 0
+  // eslint-disable-next-line no-console
+  console.log('[DevLogs] scrollToBottom called, smooth=', smooth, 'nearBottom=', nearBottom.value, 'unreadCount=', unreadCount.value)
+  programmaticScrollInProgress = true
+  if (programmaticScrollTimer) clearTimeout(programmaticScrollTimer)
+  try {
+    await nextTick()
+    await new Promise<void>((r) => requestAnimationFrame(() => r()))
+    const el = await getScrollEl()
+    // eslint-disable-next-line no-console
+    console.log('[DevLogs] scrollEl=', el ? `${el.tagName}.${el.className || ''} scrollH=${el.scrollHeight} scrollT=${el.scrollTop} clientH=${el.clientHeight}` : 'NULL')
+    if (!el) {
+      console.warn('[DevLogs] scrollToBottom aborted: scroll element not found')
+      return
+    }
+    if (smooth) {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    } else {
+      // 直赋值（instant，不依赖 UA scrollTo 行为）
+      el.scrollTop = el.scrollHeight
+      // 二次保险：再 read+set（部分 WebView 第一次赋值时被 layout 限制）
+      requestAnimationFrame(() => { el.scrollTop = el.scrollHeight })
+    }
+    nearBottom.value = true
+    unreadCount.value = 0
+  } finally {
+    // 100ms 后解除屏蔽（覆盖 ionScroll 事件从程序化滚动传播过来的时间）
+    programmaticScrollTimer = setTimeout(() => {
+      programmaticScrollInProgress = false
+    }, 100)
+  }
 }
 
 /** 浮动按钮点击：平滑滚到底部 */
@@ -286,14 +344,15 @@ async function onJumpToBottom() {
   await scrollToBottom(true)
 }
 
-/** 重算 nearBottom（用户手势触发的滚动中调用） */
+/** 重算 nearBottom（仅在 ionScroll 来自用户滚动时调用） */
 async function updateNearBottom() {
   const el = await getScrollEl()
   if (!el) return
   const distance = el.scrollHeight - el.scrollTop - el.clientHeight
   const wasNear = nearBottom.value
   nearBottom.value = distance < NEAR_BOTTOM_THRESHOLD_PX
-  // 用户从"远底"滑回底部：清空未读
+  // eslint-disable-next-line no-console
+  console.log('[DevLogs] updateNearBottom: distance=', distance, 'nearBottom=', nearBottom.value)
   if (!wasNear && nearBottom.value) {
     unreadCount.value = 0
   }
@@ -306,25 +365,16 @@ async function updateNearBottom() {
  * - 不在底部：累积 unread，浮动按钮显示
  */
 function handleNewLog() {
+  // eslint-disable-next-line no-console
+  console.log('[DevLogs] handleNewLog: activeTab=', activeTab.value, 'hardPaused=', hardPaused.value, 'nearBottom=', nearBottom.value)
   if (hardPaused.value) return
   if (nearBottom.value) {
     void scrollToBottom(false)
   } else {
     unreadCount.value++
+    // eslint-disable-next-line no-console
+    console.log('[DevLogs] accumulated unreadCount=', unreadCount.value)
   }
-}
-
-function onUserGestureStart() {
-  userGestureActive = true
-  if (gestureEndTimer) clearTimeout(gestureEndTimer)
-}
-
-function onUserGestureEnd() {
-  // 50ms 延迟：等最后一次惯性滚动触发的 ionScroll 处理完
-  if (gestureEndTimer) clearTimeout(gestureEndTimer)
-  gestureEndTimer = setTimeout(() => {
-    userGestureActive = false
-  }, 50)
 }
 
 function onContentScroll() {
@@ -332,10 +382,13 @@ function onContentScroll() {
   scrollbarVisible.value = true
   if (scrollbarTimer) clearTimeout(scrollbarTimer)
   scrollbarTimer = setTimeout(() => { scrollbarVisible.value = false }, 2000)
-  // 仅在用户手势期间才更新 nearBottom——区分程序化 vs 用户滚动
-  if (userGestureActive) {
-    void updateNearBottom()
+  // 屏蔽程序化滚动触发的 ionScroll（避免反馈循环）
+  if (programmaticScrollInProgress) {
+    // eslint-disable-next-line no-console
+    console.log('[DevLogs] onContentScroll: ignored (programmatic scroll in progress)')
+    return
   }
+  void updateNearBottom()
 }
 
 function onContentScrollEnd() {
@@ -344,25 +397,24 @@ function onContentScrollEnd() {
 }
 
 /**
- * 新日志监听（替代旧的 filteredXxx deep watcher）：
- * - 只看"最后一条日志的 id"——避免搜索/筛选引起的中间数组变化误触发
- * - 两个独立 watcher 按当前 tab 分发（避免跨 tab 误滚）
+ * 新日志监听（flush:'post' 确保 DOM 已 patch）
+ * - flush:'post' 关键：默认 flush:'pre' 时 watcher 触发时 DOM 未更新，scrollHeight 错误
+ * - 看的是数组 length（不是深监听），性能好且不会因搜索/筛选误触发
  */
-const lastFrontendId = computed(() => {
-  const arr = filteredFrontend.value
-  return arr.length > 0 ? arr[arr.length - 1].id : 0
-})
-const lastBackendId = computed(() => {
-  const arr = filteredBackend.value
-  return arr.length > 0 ? arr[arr.length - 1].id : 0
-})
-
-watch(lastFrontendId, () => {
-  if (activeTab.value === 'frontend') handleNewLog()
-})
-watch(lastBackendId, () => {
-  if (activeTab.value === 'backend') handleNewLog()
-})
+watch(
+  () => frontendLogs.value.length,
+  () => {
+    if (activeTab.value === 'frontend') handleNewLog()
+  },
+  { flush: 'post' },
+)
+watch(
+  () => backendLogs.value.length,
+  () => {
+    if (activeTab.value === 'backend') handleNewLog()
+  },
+  { flush: 'post' },
+)
 
 async function handleCopy() {
   const logs = activeTab.value === 'frontend' ? filteredFrontend.value : filteredBackend.value
@@ -473,7 +525,7 @@ function onVisibilityChange() {
 onUnmounted(() => {
   eventBus.off('ws:message', onWsMessage)
   eventBus.off('server:status', onServerStatus)
-  if (gestureEndTimer) clearTimeout(gestureEndTimer)
+  if (programmaticScrollTimer) clearTimeout(programmaticScrollTimer)
   if (scrollbarTimer) clearTimeout(scrollbarTimer)
   if (typeof document !== 'undefined') {
     document.removeEventListener('visibilitychange', onVisibilityChange)
@@ -484,8 +536,8 @@ onUnmounted(() => {
  * 暴露给单元测试的滚动状态机（生产环境无用，仅用于单测验证 pinned 模式）
  * 覆盖：
  *   - nearBottom / unreadCount / hardPaused refs
- *   - handleNewLog / onJumpToBottom / updateNearBottom / scrollToBottom
- *   - 模拟的 onContentScroll / onUserGestureStart / onUserGestureEnd
+ *   - programmaticScrollInProgress flag（测试可重置）
+ *   - handleNewLog / onJumpToBottom / updateNearBottom / scrollToBottom / onContentScroll
  */
 defineExpose({
   // refs
@@ -499,10 +551,10 @@ defineExpose({
   updateNearBottom,
   scrollToBottom,
   onContentScroll,
-  onUserGestureStart,
-  onUserGestureEnd,
-  // 工具（测试可手动控制 activeTab）
+  // 测试工具
   setActiveTab(tab: 'frontend' | 'backend') { activeTab.value = tab },
+  setProgrammaticScrollInProgress(v: boolean) { programmaticScrollInProgress = v },
+  isProgrammaticScrollInProgress() { return programmaticScrollInProgress },
 })
 </script>
 

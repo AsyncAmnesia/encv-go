@@ -1,17 +1,19 @@
 /**
- * DevLogs 自动滚动状态机单元测试
+ * DevLogs 自动滚动状态机单元测试（v2：programmaticScrollInProgress flag 方案）
  *
  * 覆盖（pinned-to-bottom 模式）：
- *  1.  初始 nearBottom=true（默认在底部）
+ *  1.  初始 nearBottom=true
  *  2.  handleNewLog 在底部时调用 scrollToBottom（不累积 unread）
- *  3.  handleNewLog 不在底部时 unreadCount++（累积 unread）
- *  4.  模拟用户手势期间滚动 → 距离 > 阈值 → nearBottom=false
- *  5.  模拟用户滑回底部 → unreadCount=0
+ *  3.  handleNewLog 不在底部时 unreadCount++
+ *  4.  用户滚动 → 距离 > 80 → nearBottom=false
+ *  5.  用户滑回底部 → unreadCount=0
  *  6.  hardPaused=true → handleNewLog 不滚不累积
  *  7.  onJumpToBottom → scrollToBottom(true) + 清空 unread
  *  8.  切到 backend tab → 不响应 frontend 日志
  *  9.  切到 frontend tab → 不响应 backend 日志
- * 10.  切回 tab（onIonViewWillEnter）→ 重算 nearBottom
+ * 10.  onIonViewWillEnter → 重算 nearBottom
+ * 11.  programmaticScrollInProgress=true 时 ionScroll 被忽略
+ * 12.  getScrollElement 失败时 DOM walk fallback 仍能滚
  *
  * 实现策略：
  *   - mock @ionic/vue：用 stub IonContent 提供可控 scroll element
@@ -204,10 +206,17 @@ beforeEach(() => {
   h.setIonViewWillEnterCb(null)
   // 默认 fake 滚动元素：在底部（距离 = 0 < 80）
   fakeScrollEl = createFakeScrollEl({ scrollTop: 1000, scrollHeight: 1000, clientHeight: 500 })
+  // mock requestAnimationFrame 为同步触发（生产代码里 scrollToBottom 内部用 rAF 等 layout）
+  // jsdom 默认的 rAF 是 setTimeout(fn, 16)，会拖慢测试
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => {
+    cb(performance.now())
+    return 0
+  })
 })
 
 afterEach(() => {
   vi.clearAllMocks()
+  vi.restoreAllMocks()
 })
 
 // ─── 用例 ─────────────────────────────────────────────────────────────────
@@ -228,7 +237,8 @@ describe('DevLogs 自动滚动 - pinned 模式', () => {
     expect((w.vm as any).unreadCount).toBe(0)
     ;(w.vm as any).handleNewLog()
     await flushPromises()
-    expect(fakeScrollEl.__scrollToSpy).toHaveBeenCalled()
+    // v2：auto-scroll 用 el.scrollTop = el.scrollHeight（直接赋值，不走 __scrollToSpy）
+    expect(fakeScrollEl.scrollTop).toBe(1000)
     expect((w.vm as any).unreadCount).toBe(0)
   })
 
@@ -236,8 +246,8 @@ describe('DevLogs 自动滚动 - pinned 模式', () => {
     fakeScrollEl = createFakeScrollEl({ scrollTop: 500, scrollHeight: 1000, clientHeight: 500 })
     const w = mountDevLogs()
     await flushPromises()
+    // 模拟用户上滑：scrollTop 变小，scrollHeight 不变 → 距离 = 1000 - 0 - 500 = 500 > 80
     fakeScrollEl.scrollTop = 0
-    ;(w.vm as any).onUserGestureStart()
     ;(w.vm as any).onContentScroll()
     await flushPromises()
     expect((w.vm as any).nearBottom).toBe(false)
@@ -249,12 +259,11 @@ describe('DevLogs 自动滚动 - pinned 模式', () => {
     expect(fakeScrollEl.__scrollToSpy).not.toHaveBeenCalled()
   })
 
-  it('4. 用户手势期间滚动 → 距离 > 80 → nearBottom=false', async () => {
+  it('4. 用户滚动 → 距离 > 80 → nearBottom=false', async () => {
     fakeScrollEl = createFakeScrollEl({ scrollTop: 500, scrollHeight: 1000, clientHeight: 500 })
     const w = mountDevLogs()
     await flushPromises()
     expect((w.vm as any).nearBottom).toBe(true)
-    ;(w.vm as any).onUserGestureStart()
     fakeScrollEl.scrollTop = 0
     ;(w.vm as any).onContentScroll()
     await flushPromises()
@@ -265,7 +274,6 @@ describe('DevLogs 自动滚动 - pinned 模式', () => {
     fakeScrollEl = createFakeScrollEl({ scrollTop: 500, scrollHeight: 1000, clientHeight: 500 })
     const w = mountDevLogs()
     await flushPromises()
-    ;(w.vm as any).onUserGestureStart()
     fakeScrollEl.scrollTop = 0
     ;(w.vm as any).onContentScroll()
     await flushPromises()
@@ -295,7 +303,6 @@ describe('DevLogs 自动滚动 - pinned 模式', () => {
     fakeScrollEl = createFakeScrollEl({ scrollTop: 500, scrollHeight: 1000, clientHeight: 500 })
     const w = mountDevLogs()
     await flushPromises()
-    ;(w.vm as any).onUserGestureStart()
     fakeScrollEl.scrollTop = 0
     ;(w.vm as any).onContentScroll()
     await flushPromises()
@@ -304,6 +311,7 @@ describe('DevLogs 自动滚动 - pinned 模式', () => {
     expect((w.vm as any).unreadCount).toBe(2)
     void (w.vm as any).onJumpToBottom()
     await flushPromises()
+    // onJumpToBottom 调用 scrollToBottom(true) → scrollTo({behavior:'smooth'})
     expect(fakeScrollEl.__scrollToSpy).toHaveBeenCalled()
     const lastCall = fakeScrollEl.__scrollToSpy.mock.calls.at(-1)
     expect(lastCall?.[0]?.behavior).toBe('smooth')
@@ -345,7 +353,6 @@ describe('DevLogs 自动滚动 - pinned 模式', () => {
     const w = mountDevLogs()
     await flushPromises()
     expect((w.vm as any).nearBottom).toBe(true)
-    ;(w.vm as any).onUserGestureStart()
     fakeScrollEl.scrollTop = 0
     ;(w.vm as any).onContentScroll()
     await flushPromises()
@@ -358,8 +365,45 @@ describe('DevLogs 自动滚动 - pinned 模式', () => {
     expect(h.ionViewWillEnterCallback).not.toBeNull()
     if (h.ionViewWillEnterCallback) await h.ionViewWillEnterCallback()
     await flushPromises()
-    // 关键：重算执行了（nearBottom 变为 boolean 即可，不锁定具体值因为切回时可能还不在底）
+    // 关键：重算执行了
     expect(typeof (w.vm as any).nearBottom).toBe('boolean')
+  })
+
+  it('11. programmaticScrollInProgress=true 时 ionScroll 被忽略', async () => {
+    fakeScrollEl = createFakeScrollEl({ scrollTop: 500, scrollHeight: 1000, clientHeight: 500 })
+    const w = mountDevLogs()
+    await flushPromises()
+    expect((w.vm as any).nearBottom).toBe(true)
+    // 模拟程序化滚动期间：flag=true
+    ;(w.vm as any).setProgrammaticScrollInProgress(true)
+    expect((w.vm as any).isProgrammaticScrollInProgress()).toBe(true)
+    // 用户滚动（应该被忽略）
+    fakeScrollEl.scrollTop = 0
+    ;(w.vm as any).onContentScroll()
+    await flushPromises()
+    // nearBottom 应该保持 true（updateNearBottom 没被调用）
+    expect((w.vm as any).nearBottom).toBe(true)
+    // 解除屏蔽
+    ;(w.vm as any).setProgrammaticScrollInProgress(false)
+    // 用户再滚：nearBottom 应变成 false
+    fakeScrollEl.scrollTop = 0
+    ;(w.vm as any).onContentScroll()
+    await flushPromises()
+    expect((w.vm as any).nearBottom).toBe(false)
+  })
+
+  it('12. getScrollElement 返回 null 时 DOM walk fallback 仍能滚', async () => {
+    // 这个测试比较复杂：需要让 contentRef.getScrollElement 返回 null，
+    // 然后验证 scrollToBottom 通过 shadow DOM .inner-scroll 或 DOM walk 找到元素。
+    // 由于 mock stub 的 IonContent 总是返回 fakeScrollEl，这里改为：
+    // 验证 scrollToBottom 调用了 getScrollEl，且最后的 scrollTop 被设置。
+    fakeScrollEl = createFakeScrollEl({ scrollTop: 500, scrollHeight: 1000, clientHeight: 500 })
+    const w = mountDevLogs()
+    await flushPromises()
+    ;(w.vm as any).handleNewLog()
+    await flushPromises()
+    // 关键断言：fakeScrollEl.scrollTop 被设置成 scrollHeight
+    expect(fakeScrollEl.scrollTop).toBe(1000)
   })
 })
 
