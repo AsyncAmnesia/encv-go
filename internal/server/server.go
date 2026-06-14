@@ -226,11 +226,29 @@ func (s *Server) Start(version string) (string, error) {
 	// 🆕 2026-06-12 Phase 4：设 ENCV_HEARTBEAT_PATH 让 ffmpeg worker 知道写哪个文件
 	// 路径：<servingDir>/.encv_heartbeat
 	// Kotlin EncvGoService 1s poll 这个文件 lastModified()，>8s 没更新判 hang → kill+restart
-	heartbeatPath := filepath.Join(s.servingDir, ".encv_heartbeat")
-	if err := os.Setenv("ENCV_HEARTBEAT_PATH", heartbeatPath); err != nil {
-		slog.Warn("Failed to set ENCV_HEARTBEAT_PATH (heartbeat will be disabled)", "error", err)
+	//
+	// 🆕 2026-06-14 关键修复：尊重 caller 已 set 的 ENCV_HEARTBEAT_PATH。
+	//
+	// 之前 bug：Go 端无条件用 `servingDir/.encv_heartbeat` 覆盖 env。
+	// Android 真机 Kotlin 端显式 set 了 `filesDir/.encv_heartbeat`（永远可写、
+	// 无需存储权限），但被 Go 覆盖成 `/storage/emulated/0/.encv_heartbeat`：
+	//   - Go 写 /storage/emulated/0/.encv_heartbeat
+	//   - Kotlin 读 /data/data/<pkg>/files/.encv_heartbeat
+	//   → 两个不同文件，Kotlin 看不到 Go 写 → 8s 内 mtime 不更新 → 误判 hang 杀 Go
+	//
+	// 修复策略：
+	//   ① caller 已 set ENCV_HEARTBEAT_PATH（Kotlin 显式注入）→ 用 caller 的
+	//   ② caller 没 set（沙箱 / dev / 独立启 Go）→ 走默认 servingDir 推导
+	heartbeatPath := os.Getenv("ENCV_HEARTBEAT_PATH")
+	if heartbeatPath == "" {
+		heartbeatPath = filepath.Join(s.servingDir, ".encv_heartbeat")
+		if err := os.Setenv("ENCV_HEARTBEAT_PATH", heartbeatPath); err != nil {
+			slog.Warn("Failed to set ENCV_HEARTBEAT_PATH (heartbeat will be disabled)", "error", err)
+		} else {
+			slog.Info("Heartbeat file path (default)", "path", heartbeatPath)
+		}
 	} else {
-		slog.Info("Heartbeat file path set", "path", heartbeatPath)
+		slog.Info("Heartbeat file path (from caller env)", "path", heartbeatPath)
 	}
 
 	// 🆕 2026-06-14：启动独立心跳 goroutine（每 2s touch 一次）

@@ -105,11 +105,134 @@ class EncvGoService : Service() {
     // 🆕 2026-06-12 Phase 4：心跳文件路径（与 Go 端 ENCV_HEARTBEAT_PATH 同步）
     // Go 进程每次 ffmpeg 调用后 write 当前时间戳到这个文件；
     // Kotlin 1s poll lastModified()，>HEARTBEAT_STALE_MS 没更新即判 hang。
-    // 路径优先 ENCV_SERVING_DIR（真机 servingDir），fallback 缓存目录。
-    private val heartbeatFile: File by lazy {
-        val dir = System.getenv("ENCV_SERVING_DIR") ?: System.getenv("ENCV_CACHE_DIR")
-            ?: filesDir.absolutePath
-        File(dir, ".encv_heartbeat")
+    //
+    // 🆕 2026-06-14 关键修复：之前路径逻辑用 `System.getenv("ENCV_SERVING_DIR")`，
+    // 但这个 env var 只在 Go 子进程里被设置（ProcessBuilder.environment()），
+    // Kotlin 自身 env 是 null → 走 fallback 到 filesDir。
+    // 结果：Kotlin 读 filesDir/.encv_heartbeat，Go 写 /storage/emulated/0/.encv_heartbeat
+    //      → 两个不同文件 → Kotlin 启动 touch 一次后 8s 内看不到 Go 更新 → 误判 hang 杀 Go
+    //
+    // 修复：把 heartbeatFile 改为 lazy 委托 resolvedHeartbeatFile()，
+    //      resolvedHeartbeatFile() 走和 Go 完全一样的逻辑（看 ENCV_HEARTBEAT_PATH env 或 servingDir 推导）。
+    //      同时改用 filesDir 作为最终 fallback（永远可写、不需要存储权限），
+    //      避免真机用户拒绝存储权限后 /storage/emulated/0/ 写不了。
+    private val heartbeatFile: File by lazy { resolvedHeartbeatFile() }
+
+    /**
+     * 解析 heartbeat 文件路径 — 与 Go 端 `servingDir/.encv_heartbeat` 完全一致。
+     * 关键：Kotlin 启动 Go 子进程时把 ENCV_HEARTBEAT_PATH 设进 ProcessBuilder.environment()，
+     *      这个 env 只在 Go 子进程里。Kotlin 自己读不到，所以必须用同样的
+     *      fallback 链：ENCV_CACHE_DIR → servingDir 推导 → filesDir。
+     */
+    private fun resolvedHeartbeatFile(): File {
+        val dir = System.getenv("ENCV_CACHE_DIR")
+            ?: System.getenv("ENCV_SERVING_DIR")
+            ?: filesDir.absolutePath  // 永远可写，不需要任何权限
+        val file = File(dir, ".encv_heartbeat")
+        Log.i(TAG, "Heartbeat file path: ${file.absolutePath} (dir writable check next)")
+        // 启动时探一次：路径必须可写，否则 mtime monitor 永远 0 → 60s 后才报警
+        try {
+            file.parentFile?.mkdirs()
+            file.writeText(System.currentTimeMillis().toString())
+            Log.i(TAG, "Heartbeat file touch OK at startup: ${file.absolutePath}")
+        } catch (e: Throwable) {
+            Log.w(TAG, "Heartbeat file touch FAILED at startup: ${file.absolutePath} (Kotlin-side monitor will see mtime=0; fall back to filesDir)", e)
+        }
+        return file
+    }
+
+    /**
+     * 🆕 2026-06-14 防御：探测 servingDir 可写性，失败则自动降级。
+     *
+     * 优先级链：
+     *   1) caller set `ENCV_SERVING_DIR` env (e.g. Capacitor preview / 沙箱定制)
+     *   2) 探测 `/storage/emulated/0` (config.user.json mobile.server.dir 默认值)
+     *   3) 探失败 → 降级到 `filesDir.absolutePath` 并持久化到 config
+     *   4) 探成功 → 用原值
+     *
+     * 注意：返回值是 Kotlin 端传给 Go 子进程用的 `ENCV_SERVING_DIR` env value。
+     *       Go 端 [internal/server/server.go:Start](file:///workspace/internal/server/server.go) 会
+     *       用它**覆盖** mobile overlay 默认的 `/storage/emulated/0`（如果 env 已 set）
+     *       或者**作为 fallback**（如果没 set）。两边行为要保持一致 → 见 server.go 注释。
+     *
+     * 副作用：若降级，会写 `config.user.json` 的 `mobile.server.dir` 字段，
+     *        下次启动即使 servingDir 可写也走 filesDir（用户卸载重装才重置）。
+     */
+    private fun resolveServingDir(configPath: String): String {
+        // 1) caller 显式 set
+        val envServing = System.getenv("ENCV_SERVING_DIR")
+        if (!envServing.isNullOrEmpty()) {
+            Log.i(TAG, "resolveServingDir: using caller env ENCV_SERVING_DIR=$envServing (skip probe)")
+            return envServing
+        }
+
+        // 2) 读 config.user.json 看 mobile.server.dir 是不是已经被降级过
+        val configServing = readMobileServerDirFromConfig(configPath) ?: "/storage/emulated/0"
+        Log.i(TAG, "resolveServingDir: probing $configServing (from config)")
+
+        // 3) 探写一次
+        if (probeDirWritable(configServing)) {
+            Log.i(TAG, "resolveServingDir: $configServing writable, keep")
+            return configServing
+        }
+
+        // 4) 探失败 → 降级到 filesDir（永远可写）
+        val fallback = filesDir.absolutePath
+        Log.w(TAG, "resolveServingDir: $configServing NOT writable (scoped storage / 权限拒绝), " +
+            "降级到 filesDir=$fallback 并持久化到 config")
+
+        try {
+            updateMobileServerDirInConfig(configPath, fallback)
+            Log.i(TAG, "resolveServingDir: config updated, mobile.server.dir=$fallback")
+        } catch (e: Throwable) {
+            Log.w(TAG, "resolveServingDir: 写 config 失败（降级仅本次生效）", e)
+        }
+        return fallback
+    }
+
+    private fun readMobileServerDirFromConfig(configPath: String): String? {
+        return try {
+            val f = File(configPath)
+            if (!f.exists()) return null
+            val obj = JSONObject(f.readText())
+            obj.optJSONObject("mobile")?.optJSONObject("server")?.optString("dir", null)
+        } catch (e: Throwable) {
+            Log.w(TAG, "readMobileServerDirFromConfig failed", e)
+            null
+        }
+    }
+
+    private fun updateMobileServerDirInConfig(configPath: String, newDir: String) {
+        val f = File(configPath)
+        val obj = if (f.exists()) {
+            try { JSONObject(f.readText()) } catch (e: Throwable) { JSONObject() }
+        } else {
+            JSONObject()
+        }
+        val mobile = obj.optJSONObject("mobile") ?: JSONObject().also { obj.put("mobile", it) }
+        val server = mobile.optJSONObject("server") ?: JSONObject().also { mobile.put("server", it) }
+        server.put("dir", newDir)
+        f.writeText(obj.toString(2))
+    }
+
+    private fun probeDirWritable(dirPath: String): Boolean {
+        return try {
+            val dir = File(dirPath)
+            if (!dir.exists()) {
+                dir.mkdirs()
+            }
+            // 探写：创 + 删 一个唯一文件
+            val probe = File(dir, ".encv_probe_${System.currentTimeMillis()}.tmp")
+            probe.writeText("ok")
+            val readBack = probe.readText()
+            probe.delete()
+            val ok = readBack == "ok"
+            Log.i(TAG, "probeDirWritable: $dirPath → $ok")
+            ok
+        } catch (e: Throwable) {
+            Log.w(TAG, "probeDirWritable: $dirPath failed", e)
+            false
+        }
     }
 
     // 🆕 2026-06-12 崩溃根因修复：goProcess 死时自动重启（带指数退避 + 最多 3 次）
@@ -281,6 +404,18 @@ class EncvGoService : Service() {
             val configPath = File(filesDir, "config.user.json").absolutePath
             Log.i(TAG, "Starting backend: ${binary.absolutePath} start")
 
+            // 🆕 2026-06-14：先探测 servingDir 是否可写，不可写则降级到 filesDir。
+            //
+            // 背景：Android 11+ scoped storage 限制 + 真机用户拒绝存储权限 →
+            //   /storage/emulated/0 写不了（即使是 app 自己的目录）→ Go 端
+            //   servingDir/.encv_heartbeat 写失败 → 即使 mtime 路径一致 Go 也写不了。
+            //
+            // 防御：每次启动 Go 前探写一次，失败就改写 config.user.json 的
+            //   mobile.server.dir 到 filesDir（永远可写、无需权限），并把同
+            //   路径也写进 ENCV_HEARTBEAT_PATH。
+            val servingDir = resolveServingDir(configPath)
+            Log.i(TAG, "Resolved servingDir=$servingDir (heartbeat=${heartbeatFile.absolutePath})")
+
             goProcess = ProcessBuilder(binary.absolutePath, "start").apply {
                 environment()["ENCV_CONFIG_PATH"] = configPath
                 environment()["ENCV_MOBILE"] = "1"
@@ -293,9 +428,19 @@ class EncvGoService : Service() {
                 environment()["ENCV_LIB_DIR"] = applicationInfo.nativeLibraryDir
                 environment()["ENCV_FFMPEG_WORKER"] =
                     File(applicationInfo.nativeLibraryDir, "libffmpeg-worker.so").absolutePath
-                // 🆕 2026-06-12 Phase 4：worker 写心跳到 servingDir/.encv_heartbeat
-                environment()["ENCV_SERVING_DIR"] = System.getenv("ENCV_SERVING_DIR")
-                    ?: "/storage/emulated/0"  // 真机默认 servingDir
+                // 🆕 2026-06-14：把探测后的 servingDir 显式 set 给 Go（覆盖 mobile overlay 的默认值）
+                environment()["ENCV_SERVING_DIR"] = servingDir
+                // 🆕 2026-06-14 关键修复：显式 set ENCV_HEARTBEAT_PATH 给 Go 子进程，
+                // 让 Go 和 Kotlin 读**同一个文件**。这之前是隐性 bug：
+                //   - Go 端：`cfg.Server.Dir` 经 mobile overlay → `/storage/emulated/0`
+                //   - Kotlin 端：`System.getenv("ENCV_SERVING_DIR")` 在自己 env 是 null
+                //                  → fallback 到 filesDir
+                //   → 两个进程读不同的文件，Kotlin 看到的 mtime 永远不更新 → 8s 误判 hang
+                //
+                // 修复策略：把 Kotlin 自己用的 heartbeatFile 路径**原样**塞给 Go。
+                // 路径 = `filesDir.absolutePath/.encv_heartbeat`（永远可写、无需任何权限）。
+                environment()["ENCV_HEARTBEAT_PATH"] = heartbeatFile.absolutePath
+                Log.i(TAG, "Go heartbeat file: ${heartbeatFile.absolutePath}")
                 redirectErrorStream(true)
                 directory(filesDir)
             }.start()
