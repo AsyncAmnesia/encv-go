@@ -112,6 +112,7 @@ link_shared_lib() {
         ${DEPS_INSTALL_DIR}/lib/libmp3lame.a \
         -lm -lz -llog \
         $wl_undef \
+        -Wl,--undefined=ff_af_anull \
         -Wl,--gc-sections \
         -Wl,--allow-multiple-definition \
         -Wl,--version-script,"$version_script" \
