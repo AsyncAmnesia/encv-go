@@ -112,7 +112,8 @@ configure_ffmpeg() {
         --enable-demuxer="$DEMUXERS" \
         --enable-parser="$PARSERS" \
         --enable-protocol="$PROTOCOLS" \
-        --enable-filter="$FILTERS" \
+        # --enable-filter="$FILTERS" \
+        --enable-filter=anull 
         --enable-small \
         --enable-libx264 \
         --enable-libmp3lame \
