@@ -114,7 +114,6 @@ configure_ffmpeg() {
         --enable-protocol="$PROTOCOLS" \
         # --enable-filter="$FILTERS" \
         --enable-filter=anull \
-        --enable-filter=aresample \
         --enable-small \
         --enable-libx264 \
         --enable-libmp3lame \
