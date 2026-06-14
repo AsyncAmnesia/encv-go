@@ -24,9 +24,9 @@ patch_ffmpeg_main() {
     local ffprobe_c="${src_dir}/fftools/ffprobe.c"
 
     # ffmpeg.c
-    sed -i 's/^int main(/int ffmpeg_run(/' "$ffmpeg_c"
-    sed -i 's/^int main(void)/int ffmpeg_run(void)/' "$ffmpeg_c"
-    sed -i 's/^int wmain(/int ffmpeg_run(/' "$ffmpeg_c"
+    sed -i 's/int main(/int ffmpeg_run(/' "$ffmpeg_c"
+    sed -i 's/int main(void)/int ffmpeg_run(void)/' "$ffmpeg_c"
+    sed -i 's/int wmain(/int ffmpeg_run(/' "$ffmpeg_c"
     if ! grep -q "void ffmpeg_reset" "$ffmpeg_c"; then
         cat >> "$ffmpeg_c" << 'PATCH'
 
@@ -36,8 +36,8 @@ PATCH
     fi
 
     # ffprobe.c
-    sed -i 's/^int main(/int ffprobe_run(/' "$ffprobe_c"
-    sed -i 's/^int main(void)/int ffprobe_run(void)/' "$ffprobe_c"
+    sed -i 's/int main(/int ffprobe_run(/' "$ffprobe_c"
+    sed -i 's/int main(void)/int ffprobe_run(void)/' "$ffprobe_c"
     if ! grep -q "void ffprobe_reset" "$ffprobe_c"; then
         cat >> "$ffprobe_c" << 'PATCH'
 
@@ -113,6 +113,7 @@ configure_ffmpeg() {
         --enable-parser="$PARSERS" \
         --enable-protocol="$PROTOCOLS" \
         --enable-filter="$FILTERS" \
+        --enable-filters \
         --enable-small \
         --enable-libx264 \
         --enable-libmp3lame \
@@ -129,16 +130,25 @@ configure_ffmpeg() {
         die "ffmpeg configure failed"
     fi
     log_ok "ffmpeg configured"
+
 }
+
+
 
 # === 主入口 ===
 build_ffmpeg() {
     log_section "build ffmpeg $FFMPEG_VERSION (target=$TARGET)"
 
-    # 已安装则跳过
+    # 已安装则跳过（但先验证 anull 存在）
     if [ -f "${FFMPEG_INSTALL_DIR}/lib/libavcodec.a" ]; then
-        log_ok "ffmpeg already installed (${FFMPEG_INSTALL_DIR}/lib/libavcodec.a), skipping"
-        return 0
+        # 验证 anull 符号存在，不存在则强制重新编译
+        if ${NM} -g "${FFMPEG_INSTALL_DIR}/lib/libavfilter.a" 2>/dev/null | grep -q "ff_af_anull"; then
+            log_ok "ffmpeg already installed and anull present, skipping"
+            return 0
+        else
+            log_warn "已安装的 FFmpeg 缺少 anull，强制重新编译"
+            rm -rf "${FFMPEG_INSTALL_DIR}"
+        fi
     fi
 
     require_cmd make "Install build-essential / xcode-select --install"

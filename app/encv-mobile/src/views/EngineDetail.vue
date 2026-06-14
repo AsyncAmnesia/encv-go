@@ -55,7 +55,10 @@
       </div>
       <div v-else-if="buildInfoError" class="build-info-error">
         <ion-icon :icon="warningOutline" color="warning"></ion-icon>
-        <span>{{ t('engine.loadFailed') }}</span>
+        <div class="build-info-error-content">
+          <span class="error-title">{{ t('engine.loadFailed') }}</span>
+          <span v-if="buildInfoErrorMessage" class="error-detail">{{ buildInfoErrorMessage }}</span>
+        </div>
       </div>
 
       <template v-if="buildInfo">
@@ -70,16 +73,6 @@
                 <h3 class="lib-name">FFmpeg</h3>
                 <ion-badge color="medium" class="lib-badge version-badge">{{ buildInfo.ffmpeg_version }}</ion-badge>
                 <ion-badge color="danger" class="lib-badge license-badge">{{ buildInfo.ffmpeg_license }}</ion-badge>
-              </div>
-            </ion-label>
-          </ion-item>
-          <ion-item>
-            <ion-icon :icon="hardwareChipOutline" slot="start"></ion-icon>
-            <ion-label>
-              <div class="lib-title-row">
-                <h3 class="lib-name">x264</h3>
-                <ion-badge color="medium" class="lib-badge version-badge">{{ buildInfo.x264_version }}</ion-badge>
-                <ion-badge color="danger" class="lib-badge license-badge">{{ buildInfo.x264_license }}</ion-badge>
               </div>
             </ion-label>
           </ion-item>
@@ -270,19 +263,6 @@
             </ion-accordion>
           </ion-accordion-group>
         </ion-list>
-
-        <ion-list v-if="buildInfo.x264_configure_opts">
-          <ion-list-header>
-            <ion-label>x264</ion-label>
-          </ion-list-header>
-          <ion-item>
-            <ion-icon :icon="hardwareChipOutline" slot="start"></ion-icon>
-            <ion-label class="ion-text-wrap">
-              <h3>{{ t('engine.configureOpts') }}</h3>
-              <p class="mono-text cflags-text">{{ buildInfo.x264_configure_opts }}</p>
-            </ion-label>
-          </ion-item>
-        </ion-list>
       </template>
     </ion-content>
   </ion-page>
@@ -297,7 +277,7 @@ import {
 } from '@ionic/vue'
 import {
   videocamOutline, searchOutline, refresh as refreshIcon,
-  hardwareChipOutline, constructOutline, phonePortraitOutline,
+  constructOutline, phonePortraitOutline,
   settingsOutline, linkOutline, calendarOutline, codeSlashOutline,
   downloadOutline, cloudUploadOutline, filmOutline, documentOutline,
   globeOutline, filterOutline, cubeOutline, codeWorkingOutline,
@@ -312,6 +292,7 @@ const engineStatus = ref<FFmpegStatus | null>(null)
 const buildInfo = ref<BuildInfo | null>(null)
 const buildInfoLoading = ref(true)
 const buildInfoError = ref(false)
+const buildInfoErrorMessage = ref('')  // ✅ 新增：保存详细错误信息
 
 function formatDate(dateStr: string): string {
   if (!dateStr) return ''
@@ -335,8 +316,10 @@ onMounted(async () => {
   } catch {}
   try {
     buildInfo.value = await fetchBuildInfo()
-  } catch {
+  } catch (e) {
     buildInfoError.value = true
+    buildInfoErrorMessage.value = (e as Error)?.message || String(e) || 'Unknown error'
+    console.error('[EngineDetail] build info load error:', e)  // ✅ 控制台也打出来
   } finally {
     buildInfoLoading.value = false
   }
@@ -359,12 +342,31 @@ onMounted(async () => {
 
 .build-info-error {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  font-size: 13px;
-  opacity: 0.6;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  background: rgba(255, 193, 7, 0.1);
+  border-radius: 8px;
 }
+
+.build-info-error-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.error-title {
+  font-weight: 500;
+  color: var(--ion-color-warning);
+}
+
+.error-detail {
+  font-size: 12px;
+  color: var(--ion-color-medium);
+  font-family: monospace;
+  word-break: break-all;
+}
+
 
 .lib-header-item {
   --padding-start: 12px;

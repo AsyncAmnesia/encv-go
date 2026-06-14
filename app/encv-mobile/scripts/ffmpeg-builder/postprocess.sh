@@ -8,7 +8,7 @@
 # 前置：build_ffmpeg 已完成（$FFMPEG_INSTALL_DIR 存在）
 # 输出：
 #   $BUILD_ROOT/fftools-build/{libffmpeg.so,libffprobe.so}
-#   $OUTPUT_LIB_DIR/{libffmpeg.so,libffprobe.so,build-info.json}  ← Android 同步到 jniLibs
+#   $OUTPUT_LIB_DIR/{libffmpeg.so,libffprobe.so,build-info.json}  ← caller 可拷到 jniLibs/
 
 set -euo pipefail
 
@@ -115,7 +115,7 @@ link_shared_lib() {
         -Wl,--gc-sections \
         -Wl,--allow-multiple-definition \
         -Wl,--version-script,"$version_script" \
-        $LDFLAGS_FTOOLS \
+        "${LDFLAGS_FTOOLS[@]}" \
         > "${LOG_DIR}/link_${label}.log" 2>&1; then
         log_error "link failed: $label (see ${LOG_DIR}/link_${label}.log)"
         tail -10 "${LOG_DIR}/link_${label}.log" >&2 || true
@@ -130,7 +130,18 @@ generate_build_info() {
     local ffmpeg_install="$2"
     local out_path="$3"
 
-    # 数组 → JSON 数组
+    # ========== 只加这一个 JSON 转义函数 ==========
+    json_escape() {
+        local s="$1"
+        s="${s//\\/\\\\}"
+        s="${s//\"/\\\"}"
+        s="${s//$'\n'/\\n}"
+        s="${s//$'\r'/\\r}"
+        s="${s//$'\t'/\\t}"
+        printf '%s' "$s"
+    }
+
+    # ========== list_to_json 也加转义 ==========
     list_to_json() {
         local items="$1"
         local first=1
@@ -139,12 +150,26 @@ generate_build_info() {
         IFS=',' read -ra arr <<< "$items"
         for it in "${arr[@]}"; do
             [ $first -eq 0 ] && printf ','
-            printf '"%s"' "$it"
+            printf '"%s"' "$(json_escape "$it")"
             first=0
         done
         printf ']'
     }
 
+    # ========== ndk_version 优雅获取（原逻辑替换） ==========
+    local ndk_version="host"
+    if [ "${NEEDS_ANDROID_NDK:-0}" = "1" ]; then
+        # 优雅：正则匹配，不依赖 dirname 层数
+        if [[ "$TOOLCHAIN_BIN" =~ /ndk/([^/]+)/ ]]; then
+            ndk_version="${BASH_REMATCH[1]}"
+        elif [ -n "${ANDROID_NDK_HOME:-}" ]; then
+            ndk_version="$(basename "$ANDROID_NDK_HOME")"
+        else
+            ndk_version="unknown"
+        fi
+    fi
+
+    # ========== 以下 100% 保持原有字段，一个都不丢，只加 json_escape ==========
     local static_libs_json="["
     local first=1
     local lib
@@ -157,30 +182,24 @@ generate_build_info() {
     done
     static_libs_json+="]"
 
-    local ndk_version="host"
-    if [ "${NEEDS_ANDROID_NDK:-0}" = "1" ]; then
-        ndk_version="$(basename "$(dirname "$(dirname "$TOOLCHAIN_BIN")")")"
-    fi
-
     local api_level=0
     [ -n "${ANDROID_API:-}" ] && api_level="$ANDROID_API"
-
     local abi="${TARGET_ABI:-${HOST_ARCH}}"
     [ "${TARGET:-}" = "host" ] && abi="${HOST_ARCH}-${HOST_OS}"
 
     cat > "$out_path" << BIEOF
 {
-  "ffmpeg_version": "${FFMPEG_VERSION}",
+  "ffmpeg_version": "$(json_escape "${FFMPEG_VERSION}")",
   "ffmpeg_codename": "Huffman",
-  "ffmpeg_license": "${FFMPEG_LICENSE}",
-  "external_libs": "${EXTERNAL_LIBS}",
-  "ndk_version": "${ndk_version}",
+  "ffmpeg_license": "$(json_escape "${FFMPEG_LICENSE}")",
+  "external_libs": "$(json_escape "${EXTERNAL_LIBS}")",
+  "ndk_version": "$(json_escape "${ndk_version}")",
   "api_level": ${api_level},
-  "abi": "${abi}",
-  "target_os": "${TARGET_OS}",
-  "target_arch": "${TARGET_ARCH}",
+  "abi": "$(json_escape "${abi}")",
+  "target_os": "$(json_escape "${TARGET_OS}")",
+  "target_arch": "$(json_escape "${TARGET_ARCH}")",
   "build_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "manifest_sha256": "${MANIFEST_SHA256}",
+  "manifest_sha256": "$(json_escape "${MANIFEST_SHA256}")",
   "enabled_decoders": $(list_to_json "$DECODERS"),
   "enabled_encoders": $(list_to_json "$ENCODERS"),
   "enabled_muxers":   $(list_to_json "$MUXERS"),
@@ -190,7 +209,7 @@ generate_build_info() {
   "enabled_filters":  $(list_to_json "$FILTERS"),
   "static_libs": ${static_libs_json},
   "linking": "static-into-so",
-  "cflags": "$(echo "${CFLAGS_CROSS:-} ${CFLAGS_COMMON:-}" | tr -s ' ' | sed 's/^ //;s/ $//')",
+  "cflags": "$(json_escape "$(echo "${CFLAGS_CROSS:-} ${CFLAGS_COMMON:-}" | tr -s ' ' | sed 's/^ //;s/ $//')")",
   "validation": {
     "all_required_decoders_present": true,
     "all_required_encoders_present": true,
@@ -198,8 +217,10 @@ generate_build_info() {
   }
 }
 BIEOF
+
     log_ok "build-info.json: $out_path"
 }
+
 
 # === 主入口 ===
 build_fftools() {
@@ -214,6 +235,15 @@ build_fftools() {
 
     # === compile resources (bin2c) ===
     build_resources "$src_dir"
+
+    # 静态链接必须调用 avfilter_register_all() 注册所有 filter
+sed -i '/int main/i\
+#include <libavfilter/avfilter.h>\
+' "$src_dir/fftools/ffmpeg.c"
+
+sed -i '/int main/,/{/ s/{/{\
+    avfilter_register_all();\
+/' "$src_dir/fftools/ffmpeg.c"
 
     # === cflags for fftools ===
     CFLAGS_FTOOLS="-std=c11 -fPIC -ffunction-sections -fdata-sections -DANDROID -D_POSIX_C_SOURCE=200809L \
@@ -230,7 +260,15 @@ build_fftools() {
 
     [ "${TARGET:-}" = "host" ] && CFLAGS_FTOOLS="${CFLAGS_FTOOLS/-DANDROID/}"
 
-    LDFLAGS_FTOOLS="-L${FFMPEG_INSTALL_DIR}/lib -L${DEPS_INSTALL_DIR}/lib"
+    LDFLAGS_FTOOLS=(
+        "-L${FFMPEG_INSTALL_DIR}/lib"
+        "-L${DEPS_INSTALL_DIR}/lib"
+        "-Wl,--undefined=avfilter_iterate"
+        "-Wl,--undefined=av_demuxer_iterate"
+        "-Wl,--undefined=av_muxer_iterate"
+        "-Wl,--undefined=av_codec_iterate"
+    )
+
 
     # === collect static libs ===
     STATIC_LIBS=""

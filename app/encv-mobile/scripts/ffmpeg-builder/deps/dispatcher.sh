@@ -15,15 +15,31 @@ set -euo pipefail
 # shellcheck source=../common/downloads.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../common/downloads.sh"
 
-# 单 dep 名字 → build 函数映射
-# 加新 dep 在这里加一行，再写 deps/<name>.sh
-_dep_builders() {
-    local name="$1"
-    case "$name" in
-        libx264)     build_x264     ;;
-        libmp3lame)  build_libmp3lame ;;
+# === 单 dep 入口：显式维护 dep_name → (script_basename, builder_function) ===
+# 之前用 _dep_builders + ${dep}.sh 隐式约定 "dep name = script name = builder name"，
+# 实际 x264 命名是脚本 x264.sh / 函数 build_x264 / manifest 名字 libx264 — 三者不一致。
+# 现在改成显式 source + 显式调函数，零隐式约定。
+#
+# 加新 dep 步骤：
+#   1) 写 deps/<script_basename>.sh，暴露 <builder_function>
+#   2) manifest.external_libs 加 dep_name
+#   3) 在 _dep_entry 加 case
+_dep_entry() {
+    local dep_name="$1"
+    case "$dep_name" in
+        libx264)
+            # shellcheck source=deps/x264.sh
+            source "${BUILDER_DIR}/deps/x264.sh"
+            build_x264
+            ;;
+        libmp3lame)
+            # shellcheck source=deps/libmp3lame.sh
+            source "${BUILDER_DIR}/deps/libmp3lame.sh"
+            build_libmp3lame
+            ;;
         *)
-            die "No builder for dep: $name (add deps/${name}.sh + entry in _dep_builders)" ;;
+            die "No entry for dep: $dep_name (add case in _dep_entry + write deps/<script>.sh)"
+            ;;
     esac
 }
 
@@ -34,14 +50,7 @@ build_all_deps() {
 
     local dep
     for dep in $EXTERNAL_LIBS; do
-        # source 对应 dep 脚本
-        local dep_script="${BUILDER_DIR}/deps/${dep}.sh"
-        if [ ! -f "$dep_script" ]; then
-            die "dep script missing: $dep_script (declare in manifest.external_libs but no build file)"
-        fi
-        # shellcheck disable=SC1090
-        source "$dep_script"
-        _dep_builders "$dep"
+        _dep_entry "$dep"
     done
     log_ok "all deps built: $EXTERNAL_LIBS"
 }

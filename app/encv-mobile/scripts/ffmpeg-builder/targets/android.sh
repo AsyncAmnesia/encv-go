@@ -104,9 +104,14 @@ target_android_setup() {
     FFMPEG_INSTALL_DIR="${BUILD_ROOT}/ffmpeg-install"
     NEEDS_ANDROID_NDK=1
 
-    # 最终 .so 落到 android/app/src/main/jniLibs/<abi>/
-    # 与 EncvGoService.kt: File(applicationInfo.nativeLibraryDir, "libffmpeg-worker.so") 对齐
-    OUTPUT_LIB_DIR="${JNI_LIBS_BASE}/${ANDROID_ABI}"
+    # 产物落点走单一权威函数 resolve_output_lib_dir：
+    #   - OUT_DIR env 优先（caller 控制）
+    #   - 否则默认 OUTPUT_DIR/${ANDROID_ABI}（<mobile>/build/ffmpeg/android-${HOST_ARCH}/out/${ABI}/）
+    # Makefile show-output-dir 也调同一个函数，永远 100% 一致。
+    OUTPUT_LIB_DIR="$(resolve_output_lib_dir)"
+    if [ -n "${OUT_DIR:-}" ]; then
+        log_info "OUT_DIR override: $OUTPUT_LIB_DIR (caller-controlled)"
+    fi
     mkdir -p "$DEPS_INSTALL_DIR" "$FFMPEG_INSTALL_DIR" "$OUTPUT_LIB_DIR"
 
     require_toolchain CC CXX AR NM RANLIB STRIP LD
