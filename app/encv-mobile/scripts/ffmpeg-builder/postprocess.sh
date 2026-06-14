@@ -262,6 +262,53 @@ sed -i '/int main/,/{/ s/{/{\
 
     LDFLAGS_FTOOLS="-L${FFMPEG_INSTALL_DIR}/lib -L${DEPS_INSTALL_DIR}/lib"
 
+    # ========== ✅ 新增：本质验证 filter 注册 ==========
+    log_info "Running filter registration validation..."
+    local test_dir="${BUILD_ROOT}/filter-test"
+    mkdir -p "$test_dir"
+
+    cat > "$test_dir/test_anull.c" << 'CEOF'
+#include <stdio.h>
+#include <libavfilter/avfilter.h>
+
+int main(void) {
+    // 先验证符号存在
+    extern AVFilter ff_af_anull;
+    printf("ff_af_anull address: %p\n", (void*)&ff_af_anull);
+
+    // 再验证注册机制
+    avfilter_register_all();
+    
+    AVFilter *f = avfilter_get_by_name("anull");
+    if (f) {
+        printf("✅ SUCCESS: anull filter registered: %s\n", f->name);
+        return 0;
+    } else {
+        printf("❌ FAILED: anull filter NOT registered!\n");
+        return 1;
+    }
+}
+CEOF
+
+    # 编译测试程序（用跟 fftools 完全一样的编译参数）
+    if ! $CC $CFLAGS_FTOOLS \
+        "$test_dir/test_anull.c" \
+        -o "$test_dir/test_anull" \
+        $LDFLAGS_FTOOLS \
+        -lavfilter -lavformat -lavcodec -lavutil -lswresample -lm; then
+        echo "::error::Filter test compile failed"
+        exit 1
+    fi
+
+    # 运行测试
+    if ! "$test_dir/test_anull"; then
+        echo "::error::Filter registration FAILED - anull not found!"
+        exit 1
+    fi
+
+    log_info "✅ Filter validation PASSED - anull is properly registered"
+    # ========== 验证结束 ==========
+
     # === collect static libs ===
     STATIC_LIBS=""
     local lib
