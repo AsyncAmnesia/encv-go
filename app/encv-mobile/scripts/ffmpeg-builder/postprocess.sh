@@ -240,8 +240,9 @@ build_fftools() {
     # FFmpeg 静态链接时 linker section 自动注册机制不工作
     # 标准解决方案：代码中强制引用 filter 指针
     sed -i '1i\
-extern AVFilter ff_af_anull;\
-static void *volatile filter_ref = &ff_af_anull;\
+struct AVFilter;\
+extern struct AVFilter ff_af_anull;\
+static void *volatile filter_ref = \&ff_af_anull;\
 ' "$src_dir/fftools/ffmpeg.c"
 
     # === cflags for fftools ===
