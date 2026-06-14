@@ -113,8 +113,9 @@ configure_ffmpeg() {
         --enable-parser="$PARSERS" \
         --enable-protocol="$PROTOCOLS" \
         --enable-filter="$FILTERS" \
-        --enable-af=anull      # 启用音频 filter
-        --enable-vf=null       # 启用视频 filter
+        --enable-filters \
+        --enable-af="anull" \      # 启用音频 filter
+        --enable-vf="null" \      # 启用视频 filter
         --enable-small \
         --enable-libx264 \
         --enable-libmp3lame \
