@@ -5,8 +5,8 @@
  *  1. 初始 autoScrollEnabled = true
  *  2. handleNewLog 在 autoScrollEnabled=true 时滚到底
  *  3. handleNewLog 在 autoScrollEnabled=false 时不滚、不累积
- *  4. onContentScrollStart → autoScrollEnabled = false（用户手势检测）
- *  5. programmatic flag 屏蔽程序化滚动（scrollToBottom 不触发 onContentScrollStart 的 disable）
+ *  4. onContentScroll → autoScrollEnabled = false（用户手势检测，@ionScroll 60Hz 触发）
+ *  5. programmatic flag 屏蔽程序化滚动（scrollToBottom 不触发 onContentScroll 的 disable）
  *  6. onJumpToBottom → autoScrollEnabled = true + 平滑滚到底
  *  7. onIonViewWillEnter → autoScrollEnabled = false（切回 tab 禁用）
  *  8. onIonViewWillLeave → autoScrollEnabled = false（切出 tab 禁用）
@@ -130,9 +130,9 @@ vi.mock('@ionic/vue', () => ({
   IonTitle: { name: 'IonTitle', template: '<h1><slot /></h1>' },
   IonContent: {
     name: 'IonContent',
-    // v5 监听 @ionScrollStart（不再是 @ionScrollEnd）
-    template: '<div class="ion-content-stub" @ionScrollStart="$emit(\'ionScrollStart\', $event)"><slot /></div>',
-    emits: ['ionScrollStart'],
+    // v5.1 监听 @ionScroll（60Hz 覆盖桌面 wheel/touchpad + 移动端触摸）
+    template: '<div class="ion-content-stub" @ionScroll="$emit(\'ionScroll\', $event)"><slot /></div>',
+    emits: ['ionScroll'],
     mounted(this: any) {
       // 🆕 v5 mock：模拟 Ionic shadow DOM 异步挂载
       // - 第一次 querySelector 调用：返回 null（shadowRoot 还没 ready）
@@ -294,23 +294,31 @@ describe('DevLogs v5：pinned-to-bottom-on-scroll 最简模型', () => {
     expect((w.vm as any).unreadCount).toBeUndefined()
   })
 
-  it('4. onContentScrollStart → autoScrollEnabled = false（用户手势）', async () => {
+  it('4. onContentScroll → autoScrollEnabled = false（用户手势，@ionScroll 60Hz）', async () => {
     const w = mountDevLogs()
     await flushPromises()
     expect((w.vm as any).autoScrollEnabled).toBe(true)
-    // 模拟用户开始滚（Ionic emit ionScrollStart）
-    ;(w.vm as any).onContentScrollStart()
+    // 模拟用户开始滚（Ionic emit ionScroll，60Hz 触发）
+    ;(w.vm as any).onContentScroll()
+    await nextTick()
+    expect((w.vm as any).autoScrollEnabled).toBe(false)
+    // 再次触发（验证 60Hz 持续 disable，不是 toggle）
+    ;(w.vm as any).onContentScroll()
     await nextTick()
     expect((w.vm as any).autoScrollEnabled).toBe(false)
   })
 
-  it('5. programmatic flag 屏蔽程序化滚动：scrollToBottom 不触发 autoScrollEnabled=false', async () => {
+  it('5. programmatic flag 屏蔽程序化滚动：scrollToBottom 期间 @ionScroll 60Hz 触发不会 disable', async () => {
     const w = mountDevLogs()
     await flushPromises()
     expect((w.vm as any).autoScrollEnabled).toBe(true)
-    // 直接调 scrollToBottom 触发程序化滚动（会 fire ionScrollStart）
-    // 如果 programmaticScrollInProgress 没设，onContentScrollStart 会 disable
+    // 模拟 scrollToBottom 期间，Ionic 持续 emit @ionScroll 60Hz
+    // 如果 programmaticScrollInProgress 没设，onContentScroll 会 disable
     void (w.vm as any).scrollToBottom(false)
+    // 模拟 60Hz @ionScroll 事件（真实场景下浏览器在 scrollTo 后会持续 emit）
+    ;(w.vm as any).onContentScroll()
+    ;(w.vm as any).onContentScroll()
+    ;(w.vm as any).onContentScroll()
     await nextTick()
     await flushPromises()
     // 关键断言：autoScrollEnabled 仍是 true（programmatic flag 屏蔽成功）

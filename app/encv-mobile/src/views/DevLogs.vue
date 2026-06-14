@@ -47,18 +47,22 @@
     <!--
       🆕 2026-06-14 v5：pinned-to-bottom-on-scroll 最简模型
       核心交互（用户 6-14 反馈简化）：
-        - 任何用户手势（@ionScrollStart）→ 立即禁用 autoScrollEnabled
+        - @ionScroll（60Hz scroll 事件）→ 检测到非程序化滚动时立即禁用 autoScrollEnabled
         - 切 tab（onIonViewWillLeave）→ 禁用
         - 切后台（visibilitychange hidden）→ 禁用
         - 切回 tab / 切回前台 → 保持禁用（用户离开过、可能错过日志）
         - 浮动按钮点击 → 重新启用 + 平滑滚到底
       唯一状态：autoScrollEnabled（bool）。无 nearBottom / unreadCount / hardPaused。
+      🆕 v5.1 修正（用户实测反馈）：用 @ionScroll 替代 @ionScrollStart——
+        @ionScrollStart 在桌面浏览器只响应触摸手势、不响应 wheel 滚轮（@ionScrollStart
+        主要给移动端用）。改回 @ionScroll 60Hz 捕获 wheel/touchpad/触摸全场景。
+        v2 卡死真因是 console.log 转发 logcat，不是 @ionScroll 本身——v5 已 0 console.log。
     -->
     <ion-content
       ref="contentRef"
       class="log-content"
       :scroll-events="true"
-      @ionScrollStart="onContentScrollStart"
+      @ionScroll="onContentScroll"
     >
       <div v-if="activeTab === 'frontend'" class="log-list">
         <div v-if="filteredFrontend.length === 0" class="empty-logs">
@@ -148,7 +152,7 @@ const searchText = ref('')
 // 🆕 2026-06-14 v5 pinned-to-bottom-on-scroll 最简模型：
 //  - autoScrollEnabled = true  → 新日志到达自动滚到底
 //  - autoScrollEnabled = false → 禁用跟随（新日志不滚、不累积）
-// 触发 disable：用户手势(@ionScrollStart) / 切 tab / 切后台
+// 触发 disable：用户手势(@ionScroll 60Hz 滚轮/触摸/touchpad) / 切 tab / 切后台
 // 触发 enable：浮动按钮点击（同时平滑滚到底）
 // 切回 tab / 切回前台：保持当前状态（不重置，让用户主动恢复）
 const autoScrollEnabled = ref(true)
@@ -227,11 +231,11 @@ const filteredCurrent = computed(() => activeTab.value === 'frontend' ? filtered
 // 核心策略（用户反馈 v4 复杂后再次简化）：
 //  1. 单一布尔状态 autoScrollEnabled——v4 的 nearBottom / unreadCount / hardPaused 三元
 //     状态、nearBottom 阈值、80px 缓冲全部删除
-//  2. 触发 disable：用户手势(@ionScrollStart) / 切 tab / 切后台
+//  2. 触发 disable：用户手势(@ionScroll 60Hz 滚轮/触摸/touchpad) / 切 tab / 切后台
 //  3. 触发 enable：浮动按钮点击（同时平滑滚到底）
 //  4. programmaticScrollInProgress 短窗口 flag：程序化 scrollTop 也会触发
-//     ionScrollStart，2-rAF 清除避免误判（v2 我栽过这个坑，但 v5 用 ionScrollStart
-//     是开始事件，不是 60Hz 持续事件，flag 短窗口足够）
+//     @ionScroll 60Hz 持续事件，双 rAF 清除避免误判（v2 我栽过这个坑，
+//     但 v5/v5.1 已 0 console.log，纯 DOM 滚动 2-rAF 足够消化）
 //  5. 滚动元素不缓存 + retry rAF（v4 已修对）：ensureScrollEl 每次重查 shadow root
 // ───────────────────────────────────────────────────────────────────────────
 let programmaticScrollInProgress = false
@@ -274,7 +278,7 @@ function scrollToTop() {
  * 滚动到底部（程序化）
  * v5 简化：单一守卫 `if (!autoScrollEnabled.value) return`，无 nearBottom 阈值/累积
  * v4 保留：nextTick + rAF + retry rAF（Ionic shadow DOM 异步挂载）
- * v5 新增：programmaticScrollInProgress flag 跨过 ionScrollStart 事件窗口
+ * v5/v5.1 新增：programmaticScrollInProgress flag 跨过 @ionScroll 60Hz 事件窗口
  */
 async function scrollToBottom(smooth = false) {
   if (!autoScrollEnabled.value) return
@@ -286,14 +290,14 @@ async function scrollToBottom(smooth = false) {
     el = ensureScrollEl()
   }
   if (!el) return
-  // 标记程序化滚动（防止 ionScrollStart 误判为用户手势）
+  // 标记程序化滚动（防止 @ionScroll 60Hz 持续事件误判为用户手势）
   programmaticScrollInProgress = true
   try {
     if (smooth) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
     else el.scrollTop = el.scrollHeight
   } finally {
-    // 双 rAF 跨过 ionScrollStart 事件窗口（v2 在 60Hz @ionScroll 栽过，但 v5 用
-    // @ionScrollStart 是开始事件只触发一次，2-rAF 足够）
+    // 双 rAF 跨过 @ionScroll 60Hz 事件窗口（v2 在 console.log×60Hz @ionScroll
+    // 栽过；v5/v5.1 已 0 console.log，纯 DOM 滚动 2-rAF 足够消化）
     requestAnimationFrame(() => requestAnimationFrame(() => {
       programmaticScrollInProgress = false
     }))
@@ -307,11 +311,12 @@ async function onJumpToBottom() {
 }
 
 /**
- * 用户开始滚动（Ionic 手势事件，只触发一次）
+ * 用户滚动（@ionScroll 60Hz 触发，覆盖桌面 wheel/touchpad + 移动端触摸）
  * 唯一目的：立即禁用 autoScrollEnabled——用户希望看的是他滚到的位置，不希望被新日志覆盖
  * 程序化滚动被 programmaticScrollInProgress flag 屏蔽
+ * v5.1 关键：从 @ionScrollStart 改回 @ionScroll（前者只响应移动端触摸，桌面 wheel 不触发）
  */
-function onContentScrollStart() {
+function onContentScroll(_e?: CustomEvent) {
   if (programmaticScrollInProgress) return
   autoScrollEnabled.value = false
 }
@@ -479,7 +484,7 @@ defineExpose({
   handleNewLog,
   onJumpToBottom,
   scrollToBottom,
-  onContentScrollStart,
+  onContentScroll,
   // 测试工具
   setActiveTab(tab: 'frontend' | 'backend') { activeTab.value = tab },
 })
