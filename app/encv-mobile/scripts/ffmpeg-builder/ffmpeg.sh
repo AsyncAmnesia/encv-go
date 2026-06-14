@@ -112,8 +112,9 @@ configure_ffmpeg() {
         --enable-demuxer="$DEMUXERS" \
         --enable-parser="$PARSERS" \
         --enable-protocol="$PROTOCOLS" \
-        # --enable-filter="$FILTERS" \
-        --enable-filter=null \
+        --enable-filter="$FILTERS" \
+        --enable-af=anull      # 启用音频 filter
+        --enable-vf=null       # 启用视频 filter
         --enable-small \
         --enable-libx264 \
         --enable-libmp3lame \
@@ -134,7 +135,7 @@ configure_ffmpeg() {
     # ========== ✅ configure 后立刻验证 anull ==========
     echo ""
     echo "=== 验证 anull filter 配置 ==="
-    if ! grep -q "CONFIG_ANULL=1" "config.h"; then
+    if ! grep -q "CONFIG_AF_ANULL=1" "config.h"; then
         log_error "❌ anull filter NOT enabled! Check --enable-filter parameters"
         echo "config.h 中 CONFIG_ANULL:"
         grep "CONFIG_ANULL" "config.h" || echo "  完全不存在!"
