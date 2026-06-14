@@ -133,12 +133,29 @@ vi.mock('@ionic/vue', () => ({
     template: '<div class="ion-content-stub" @ionScrollEnd="$emit(\'ionScrollEnd\', $event)"><slot /></div>',
     emits: ['ionScrollEnd'],
     mounted(this: any) {
-      // jsdom 不支持原生 shadow DOM；用 Object.defineProperty 给 stub $el 注入
-      // shadowRoot shim，让生产代码的 ensureScrollEl() 通过 host.shadowRoot.querySelector
-      // 找到 fakeScrollEl。这是 v3 滚动元素查找路径 1（生产主路径）。
+      // 🆕 v4 mock：模拟 Ionic shadow DOM 异步挂载
+      // - 第一次 querySelector 调用：返回 null（shadowRoot 还没 ready，ensureScrollEl 应返回 null）
+      // - 第二次之后：返回 fakeScrollEl（rAF 后 ready）
+      // 用 `this.$el.__failNextN` 测试可控制失败次数（默认 0 = 立即就绪）
+      const failNextHolder = { n: 0 }
+      Object.defineProperty(this.$el, '__failNextN', {
+        get() { return failNextHolder.n },
+        set(v: number) { failNextHolder.n = v },
+        configurable: true,
+      })
       Object.defineProperty(this.$el, 'shadowRoot', {
-        value: { querySelector: (sel: string) => (sel === '.inner-scroll' ? fakeScrollEl : null) },
-        writable: true,
+        get() {
+          return {
+            querySelector: (sel: string) => {
+              if (sel !== '.inner-scroll') return null
+              if (failNextHolder.n > 0) {
+                failNextHolder.n--
+                return null
+              }
+              return fakeScrollEl
+            },
+          }
+        },
         configurable: true,
       })
     },
@@ -164,6 +181,20 @@ vi.mock('@ionic/vue', () => ({
 import DevLogs from '@/views/DevLogs.vue'
 
 // ─── 工具 ─────────────────────────────────────────────────────────────────
+
+/**
+ * v4 rAF mock：v4 scrollToBottom/onJumpToBottom 内部 `await new Promise(rAF)`
+ * 等 Ionic shadow DOM 异步挂载。jsdom 中 rAF 真实触发要等到下个 paint，
+ * flushPromises 不等。把 rAF 改成同步触发让测试可控。
+ */
+function mockRafSync() {
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => {
+    cb(performance.now())
+    return 0
+  })
+  // cancelAnimationFrame 也 stub
+  vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
+}
 
 /**
  * 创建 fake 滚动元素：必须是真 HTMLElement（jsdom 的 document.contains 要求 Node 类型）
@@ -207,6 +238,7 @@ function mountDevLogs() {
 }
 
 beforeEach(() => {
+  mockRafSync()
   h.frontendLogs.value = []
   h.backendLogs.length = 0
   h.serverOnline = false
@@ -405,5 +437,39 @@ describe('DevLogs 自动滚动 - v3 pinned 模式（ionScrollEnd 方案）', () 
     await flushPromises()
     // 关键断言：fakeScrollEl.scrollTop 被设置成 scrollHeight
     expect(fakeScrollEl.scrollTop).toBe(1000)
+  })
+
+  // 🆕 v4：retry 机制验证（ensureScrollEl 第一次 null、第二次返回 fakeScrollEl）
+  it('13. v4 retry：shadowRoot 第一次未就绪时 scrollToBottom 等 rAF 后成功滚动', async () => {
+    fakeScrollEl = createFakeScrollEl({ scrollTop: 500, scrollHeight: 1000, clientHeight: 500 })
+    const w = mountDevLogs()
+    await flushPromises()
+    // 模拟 Ionic shadow DOM 异步挂载：第一次 querySelector 返回 null
+    const ionContentEl = (w.vm as any).$refs?.contentRef?.$el
+    if (ionContentEl) ionContentEl.__failNextN = 1
+    ;(w.vm as any).handleNewLog()
+    await nextTick()
+    await flushPromises()
+    // 关键断言：retry 机制让 scrollToBottom 成功执行，scrollTop = 1000
+    expect(fakeScrollEl.scrollTop).toBe(1000)
+  })
+
+  // 🆕 v4：onJumpToBottom 强制滚动（不受 nearBottom 限制）
+  it('14. v4 onJumpToBottom：nearBottom=false 时仍强制滚动', async () => {
+    fakeScrollEl = createFakeScrollEl({ scrollTop: 500, scrollHeight: 1000, clientHeight: 500 })
+    const w = mountDevLogs()
+    await flushPromises()
+    // 用户上滑（nearBottom=false）
+    fakeScrollEl.scrollTop = 0
+    ;(w.vm as any).onContentScrollEnd()
+    await flushPromises()
+    expect((w.vm as any).nearBottom).toBe(false)
+    const before = fakeScrollEl.__scrollToSpy.mock.calls.length
+    void (w.vm as any).onJumpToBottom()
+    await nextTick()
+    await flushPromises()
+    // 关键断言：onJumpToBottom 不受 nearBottom 守卫限制，强制滚动
+    expect(fakeScrollEl.__scrollToSpy.mock.calls.length).toBeGreaterThan(before)
+    expect((w.vm as any).nearBottom).toBe(true)
   })
 })

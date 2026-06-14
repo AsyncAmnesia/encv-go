@@ -223,18 +223,19 @@ const filteredBackend = computed(() => {
 const totalCurrent = computed(() => activeTab.value === 'frontend' ? frontendLogs.value.length : backendLogs.value.length)
 const filteredCurrent = computed(() => activeTab.value === 'frontend' ? filteredFrontend.value.length : filteredBackend.value.length)
 
-// ── Pinned-to-bottom 状态机（2026-06-14 v3 极简版）───────────────────────────
-// 核心策略（v2 卡死后的回滚）：
+// ── Pinned-to-bottom 状态机（2026-06-14 v4 极简版 + 重试）─────────────────
+// 核心策略（v3 卡死/不滚后的回滚 + 修对）：
 //  1. 只在 @ionScrollEnd 触发时重算 nearBottom（不监听 60Hz @ionScroll）
-//  2. 滚动元素一次性缓存（避免每条日志都 DOM 查找）
-//  3. scrollToBottom 内部只用 nextTick 等一次 patch（不叠加 rAF/await 链）
+//  2. 滚动元素不缓存（每次重查 shadow root .inner-scroll）—— v3 缓存 hostEl 是
+//     在浏览器/真机都不滚的真因（el.scrollTop 写到 ion-content 元素上而非真滚动元素）
+//  3. scrollToBottom 内 nextTick + rAF + rAF retry（Ionic shadow DOM 异步挂载）
 //  4. 全部 0 个 console.log（v2 的卡死根因：logcat 桥同步转发阻塞主线程）
 //  5. 用 el.scrollTop = el.scrollHeight 直赋值（不依赖 scrollTo 行为）
+//  6. watcher flush:'post'（v3 注释"默认 pre 等价 nextTick"是错的；pre 是 DOM 未 patch 就触发）
 // ───────────────────────────────────────────────────────────────────────────
 const NEAR_BOTTOM_THRESHOLD_PX = 80
 const nearBottom = ref(true)
 const unreadCount = ref(0)
-let cachedScrollEl: HTMLElement | null = null
 
 function onTabClick(tab: 'frontend' | 'backend') {
   if (activeTab.value === tab) {
@@ -247,24 +248,22 @@ function onTabChange(event: CustomEvent) {
 }
 
 /**
- * 找 ion-content 实际滚动的元素（同步、缓存、零强制 layout）
- * 优先级：
- *   1. 缓存命中（document.contains 检查避免 DOM 树变化后失效）
- *   2. shadow DOM .inner-scroll（ion-content 内部真实滚动元素）
- *   3. 兜底用 host 元素本身
- *  返回 null 表示完全找不到（不应发生）
+ * 找 ion-content 实际滚动的元素（同步、无缓存、零强制 layout）
+ * 关键变更：v4 删 v3 第 266 行的 `cachedScrollEl = hostEl` 兜底——这是 v3 在浏览器/真机都不滚的真因
+ * （Ionic shadow DOM 异步挂载，v3 把 hostEl 缓存住，el.scrollTop 写到 ion-content 元素上
+ *  而非真正的 .inner-scroll，永久不滚）。
+ *
+ * 优先级（每次重查，不缓存）：
+ *   1. hostEl.shadowRoot 存在 → 查 .inner-scroll
+ *   2. 任何失败直接返回 null（不兜底！）
+ *
+ * 失败由 scrollToBottom / onJumpToBottom 的 rAF retry 处理。
  */
 function ensureScrollEl(): HTMLElement | null {
-  if (cachedScrollEl && document.contains(cachedScrollEl)) return cachedScrollEl
   if (!contentRef.value) return null
   const hostEl = ((contentRef.value as any).$el || (contentRef.value as any)) as HTMLElement | undefined
-  if (!hostEl) return null
-  if (hostEl.shadowRoot) {
-    const inner = hostEl.shadowRoot.querySelector('.inner-scroll') as HTMLElement | null
-    if (inner) { cachedScrollEl = inner; return inner }
-  }
-  cachedScrollEl = hostEl
-  return hostEl
+  if (!hostEl || !hostEl.shadowRoot) return null
+  return hostEl.shadowRoot.querySelector('.inner-scroll') as HTMLElement | null
 }
 
 function scrollToTop() {
@@ -274,32 +273,43 @@ function scrollToTop() {
 
 /**
  * 滚动到底部（程序化）
- * v3 简化：去掉 v2 的 await nextTick + await rAF 三重链，删 programmaticScrollInProgress flag
- * nextTick() 已足够：Vue 同步执行 watcher → 同步 push 到 reactive 数组 →
- * 下个 microtask（nextTick）→ DOM patch 完成 → 读 scrollHeight 已更新
+ * v4 修复：
+ *  - v3 注释错误：v3 用 nextTick 一次就跳过了 layout pass——Ionic 内部 shadow DOM 更新
+ *    要到下一个 rAF 才完成（connectedCallback → .inner-scroll 渲染）。
+ *  - v4 重试机制：nextTick → rAF → ensureScrollEl → 失败再 rAF → 再 ensureScrollEl
+ *  - 不缓存 el（每次重查，O(1) selector 查询，60Hz 1000 条/秒无压力）
  */
-function scrollToBottom(smooth = false) {
+async function scrollToBottom(smooth = false) {
   if (hardPaused.value) return
   if (!nearBottom.value) { unreadCount.value++; return }
-  void nextTick(() => {
-    const el = ensureScrollEl()
-    if (!el) return
-    if (smooth) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
-    else el.scrollTop = el.scrollHeight
-    nearBottom.value = true
-    unreadCount.value = 0
-  })
+  await nextTick()
+  await new Promise<void>((r) => requestAnimationFrame(() => r()))
+  let el = ensureScrollEl()
+  if (!el) {
+    // 第一次 shadowRoot 还没挂上（Ionic 异步）——等下一个 rAF 再试
+    await new Promise<void>((r) => requestAnimationFrame(() => r()))
+    el = ensureScrollEl()
+  }
+  if (!el) return
+  if (smooth) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+  else el.scrollTop = el.scrollHeight
+  nearBottom.value = true
+  unreadCount.value = 0
 }
 
 /** 浮动按钮点击：平滑滚到底部（强制滚动，不受 nearBottom 状态限制） */
 async function onJumpToBottom() {
-  void nextTick(() => {
-    const el = ensureScrollEl()
-    if (!el) return
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
-    nearBottom.value = true
-    unreadCount.value = 0
-  })
+  await nextTick()
+  await new Promise<void>((r) => requestAnimationFrame(() => r()))
+  let el = ensureScrollEl()
+  if (!el) {
+    await new Promise<void>((r) => requestAnimationFrame(() => r()))
+    el = ensureScrollEl()
+  }
+  if (!el) return
+  el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+  nearBottom.value = true
+  unreadCount.value = 0
 }
 
 /** 重算 nearBottom（仅在 ionScrollEnd 触发时调用，已去抖） */
@@ -338,8 +348,8 @@ function onContentScrollEnd() {
 
 /**
  * 新日志监听
- * v3 简化：去掉 flush:'post'。Vue 3 默认 flush:'pre' 时，watcher 同步触发；
- * handleNewLog 内部用 nextTick 等 DOM patch 后再读 scrollHeight。
+ * v4 关键修复：flush:'post'（v3 注释说"默认 pre 等价 nextTick"是错的——pre 是 DOM 未 patch
+ * 就触发，scrollHeight 还没增大；post 等 DOM patch + ion-content 内部 shadow DOM 更新）
  * 看的是数组 length（不是深监听），性能好且不会因搜索/筛选误触发。
  */
 watch(
@@ -347,12 +357,14 @@ watch(
   () => {
     if (activeTab.value === 'frontend') handleNewLog()
   },
+  { flush: 'post' },
 )
 watch(
   () => backendLogs.value.length,
   () => {
     if (activeTab.value === 'backend') handleNewLog()
   },
+  { flush: 'post' },
 )
 
 async function handleCopy() {
