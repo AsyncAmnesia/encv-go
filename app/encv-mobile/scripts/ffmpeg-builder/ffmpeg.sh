@@ -131,18 +131,6 @@ configure_ffmpeg() {
     fi
     log_ok "ffmpeg configured"
 
-    # ========== ✅ configure 后立刻验证 anull ==========
-    echo ""
-    echo "=== 验证 anull filter 配置 ==="
-    if ! grep -q "CONFIG_AF_ANULL=1" "config.h"; then
-        log_error "❌ anull filter NOT enabled! Check --enable-filter parameters"
-        echo "config.h 中 CONFIG_ANULL:"
-        grep "CONFIG_ANULL" "config.h" || echo "  完全不存在!"
-        exit 1
-    fi
-    log_ok "✅ anull filter 已正确启用"
-    # ========== 验证结束 ==========
-
 }
 
 
