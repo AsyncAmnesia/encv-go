@@ -115,7 +115,7 @@ link_shared_lib() {
         -Wl,--gc-sections \
         -Wl,--allow-multiple-definition \
         -Wl,--version-script,"$version_script" \
-        $LDFLAGS_FTOOLS \
+        "${LDFLAGS_FTOOLS[@]}" \
         > "${LOG_DIR}/link_${label}.log" 2>&1; then
         log_error "link failed: $label (see ${LOG_DIR}/link_${label}.log)"
         tail -10 "${LOG_DIR}/link_${label}.log" >&2 || true
@@ -260,11 +260,15 @@ sed -i '/int main/,/{/ s/{/{\
 
     [ "${TARGET:-}" = "host" ] && CFLAGS_FTOOLS="${CFLAGS_FTOOLS/-DANDROID/}"
 
-    LDFLAGS_FTOOLS="-L${FFMPEG_INSTALL_DIR}/lib -L${DEPS_INSTALL_DIR}/lib \ 
--Wl,--undefined=avfilter_iterate \
--Wl,--undefined=av_demuxer_iterate \
--Wl,--undefined=av_muxer_iterate \
--Wl,--undefined=av_codec_iterate" # // ======= 保留迭代器，防止被 GC 删除 ========
+    LDFLAGS_FTOOLS=(
+        "-L${FFMPEG_INSTALL_DIR}/lib"
+        "-L${DEPS_INSTALL_DIR}/lib"
+        "-Wl,--undefined=avfilter_iterate"
+        "-Wl,--undefined=av_demuxer_iterate"
+        "-Wl,--undefined=av_muxer_iterate"
+        "-Wl,--undefined=av_codec_iterate"
+    )
+
 
     # === collect static libs ===
     STATIC_LIBS=""
