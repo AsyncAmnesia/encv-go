@@ -44,12 +44,16 @@
       </div>
     </ion-header>
 
+    <!--
+      🆕 2026-06-14 v3：只用 @ionScrollEnd，不再监听 @ionScroll
+      根因：@ionScroll 在 Android WebView 上 60Hz 触发 + console.log 转发 logcat
+      导致主线程被同步 logcat 桥锁死，前端卡死。ionScrollEnd 是 Ionic 内置去抖
+      事件（~100ms 单次触发），是 Pinned-to-bottom 模式的工业标准输入。
+    -->
     <ion-content
       ref="contentRef"
       class="log-content"
-      :class="{ 'scrollbar-visible': scrollbarVisible }"
       :scroll-events="true"
-      @ionScroll="onContentScroll"
       @ionScrollEnd="onContentScrollEnd"
     >
       <div v-if="activeTab === 'frontend'" class="log-list">
@@ -144,12 +148,11 @@ const transport = useRealtimeTransport()
 
 const activeTab = ref<'frontend' | 'backend'>('frontend')
 const searchText = ref('')
-// 🆕 2026-06-14 pinned-to-bottom 模式：
+// 🆕 2026-06-14 v3 pinned-to-bottom 模式（v2 卡死后回滚）：
 //   - hardPaused = true  → 硬性覆盖（即便在底部也不自动滚；底栏 toggle 控制）
 //   - hardPaused = false → 智能 pinned：nearBottom=true 时自动滚，false 时累积 unread
 const hardPaused = ref(false)
 const contentRef = ref<InstanceType<typeof IonContent> | null>(null)
-const scrollbarVisible = ref(false)
 
 const selectedLevels = ref<Set<string>>(new Set(['debug', 'info', 'warn', 'error']))
 const levelOptions = [
@@ -220,29 +223,18 @@ const filteredBackend = computed(() => {
 const totalCurrent = computed(() => activeTab.value === 'frontend' ? frontendLogs.value.length : backendLogs.value.length)
 const filteredCurrent = computed(() => activeTab.value === 'frontend' ? filteredFrontend.value.length : filteredBackend.value.length)
 
-// ── Pinned-to-bottom 状态机（2026-06-14 v2 重构）────────────────────────────
-// 核心问题：Android WebView 上
-//  1. <ion-content> 的 @wheel/@touchstart 监听被 Ionic gesture 拦截，不冒泡
-//     → 不能用 userGestureActive 区分程序化 vs 用户滚动
-//  2. ion-content 的 getScrollElement() 在 Capacitor Android 上可能返回外层元素
-//     → 必须 DOM walk fallback 找 shadow DOM .inner-scroll
-//  3. el.scrollTo({ behavior: 'auto' }) 在 Android WebView 不等价于 scrollTop=scrollHeight
-//     → 必须直接赋值 scrollTop
-//  4. Vue 3 watch 默认 flush:'pre'（DOM 未 patch）→ 必须 flush:'post'
-//
-// 解决方案：
-//  - programmaticScrollInProgress 时间窗 flag（程序化滚动期间忽略 ionScroll）
-//  - 优先 contentRef.getScrollElement()，失败则 DOM walk
-//  - 直接 scrollTop = scrollHeight（instant）
-//  - flush:'post' watcher（DOM 已 patch）
-//  - await nextTick + requestAnimationFrame（等 layout 完成）
+// ── Pinned-to-bottom 状态机（2026-06-14 v3 极简版）───────────────────────────
+// 核心策略（v2 卡死后的回滚）：
+//  1. 只在 @ionScrollEnd 触发时重算 nearBottom（不监听 60Hz @ionScroll）
+//  2. 滚动元素一次性缓存（避免每条日志都 DOM 查找）
+//  3. scrollToBottom 内部只用 nextTick 等一次 patch（不叠加 rAF/await 链）
+//  4. 全部 0 个 console.log（v2 的卡死根因：logcat 桥同步转发阻塞主线程）
+//  5. 用 el.scrollTop = el.scrollHeight 直赋值（不依赖 scrollTo 行为）
 // ───────────────────────────────────────────────────────────────────────────
 const NEAR_BOTTOM_THRESHOLD_PX = 80
 const nearBottom = ref(true)
 const unreadCount = ref(0)
-let programmaticScrollInProgress = false
-let programmaticScrollTimer: ReturnType<typeof setTimeout> | null = null
-let scrollbarTimer: ReturnType<typeof setTimeout> | null = null
+let cachedScrollEl: HTMLElement | null = null
 
 function onTabClick(tab: 'frontend' | 'backend') {
   if (activeTab.value === tab) {
@@ -255,107 +247,69 @@ function onTabChange(event: CustomEvent) {
 }
 
 /**
- * 找 ion-content 实际滚动的元素
+ * 找 ion-content 实际滚动的元素（同步、缓存、零强制 layout）
  * 优先级：
- *   1. contentRef.getScrollElement()（@ionic/vue 8 官方 API）
+ *   1. 缓存命中（document.contains 检查避免 DOM 树变化后失效）
  *   2. shadow DOM .inner-scroll（ion-content 内部真实滚动元素）
- *   3. DOM walk 找最近的 overflow:auto/scroll 祖先
- *  返回 null 表示完全找不到（不应发生，但兜底）
+ *   3. 兜底用 host 元素本身
+ *  返回 null 表示完全找不到（不应发生）
  */
-async function getScrollEl(): Promise<HTMLElement | null> {
+function ensureScrollEl(): HTMLElement | null {
+  if (cachedScrollEl && document.contains(cachedScrollEl)) return cachedScrollEl
   if (!contentRef.value) return null
-  // 优先级 1：官方 API
-  try {
-    const el = contentRef.value as any
-    if (typeof el.getScrollElement === 'function') {
-      const r = await el.getScrollElement()
-      if (r) return r as HTMLElement
-    }
-  } catch { /* fall through */ }
-  // 优先级 2：shadow DOM .inner-scroll
-  const ionContentEl = (contentRef.value as any).$el as HTMLElement | undefined
-  if (ionContentEl?.shadowRoot) {
-    const inner = ionContentEl.shadowRoot.querySelector('.inner-scroll') as HTMLElement | null
-    if (inner) return inner
+  const hostEl = ((contentRef.value as any).$el || (contentRef.value as any)) as HTMLElement | undefined
+  if (!hostEl) return null
+  if (hostEl.shadowRoot) {
+    const inner = hostEl.shadowRoot.querySelector('.inner-scroll') as HTMLElement | null
+    if (inner) { cachedScrollEl = inner; return inner }
   }
-  // 优先级 3：DOM walk
-  const logList = document.querySelector('.log-list') as HTMLElement | null
-  if (logList) {
-    let current: HTMLElement | null = logList.parentElement
-    while (current && current !== document.body) {
-      const style = window.getComputedStyle(current)
-      if (style.overflowY === 'auto' || style.overflowY === 'scroll') {
-        return current
-      }
-      current = current.parentElement
-    }
-  }
-  return null
+  cachedScrollEl = hostEl
+  return hostEl
 }
 
-async function scrollToTop() {
-  const el = await getScrollEl()
+function scrollToTop() {
+  const el = ensureScrollEl()
   if (el) el.scrollTop = 0
 }
 
 /**
  * 滚动到底部（程序化）
- * 关键修复：
- *  - await nextTick → 等 Vue 把新行 patch 到 DOM
- *  - await requestAnimationFrame → 等浏览器完成 layout（scrollHeight 更新）
- *  - 直接 scrollTop = scrollHeight（避开 Android WebView scrollTo 行为歧义）
- *  - 设 programmaticScrollInProgress 屏蔽 ionScroll 反馈
+ * v3 简化：去掉 v2 的 await nextTick + await rAF 三重链，删 programmaticScrollInProgress flag
+ * nextTick() 已足够：Vue 同步执行 watcher → 同步 push 到 reactive 数组 →
+ * 下个 microtask（nextTick）→ DOM patch 完成 → 读 scrollHeight 已更新
  */
-async function scrollToBottom(smooth = false) {
-  // eslint-disable-next-line no-console
-  console.log('[DevLogs] scrollToBottom called, smooth=', smooth, 'nearBottom=', nearBottom.value, 'unreadCount=', unreadCount.value)
-  programmaticScrollInProgress = true
-  if (programmaticScrollTimer) clearTimeout(programmaticScrollTimer)
-  try {
-    await nextTick()
-    await new Promise<void>((r) => requestAnimationFrame(() => r()))
-    const el = await getScrollEl()
-    // eslint-disable-next-line no-console
-    console.log('[DevLogs] scrollEl=', el ? `${el.tagName}.${el.className || ''} scrollH=${el.scrollHeight} scrollT=${el.scrollTop} clientH=${el.clientHeight}` : 'NULL')
-    if (!el) {
-      console.warn('[DevLogs] scrollToBottom aborted: scroll element not found')
-      return
-    }
-    if (smooth) {
-      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
-    } else {
-      // 直赋值（instant，不依赖 UA scrollTo 行为）
-      el.scrollTop = el.scrollHeight
-      // 二次保险：再 read+set（部分 WebView 第一次赋值时被 layout 限制）
-      requestAnimationFrame(() => { el.scrollTop = el.scrollHeight })
-    }
+function scrollToBottom(smooth = false) {
+  if (hardPaused.value) return
+  if (!nearBottom.value) { unreadCount.value++; return }
+  void nextTick(() => {
+    const el = ensureScrollEl()
+    if (!el) return
+    if (smooth) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    else el.scrollTop = el.scrollHeight
     nearBottom.value = true
     unreadCount.value = 0
-  } finally {
-    // 100ms 后解除屏蔽（覆盖 ionScroll 事件从程序化滚动传播过来的时间）
-    programmaticScrollTimer = setTimeout(() => {
-      programmaticScrollInProgress = false
-    }, 100)
-  }
+  })
 }
 
-/** 浮动按钮点击：平滑滚到底部 */
+/** 浮动按钮点击：平滑滚到底部（强制滚动，不受 nearBottom 状态限制） */
 async function onJumpToBottom() {
-  await scrollToBottom(true)
+  void nextTick(() => {
+    const el = ensureScrollEl()
+    if (!el) return
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    nearBottom.value = true
+    unreadCount.value = 0
+  })
 }
 
-/** 重算 nearBottom（仅在 ionScroll 来自用户滚动时调用） */
-async function updateNearBottom() {
-  const el = await getScrollEl()
+/** 重算 nearBottom（仅在 ionScrollEnd 触发时调用，已去抖） */
+function updateNearBottom() {
+  const el = ensureScrollEl()
   if (!el) return
   const distance = el.scrollHeight - el.scrollTop - el.clientHeight
   const wasNear = nearBottom.value
   nearBottom.value = distance < NEAR_BOTTOM_THRESHOLD_PX
-  // eslint-disable-next-line no-console
-  console.log('[DevLogs] updateNearBottom: distance=', distance, 'nearBottom=', nearBottom.value)
-  if (!wasNear && nearBottom.value) {
-    unreadCount.value = 0
-  }
+  if (!wasNear && nearBottom.value) unreadCount.value = 0
 }
 
 /**
@@ -365,55 +319,40 @@ async function updateNearBottom() {
  * - 不在底部：累积 unread，浮动按钮显示
  */
 function handleNewLog() {
-  // eslint-disable-next-line no-console
-  console.log('[DevLogs] handleNewLog: activeTab=', activeTab.value, 'hardPaused=', hardPaused.value, 'nearBottom=', nearBottom.value)
   if (hardPaused.value) return
   if (nearBottom.value) {
     void scrollToBottom(false)
   } else {
     unreadCount.value++
-    // eslint-disable-next-line no-console
-    console.log('[DevLogs] accumulated unreadCount=', unreadCount.value)
   }
-}
-
-function onContentScroll() {
-  // 视觉反馈：滚动条可见 2s
-  scrollbarVisible.value = true
-  if (scrollbarTimer) clearTimeout(scrollbarTimer)
-  scrollbarTimer = setTimeout(() => { scrollbarVisible.value = false }, 2000)
-  // 屏蔽程序化滚动触发的 ionScroll（避免反馈循环）
-  if (programmaticScrollInProgress) {
-    // eslint-disable-next-line no-console
-    console.log('[DevLogs] onContentScroll: ignored (programmatic scroll in progress)')
-    return
-  }
-  void updateNearBottom()
-}
-
-function onContentScrollEnd() {
-  if (scrollbarTimer) clearTimeout(scrollbarTimer)
-  scrollbarTimer = setTimeout(() => { scrollbarVisible.value = false }, 2000)
 }
 
 /**
- * 新日志监听（flush:'post' 确保 DOM 已 patch）
- * - flush:'post' 关键：默认 flush:'pre' 时 watcher 触发时 DOM 未更新，scrollHeight 错误
- * - 看的是数组 length（不是深监听），性能好且不会因搜索/筛选误触发
+ * v3 关键变更：只用 ionScrollEnd（Ionic 内置去抖 ~100ms），不再监听 60Hz 的 ionScroll
+ * 工业标准：VS Code console / Chrome DevTools / Postman 全部用 scrollend 决定
+ * 是否"用户已停止滚动"，避免每帧重算状态。
+ */
+function onContentScrollEnd() {
+  void updateNearBottom()
+}
+
+/**
+ * 新日志监听
+ * v3 简化：去掉 flush:'post'。Vue 3 默认 flush:'pre' 时，watcher 同步触发；
+ * handleNewLog 内部用 nextTick 等 DOM patch 后再读 scrollHeight。
+ * 看的是数组 length（不是深监听），性能好且不会因搜索/筛选误触发。
  */
 watch(
   () => frontendLogs.value.length,
   () => {
     if (activeTab.value === 'frontend') handleNewLog()
   },
-  { flush: 'post' },
 )
 watch(
   () => backendLogs.value.length,
   () => {
     if (activeTab.value === 'backend') handleNewLog()
   },
-  { flush: 'post' },
 )
 
 async function handleCopy() {
@@ -506,11 +445,11 @@ onMounted(async () => {
  */
 onIonViewWillEnter(async () => {
   await nextTick()
-  await updateNearBottom()
+  updateNearBottom()
   // 切回时如果原本在底部 + autoScroll 开（hardPaused=false）+ 有未读 → 滚到底
   // 否则尊重用户离开时的滚动位置（工业标准：VS Code console、Postman 行为）
   if (nearBottom.value && !hardPaused.value && unreadCount.value > 0) {
-    await scrollToBottom(false)
+    scrollToBottom(false)
   }
 })
 
@@ -525,8 +464,6 @@ function onVisibilityChange() {
 onUnmounted(() => {
   eventBus.off('ws:message', onWsMessage)
   eventBus.off('server:status', onServerStatus)
-  if (programmaticScrollTimer) clearTimeout(programmaticScrollTimer)
-  if (scrollbarTimer) clearTimeout(scrollbarTimer)
   if (typeof document !== 'undefined') {
     document.removeEventListener('visibilitychange', onVisibilityChange)
   }
@@ -536,8 +473,7 @@ onUnmounted(() => {
  * 暴露给单元测试的滚动状态机（生产环境无用，仅用于单测验证 pinned 模式）
  * 覆盖：
  *   - nearBottom / unreadCount / hardPaused refs
- *   - programmaticScrollInProgress flag（测试可重置）
- *   - handleNewLog / onJumpToBottom / updateNearBottom / scrollToBottom / onContentScroll
+ *   - handleNewLog / onJumpToBottom / updateNearBottom / scrollToBottom / onContentScrollEnd
  */
 defineExpose({
   // refs
@@ -550,11 +486,9 @@ defineExpose({
   onJumpToBottom,
   updateNearBottom,
   scrollToBottom,
-  onContentScroll,
+  onContentScrollEnd,
   // 测试工具
   setActiveTab(tab: 'frontend' | 'backend') { activeTab.value = tab },
-  setProgrammaticScrollInProgress(v: boolean) { programmaticScrollInProgress = v },
-  isProgrammaticScrollInProgress() { return programmaticScrollInProgress },
 })
 </script>
 
@@ -628,29 +562,6 @@ defineExpose({
 .log-searchbar .searchbar-search-icon { display: none !important; }
 
 .log-content { --background: var(--ion-background-color); }
-
-.log-content::part(scroll) {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-.log-content::part(scroll)::-webkit-scrollbar {
-  width: 6px;
-  display: none;
-}
-.log-content.scrollbar-visible::part(scroll) {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
-}
-.log-content.scrollbar-visible::part(scroll)::-webkit-scrollbar {
-  display: block;
-}
-.log-content.scrollbar-visible::part(scroll)::-webkit-scrollbar-track {
-  background: transparent;
-}
-.log-content.scrollbar-visible::part(scroll)::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.25);
-  border-radius: 3px;
-}
 
 .log-list {
   font-family: 'Courier New', monospace;
