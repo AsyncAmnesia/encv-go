@@ -260,8 +260,7 @@ sed -i '/int main/,/{/ s/{/{\
 
     [ "${TARGET:-}" = "host" ] && CFLAGS_FTOOLS="${CFLAGS_FTOOLS/-DANDROID/}"
 
-    LDFLAGS_FTOOLS="-L${FFMPEG_INSTALL_DIR}/lib -L${DEPS_INSTALL_DIR}/lib \
--Wl,--whole-archive ${FFMPEG_INSTALL_DIR}/lib/libavfilter.a -Wl,--no-whole-archive"
+    LDFLAGS_FTOOLS="-L${FFMPEG_INSTALL_DIR}/lib -L${DEPS_INSTALL_DIR}/lib -Wl,--undefined=avfilter_iterate"
 
     # ========== ✅ Filter 注册验证（精确） ==========
     log_info "Running filter registration validation..."
