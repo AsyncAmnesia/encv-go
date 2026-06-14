@@ -296,6 +296,7 @@ CEOF
         ${FFMPEG_INSTALL_DIR}/lib/libavfilter.a \
         ${FFMPEG_INSTALL_DIR}/lib/libavformat.a \
         ${FFMPEG_INSTALL_DIR}/lib/libavcodec.a \
+        ${FFMPEG_INSTALL_DIR}/lib/libswscale.a \
         ${FFMPEG_INSTALL_DIR}/lib/libswresample.a \
         ${FFMPEG_INSTALL_DIR}/lib/libavutil.a \
         ${DEPS_INSTALL_DIR}/lib/libx264.a \
