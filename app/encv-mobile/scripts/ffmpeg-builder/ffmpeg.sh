@@ -113,7 +113,7 @@ configure_ffmpeg() {
         --enable-parser="$PARSERS" \
         --enable-protocol="$PROTOCOLS" \
         # --enable-filter="$FILTERS" \
-        --enable-filter=anull \
+        --enable-filter=null \
         --enable-small \
         --enable-libx264 \
         --enable-libmp3lame \
