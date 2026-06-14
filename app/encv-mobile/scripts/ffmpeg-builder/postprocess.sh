@@ -237,6 +237,14 @@ build_fftools() {
     # === compile resources (bin2c) ===
     build_resources "$src_dir"
 
+    # === 静态链接强制保留 anull filter 符号 ===
+    # FFmpeg 静态链接时 linker section 自动注册机制不工作
+    # 标准解决方案：代码中强制引用 filter 指针
+    sed -i '1i\
+extern AVFilter ff_af_anull;\
+static void *volatile filter_ref = &ff_af_anull;\
+' "$src_dir/fftools/ffmpeg.c"
+
     # === cflags for fftools ===
     CFLAGS_FTOOLS="-std=c11 -fPIC -ffunction-sections -fdata-sections -DANDROID -D_POSIX_C_SOURCE=200809L \
 -DHAVE_SYS_RESOURCE_H=1 -DHAVE_UNISTD_H=1 -DHAVE_SYS_SELECT_H=1 \
