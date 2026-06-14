@@ -45,16 +45,20 @@
     </ion-header>
 
     <!--
-      🆕 2026-06-14 v3：只用 @ionScrollEnd，不再监听 @ionScroll
-      根因：@ionScroll 在 Android WebView 上 60Hz 触发 + console.log 转发 logcat
-      导致主线程被同步 logcat 桥锁死，前端卡死。ionScrollEnd 是 Ionic 内置去抖
-      事件（~100ms 单次触发），是 Pinned-to-bottom 模式的工业标准输入。
+      🆕 2026-06-14 v5：pinned-to-bottom-on-scroll 最简模型
+      核心交互（用户 6-14 反馈简化）：
+        - 任何用户手势（@ionScrollStart）→ 立即禁用 autoScrollEnabled
+        - 切 tab（onIonViewWillLeave）→ 禁用
+        - 切后台（visibilitychange hidden）→ 禁用
+        - 切回 tab / 切回前台 → 保持禁用（用户离开过、可能错过日志）
+        - 浮动按钮点击 → 重新启用 + 平滑滚到底
+      唯一状态：autoScrollEnabled（bool）。无 nearBottom / unreadCount / hardPaused。
     -->
     <ion-content
       ref="contentRef"
       class="log-content"
       :scroll-events="true"
-      @ionScrollEnd="onContentScrollEnd"
+      @ionScrollStart="onContentScrollStart"
     >
       <div v-if="activeTab === 'frontend'" class="log-list">
         <div v-if="filteredFrontend.length === 0" class="empty-logs">
@@ -93,10 +97,10 @@
         </div>
       </div>
 
-      <!-- 浮动「↓ N 条新日志」按钮：用户离开底部时显示，点击跳回最新 -->
+      <!-- 浮动「↓」按钮：autoScrollEnabled=false 时显示，点击恢复跟随 -->
       <transition name="fade">
         <button
-          v-if="!nearBottom && unreadCount > 0"
+          v-if="!autoScrollEnabled"
           type="button"
           class="scrollToBottomBtn"
           :title="t('devlogs.scrollToBottom')"
@@ -104,7 +108,6 @@
           @click="onJumpToBottom"
         >
           <ion-icon :icon="arrowDownOutline" class="scrollToBottomIcon" />
-          <span class="scrollToBottomBadge">{{ unreadCount > 99 ? '99+' : unreadCount }}</span>
         </button>
       </transition>
     </ion-content>
@@ -113,13 +116,7 @@
       <ion-toolbar>
         <div class="status-inner">
           <span class="status-text">{{ t('devlogs.total', { total: String(totalCurrent), filtered: String(filteredCurrent) }) }}</span>
-          <div class="status-right">
-            <ion-toggle
-            v-model="hardPaused"
-            :label-placement="'start'"
-            :title="t('devlogs.autoScrollHint')"
-          >{{ t('devlogs.autoScroll') }}</ion-toggle>
-          </div>
+          <!-- v5: 不再有手动 toggle，autoScrollEnabled 由用户手势/生命周期自动管理 -->
         </div>
       </ion-toolbar>
     </ion-footer>
@@ -131,8 +128,8 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonContent,
   IonSegment, IonSegmentButton, IonSearchbar, IonButton,
-  IonIcon, IonBadge, IonToggle, IonFooter, alertController,
-  onIonViewWillEnter,
+  IonIcon, IonBadge, IonFooter, alertController,
+  onIonViewWillEnter, onIonViewWillLeave,
 } from '@ionic/vue'
 import { trashOutline, copyOutline, arrowDownOutline } from 'ionicons/icons'
 import { eventBus } from '@/composables/useEventBus'
@@ -148,10 +145,13 @@ const transport = useRealtimeTransport()
 
 const activeTab = ref<'frontend' | 'backend'>('frontend')
 const searchText = ref('')
-// 🆕 2026-06-14 v3 pinned-to-bottom 模式（v2 卡死后回滚）：
-//   - hardPaused = true  → 硬性覆盖（即便在底部也不自动滚；底栏 toggle 控制）
-//   - hardPaused = false → 智能 pinned：nearBottom=true 时自动滚，false 时累积 unread
-const hardPaused = ref(false)
+// 🆕 2026-06-14 v5 pinned-to-bottom-on-scroll 最简模型：
+//  - autoScrollEnabled = true  → 新日志到达自动滚到底
+//  - autoScrollEnabled = false → 禁用跟随（新日志不滚、不累积）
+// 触发 disable：用户手势(@ionScrollStart) / 切 tab / 切后台
+// 触发 enable：浮动按钮点击（同时平滑滚到底）
+// 切回 tab / 切回前台：保持当前状态（不重置，让用户主动恢复）
+const autoScrollEnabled = ref(true)
 const contentRef = ref<InstanceType<typeof IonContent> | null>(null)
 
 const selectedLevels = ref<Set<string>>(new Set(['debug', 'info', 'warn', 'error']))
@@ -223,19 +223,18 @@ const filteredBackend = computed(() => {
 const totalCurrent = computed(() => activeTab.value === 'frontend' ? frontendLogs.value.length : backendLogs.value.length)
 const filteredCurrent = computed(() => activeTab.value === 'frontend' ? filteredFrontend.value.length : filteredBackend.value.length)
 
-// ── Pinned-to-bottom 状态机（2026-06-14 v4 极简版 + 重试）─────────────────
-// 核心策略（v3 卡死/不滚后的回滚 + 修对）：
-//  1. 只在 @ionScrollEnd 触发时重算 nearBottom（不监听 60Hz @ionScroll）
-//  2. 滚动元素不缓存（每次重查 shadow root .inner-scroll）—— v3 缓存 hostEl 是
-//     在浏览器/真机都不滚的真因（el.scrollTop 写到 ion-content 元素上而非真滚动元素）
-//  3. scrollToBottom 内 nextTick + rAF + rAF retry（Ionic shadow DOM 异步挂载）
-//  4. 全部 0 个 console.log（v2 的卡死根因：logcat 桥同步转发阻塞主线程）
-//  5. 用 el.scrollTop = el.scrollHeight 直赋值（不依赖 scrollTo 行为）
-//  6. watcher flush:'post'（v3 注释"默认 pre 等价 nextTick"是错的；pre 是 DOM 未 patch 就触发）
+// ── Pinned-to-bottom-on-scroll 状态机（2026-06-14 v5 最简版）──────────────
+// 核心策略（用户反馈 v4 复杂后再次简化）：
+//  1. 单一布尔状态 autoScrollEnabled——v4 的 nearBottom / unreadCount / hardPaused 三元
+//     状态、nearBottom 阈值、80px 缓冲全部删除
+//  2. 触发 disable：用户手势(@ionScrollStart) / 切 tab / 切后台
+//  3. 触发 enable：浮动按钮点击（同时平滑滚到底）
+//  4. programmaticScrollInProgress 短窗口 flag：程序化 scrollTop 也会触发
+//     ionScrollStart，2-rAF 清除避免误判（v2 我栽过这个坑，但 v5 用 ionScrollStart
+//     是开始事件，不是 60Hz 持续事件，flag 短窗口足够）
+//  5. 滚动元素不缓存 + retry rAF（v4 已修对）：ensureScrollEl 每次重查 shadow root
 // ───────────────────────────────────────────────────────────────────────────
-const NEAR_BOTTOM_THRESHOLD_PX = 80
-const nearBottom = ref(true)
-const unreadCount = ref(0)
+let programmaticScrollInProgress = false
 
 function onTabClick(tab: 'frontend' | 'backend') {
   if (activeTab.value === tab) {
@@ -273,77 +272,58 @@ function scrollToTop() {
 
 /**
  * 滚动到底部（程序化）
- * v4 修复：
- *  - v3 注释错误：v3 用 nextTick 一次就跳过了 layout pass——Ionic 内部 shadow DOM 更新
- *    要到下一个 rAF 才完成（connectedCallback → .inner-scroll 渲染）。
- *  - v4 重试机制：nextTick → rAF → ensureScrollEl → 失败再 rAF → 再 ensureScrollEl
- *  - 不缓存 el（每次重查，O(1) selector 查询，60Hz 1000 条/秒无压力）
+ * v5 简化：单一守卫 `if (!autoScrollEnabled.value) return`，无 nearBottom 阈值/累积
+ * v4 保留：nextTick + rAF + retry rAF（Ionic shadow DOM 异步挂载）
+ * v5 新增：programmaticScrollInProgress flag 跨过 ionScrollStart 事件窗口
  */
 async function scrollToBottom(smooth = false) {
-  if (hardPaused.value) return
-  if (!nearBottom.value) { unreadCount.value++; return }
+  if (!autoScrollEnabled.value) return
   await nextTick()
   await new Promise<void>((r) => requestAnimationFrame(() => r()))
   let el = ensureScrollEl()
   if (!el) {
-    // 第一次 shadowRoot 还没挂上（Ionic 异步）——等下一个 rAF 再试
     await new Promise<void>((r) => requestAnimationFrame(() => r()))
     el = ensureScrollEl()
   }
   if (!el) return
-  if (smooth) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
-  else el.scrollTop = el.scrollHeight
-  nearBottom.value = true
-  unreadCount.value = 0
+  // 标记程序化滚动（防止 ionScrollStart 误判为用户手势）
+  programmaticScrollInProgress = true
+  try {
+    if (smooth) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    else el.scrollTop = el.scrollHeight
+  } finally {
+    // 双 rAF 跨过 ionScrollStart 事件窗口（v2 在 60Hz @ionScroll 栽过，但 v5 用
+    // @ionScrollStart 是开始事件只触发一次，2-rAF 足够）
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      programmaticScrollInProgress = false
+    }))
+  }
 }
 
-/** 浮动按钮点击：平滑滚到底部（强制滚动，不受 nearBottom 状态限制） */
+/** 浮动按钮点击：恢复 autoScroll + 平滑滚到底（强制，不受当前状态限制） */
 async function onJumpToBottom() {
-  await nextTick()
-  await new Promise<void>((r) => requestAnimationFrame(() => r()))
-  let el = ensureScrollEl()
-  if (!el) {
-    await new Promise<void>((r) => requestAnimationFrame(() => r()))
-    el = ensureScrollEl()
-  }
-  if (!el) return
-  el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
-  nearBottom.value = true
-  unreadCount.value = 0
+  autoScrollEnabled.value = true
+  await scrollToBottom(true)
 }
 
-/** 重算 nearBottom（仅在 ionScrollEnd 触发时调用，已去抖） */
-function updateNearBottom() {
-  const el = ensureScrollEl()
-  if (!el) return
-  const distance = el.scrollHeight - el.scrollTop - el.clientHeight
-  const wasNear = nearBottom.value
-  nearBottom.value = distance < NEAR_BOTTOM_THRESHOLD_PX
-  if (!wasNear && nearBottom.value) unreadCount.value = 0
+/**
+ * 用户开始滚动（Ionic 手势事件，只触发一次）
+ * 唯一目的：立即禁用 autoScrollEnabled——用户希望看的是他滚到的位置，不希望被新日志覆盖
+ * 程序化滚动被 programmaticScrollInProgress flag 屏蔽
+ */
+function onContentScrollStart() {
+  if (programmaticScrollInProgress) return
+  autoScrollEnabled.value = false
 }
 
 /**
  * 新日志到达的统一处理（被 frontend/backend 两个 watcher 调用）
- * - 硬性覆盖：不滚、不累积（toggle 关闭时的硬性暂停）
- * - 在底部：自动滚到底
- * - 不在底部：累积 unread，浮动按钮显示
+ * v5 单一守卫：autoScrollEnabled=false 时直接 return（不滚、不累积——避免 v4 那种
+ * unreadCount++ 心智负担）
  */
 function handleNewLog() {
-  if (hardPaused.value) return
-  if (nearBottom.value) {
-    void scrollToBottom(false)
-  } else {
-    unreadCount.value++
-  }
-}
-
-/**
- * v3 关键变更：只用 ionScrollEnd（Ionic 内置去抖 ~100ms），不再监听 60Hz 的 ionScroll
- * 工业标准：VS Code console / Chrome DevTools / Postman 全部用 scrollend 决定
- * 是否"用户已停止滚动"，避免每帧重算状态。
- */
-function onContentScrollEnd() {
-  void updateNearBottom()
+  if (!autoScrollEnabled.value) return
+  void scrollToBottom(false)
 }
 
 /**
@@ -452,25 +432,31 @@ onMounted(async () => {
 })
 
 /**
- * tab 切回时（Ionic keep-alive 不会重跑 onMounted）：
- * 重新计算 nearBottom（DOM 滚动位置仍是用户离开时的值）
+ * v5 tab 生命周期：
+ *  - onIonViewWillEnter: 切回 tab → 禁用 autoScroll（用户离开过、可能错过日志，
+ *    切回不主动覆盖——避免"用户想看老日志结果被新日志滚走"）
+ *  - onIonViewWillLeave: 切出 tab → 禁用 autoScroll
+ * 两者都是 disable——切回不重置是 v5 与 v4 关键差异（v4 会重算 nearBottom 并自动滚到底）
  */
-onIonViewWillEnter(async () => {
-  await nextTick()
-  updateNearBottom()
-  // 切回时如果原本在底部 + autoScroll 开（hardPaused=false）+ 有未读 → 滚到底
-  // 否则尊重用户离开时的滚动位置（工业标准：VS Code console、Postman 行为）
-  if (nearBottom.value && !hardPaused.value && unreadCount.value > 0) {
-    scrollToBottom(false)
-  }
+onIonViewWillEnter(() => {
+  autoScrollEnabled.value = false
 })
 
-/** App 从后台恢复时：重算 nearBottom */
+onIonViewWillLeave(() => {
+  autoScrollEnabled.value = false
+})
+
+/**
+ * v5 App 前后台切换：
+ *  - hidden → 禁用 autoScroll（用户切后台期间产生的日志不应在切回时覆盖当前视图）
+ *  - visible → 保持当前状态（不重置——让用户主动决定）
+ */
 function onVisibilityChange() {
   if (typeof document === 'undefined') return
-  if (document.visibilityState === 'visible') {
-    void nextTick(() => updateNearBottom())
+  if (document.visibilityState === 'hidden') {
+    autoScrollEnabled.value = false
   }
+  // visible: 不动 autoScrollEnabled——用户离开时是 false 切回还是 false，离开时是 true 切回还是 true
 }
 
 onUnmounted(() => {
@@ -483,22 +469,17 @@ onUnmounted(() => {
 
 /**
  * 暴露给单元测试的滚动状态机（生产环境无用，仅用于单测验证 pinned 模式）
- * 覆盖：
- *   - nearBottom / unreadCount / hardPaused refs
- *   - handleNewLog / onJumpToBottom / updateNearBottom / scrollToBottom / onContentScrollEnd
+ * v5 简化暴露：只暴露 autoScrollEnabled ref + 5 个核心方法
  */
 defineExpose({
   // refs
-  nearBottom,
-  unreadCount,
-  hardPaused,
+  autoScrollEnabled,
   activeTab,
   // 方法
   handleNewLog,
   onJumpToBottom,
-  updateNearBottom,
   scrollToBottom,
-  onContentScrollEnd,
+  onContentScrollStart,
   // 测试工具
   setActiveTab(tab: 'frontend' | 'backend') { activeTab.value = tab },
 })
@@ -654,8 +635,6 @@ defineExpose({
   width: 100%;
 }
 .status-text { font-size: 11px; color: var(--ion-text-color-step-400, #666); }
-.status-right { display: flex; align-items: center; gap: 6px; }
-.status-right ion-toggle { --height: 18px; }
 
 /* ── 浮动「↓ N 条新日志」按钮（2026-06-14 新增） ──
    位置：ion-content 内部右下角（ion-content 默认 position: relative）
@@ -682,22 +661,6 @@ defineExpose({
 .scrollToBottomBtn:hover { transform: scale(1.06); }
 .scrollToBottomBtn:active { transform: scale(0.94); }
 .scrollToBottomIcon { font-size: 20px; }
-.scrollToBottomBadge {
-  position: absolute;
-  top: -2px;
-  right: -2px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 9px;
-  background: var(--ion-color-danger, #eb445a);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 18px;
-  text-align: center;
-  box-shadow: 0 0 0 2px var(--ion-toolbar-background, var(--ion-background-color));
-}
 .fade-enter-active, .fade-leave-active { transition: opacity 0.2s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 </style>
