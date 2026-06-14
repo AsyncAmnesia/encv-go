@@ -112,7 +112,7 @@ link_shared_lib() {
         ${DEPS_INSTALL_DIR}/lib/libmp3lame.a \
         -lm -lz -llog \
         $wl_undef \
-        -Wl,--whole-archive -lavfilter -Wl,--no-whole-archive \
+        -Wl,--whole-archive ${FFMPEG_INSTALL_DIR}/lib/libavfilter.a -Wl,--no-whole-archive \
         -Wl,--gc-sections \
         -Wl,--allow-multiple-definition \
         -Wl,--version-script,"$version_script" \
