@@ -260,9 +260,10 @@ sed -i '/int main/,/{/ s/{/{\
 
     [ "${TARGET:-}" = "host" ] && CFLAGS_FTOOLS="${CFLAGS_FTOOLS/-DANDROID/}"
 
-    LDFLAGS_FTOOLS="-L${FFMPEG_INSTALL_DIR}/lib -L${DEPS_INSTALL_DIR}/lib"
+    LDFLAGS_FTOOLS="-L${FFMPEG_INSTALL_DIR}/lib -L${DEPS_INSTALL_DIR}/lib \
+-Wl,--whole-archive ${FFMPEG_INSTALL_DIR}/lib/libavfilter.a -Wl,--no-whole-archive"
 
-    # ========== ✅ 新增：本质验证 filter 注册 ==========
+    # ========== ✅ Filter 注册验证（精确） ==========
     log_info "Running filter registration validation..."
     local test_dir="${BUILD_ROOT}/filter-test"
     mkdir -p "$test_dir"
@@ -272,30 +273,35 @@ sed -i '/int main/,/{/ s/{/{\
 #include <libavfilter/avfilter.h>
 
 int main(void) {
-    // 先验证符号存在
-    extern AVFilter ff_af_anull;
-    printf("ff_af_anull address: %p\n", (void*)&ff_af_anull);
+    // 验证 1: anull filter 符号存在
+    extern const AVFilter ff_af_anull;
+    printf("1. ff_af_anull symbol: %p\n", (const void*)&ff_af_anull);
 
-    // 再验证注册机制
-    avfilter_register_all();
-    
-    AVFilter *f = avfilter_get_by_name("anull");
+    // 验证 2: avfilter_get_by_name 能找到
+    const AVFilter *f = avfilter_get_by_name("anull");
     if (f) {
-        printf("✅ SUCCESS: anull filter registered: %s\n", f->name);
+        printf("2. ✅ SUCCESS: anull filter registered: %s\n", f->name);
         return 0;
     } else {
-        printf("❌ FAILED: anull filter NOT registered!\n");
+        printf("2. ❌ FAILED: anull filter NOT registered!\n");
         return 1;
     }
 }
 CEOF
 
-    # 编译测试程序（用跟 fftools 完全一样的编译参数）
+    # 用跟 fftools 完全相同的编译参数
     if ! $CC $CFLAGS_FTOOLS \
         "$test_dir/test_anull.c" \
         -o "$test_dir/test_anull" \
         $LDFLAGS_FTOOLS \
-        -lavfilter -lavformat -lavcodec -lavutil -lswresample -lm; then
+        ${FFMPEG_INSTALL_DIR}/lib/libavfilter.a \
+        ${FFMPEG_INSTALL_DIR}/lib/libavformat.a \
+        ${FFMPEG_INSTALL_DIR}/lib/libavcodec.a \
+        ${FFMPEG_INSTALL_DIR}/lib/libswresample.a \
+        ${FFMPEG_INSTALL_DIR}/lib/libavutil.a \
+        ${DEPS_INSTALL_DIR}/lib/libx264.a \
+        ${DEPS_INSTALL_DIR}/lib/libmp3lame.a \
+        -lm -lz; then
         echo "::error::Filter test compile failed"
         exit 1
     fi
@@ -308,6 +314,7 @@ CEOF
 
     log_info "✅ Filter validation PASSED - anull is properly registered"
     # ========== 验证结束 ==========
+
 
     # === collect static libs ===
     STATIC_LIBS=""
