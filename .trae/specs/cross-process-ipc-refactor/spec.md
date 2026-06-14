@@ -1,6 +1,7 @@
 # ENCV 跨进程 IPC 重构 Spec
 
 > **核心原则**：parent ↔ child 协调**只用 HTTP localhost**（行业标准：Android Studio、VS Code、Firebase CLI）。**禁止**共享文件 mtime、**禁止**双向改写配置文件、**禁止**进程间 env var 协商路径。
+> **WebSocket 是独立一层**（Frontend ↔ Go），不复用 HTTP-only 原则，但同样遵循"single writer / 协议级心跳 / 详细诊断日志"模式。
 >
 > **完整行业对比 + 实战案例**：[详情文档](./rationale.md)
 
@@ -267,9 +268,208 @@ private fun checkHeartbeatOk(port: Int): Boolean {
 
 ---
 
-## 四、跨平台 + 沙箱 dev 要求
+## 四、WebSocket 管理 — 独立一层
 
-### 4.1 支持矩阵
+WS 是 **Frontend ↔ Go** 通道，与 §三 的 **Kotlin ↔ Go** 进程级 IPC **不重叠**。WS 解决的是"Go 主动推送事件到前端"的需求，HTTP-only 原则不适用 WS。
+
+### 4.1 WS 在系统中的位置
+```
+┌─────────────────┐                              ┌─────────────────┐
+│   WebView       │         ① HTTP              │                 │
+│  (Vue 3 前端)   │ ───────────────────────────▶ │                 │
+│                 │  GET /api/...                │                 │
+│  ┌────────────┐ │  GET /health                 │  encv-go (Go)   │
+│  │ WsBackend  │ │  GET /api/runtime           │                 │
+│  │ (Vue)      │ │                              │  ┌───────────┐  │
+│  └─────┬──────┘ │         ② WebSocket          │  │  WSHub    │  │
+│        │        │ ◀═══════════════════════════▶│  │  (Go)     │  │
+│        │        │  push: task:* file:* etc.    │  │           │  │
+│  ┌─────▼──────┐ │                              │  └───────────┘  │
+│  │ reconnect │ │                              │                 │
+│  │ heartbeat │ │                              │                 │
+│  └────────────┘ │                              │                 │
+└─────────────────┘                              └─────────────────┘
+       ▲                                                ▲
+       │                                                │
+       │  ┌─────────────────┐                           │
+       └─ │  Kotlin         │ ───── ③ ProcessBuilder ──┘
+          │  EncvGoService  │  ENCV_CONFIG_PATH / MOBILE
+          │  (Android)      │  + HTTP /health 探活 (§三)
+          └─────────────────┘
+```
+
+**关键洞察**：
+- WS 通道在 WebView 内 — **Kotlin EncvGoService 不直接接触 WS**（Kotlin 不需要懂 WS）
+- WS 双向通信：**仅** Go ↔ 前端
+- Kotlin ↔ Go 走 HTTP（§三）
+- WS 协议本身有 ping/pong — **与进程级心跳是两件事**
+
+### 4.2 WS 当前状态（[internal/service/ws_hub.go](file:///workspace/internal/service/ws_hub.go) 已修复）
+
+**已修复的 3 个核心问题**（2026-06-14）：
+
+| Bug | 症状 | 修复 |
+|-----|------|------|
+| **并发写竞态** | readyState=3 频繁 | 单一写者模式（所有写走 `client.send` 通道）|
+| **协议级 ping/pong 缺失** | 半开连接不感知 | gorilla `SetPingHandler` / `SetPongHandler` |
+| **读超时 / 读限制缺失** | 慢客户端 / 恶意大消息 | `SetReadLimit(8KB)` + `SetReadDeadline(60s)` |
+
+**当前 ws_hub.go 关键常量**（不要改）：
+
+| 常量 | 值 | 用途 |
+|------|----|------|
+| `pongWait` | 60s | 等客户端 pong 超时 |
+| `pingPeriod` | 54s | server 主动 ping 间隔（= pongWait × 9/10）|
+| `writeWait` | 5s | 单次写 deadline |
+| `maxMessageSize` | 8KB | 单消息大小限制 |
+| `sendBufferSize` | 1024 | 每 client send 通道缓冲 |
+
+### 4.3 WS 单写者模式（Single Writer Pattern）— 铁律
+
+**gorilla/websocket 文档明文规定**：no more than one goroutine calls write methods concurrently。
+
+**当前实现**（[ws_hub.go#L279-314](file:///workspace/internal/service/ws_hub.go#L279-L314)）：
+
+```
+┌──────────────────────────────────────────────────┐
+│           每个 client 的写者 goroutine             │
+│  (StartWritePump 内部 go func() {...}())           │
+│                                                   │
+│  for {                                             │
+│    select {                                        │
+│    case msg := <-client.send:  // ← 唯一写者入口   │
+│      conn.WriteMessage(TextMessage, msg)            │
+│    case <-pinger.C:                                │
+│      conn.WriteMessage(PingMessage, nil)           │
+│    }                                               │
+│  }                                                 │
+└──────────────────────────────────────────────────┘
+        ▲                ▲                ▲
+        │                │                │
+   RegisterClient   HandlePing     Broadcast
+   (塞 status)     (塞 pong msg)  (广播到所有 client.send)
+```
+
+**严禁的反模式**（历史 bug 来源）：
+```go
+// ❌ 严禁：直接在 RegisterClient 写 conn
+client.conn.WriteMessage(...) // 与 WritePump 并发写 → race
+
+// ❌ 严禁：直接在 HandlePing 写 conn
+conn.WriteMessage(...) // 与 WritePump 并发写 → race
+
+// ❌ 严禁：直接在 broadcast goroutine 写 conn
+for client := range clients {
+    client.conn.WriteMessage(...) // 与 WritePump 并发写 → race
+}
+
+// ✅ 正确：全部走 client.send 通道
+client.send <- msg  // 由 WritePump 串行化
+```
+
+### 4.4 WS 协议级 vs 应用层心跳 — 双层
+
+| 层 | 协议 | 实现 | 用途 |
+|----|------|------|------|
+| **协议级** | WebSocket Ping/Pong frame | gorilla `SetPingHandler` / `SetPongHandler` | 操作系统 / 浏览器自动处理，**不需业务代码** |
+| **应用层** | `{"type":"ping"}` 文本 → `{"type":"pong"}` | `StartReadPump` 解析 + `HandlePing` 通过 send 通道回 | 前端 WsBackend 心跳超时检测 |
+| **进程级** | HTTP `GET /health` | Kotlin EncvGoService 1s poll | §三 的 parent↔child 协调 |
+
+**不要混淆这 3 层**：
+- 协议级 ping/pong 是 gorilla 库自动发的，**前端不用关心**
+- 应用层 ping/pong 是 WsBackend 主动发的（30s 一次，10s 超时）— 用于前端断网检测
+- 进程级心跳是 Kotlin ↔ Go subprocess 用的 — 跟 WS 无关
+
+### 4.5 WS 广播：Go → 多 client
+
+**当前实现**（[ws_hub.go#L240-258](file:///workspace/internal/service/ws_hub.go#L240-L258)）：
+
+```go
+func (h *WSHub) broadcastBytes(msg []byte, msgType string) {
+    h.mu.RLock()
+    defer h.mu.RUnlock()
+    
+    dropped := 0
+    for client := range h.clients {
+        select {
+        case client.send <- msg:  // 非阻塞发送
+        default:
+            dropped++  // 缓冲满 → 丢新消息（drop-newest 策略）
+        }
+    }
+    if dropped > 0 {
+        slog.Warn("WebSocket broadcast: messages dropped", ...)
+    }
+}
+```
+
+**设计权衡**：
+
+| 策略 | 行为 | 适合场景 |
+|------|------|---------|
+| **阻塞发送**（无 default）| 慢客户端阻塞所有广播 | ❌ 严禁：一个慢 client 阻塞整个 hub |
+| **drop-newest**（当前）| 缓冲满丢新消息 | ✅ **状态事件**（task:update 频率高，丢一条下次再推）|
+| **drop-oldest** | 缓冲满丢最老消息 | ✅ **有序流**（日志、进度）|
+
+**当前选择 drop-newest 的理由**：task 状态事件，下一次 status:update 会覆盖前一次，丢一条不影响 UI 正确性。
+
+### 4.6 WS 客户端重连 — Frontend 责任
+
+**Frontend WsBackend.ts 已实现**（[WsBackend.ts#L229-249](file:///workspace/app/encv-mobile/src/composables/realtime/WsBackend.ts#L229-L249)）：
+
+| 行为 | 实现 |
+|------|------|
+| **指数退避** | 1s → 2s → 4s → 8s → 16s → 30s (cap) |
+| **±25% 抖动** | 避免雷鸣群（thundering herd）|
+| **可见性触发** | `visibilitychange → visible` 时强制重连（Android WebView 切后台杀连）|
+| **心跳超时** | 30s 一次 ping，10s 没回 pong → 强制重连 |
+| **详细 close 日志** | `code / reason / wasClean / readyState` 全部打印（排查 readyState=3 必备）|
+| **CLOSING 状态守卫** | 跳过 `OPEN/CONNECTING/CLOSING` 三个状态，避免新旧 ws 共存 |
+
+**Go 端不需要重连逻辑**（Go 是 server 端）— 只负责：
+- 接受 client 连接
+- 检测半开连接（60s 无 pong → 关闭）
+- 发送 close frame 给 client（`CloseNormalClosure`）
+
+### 4.7 WS 跨平台一致性
+
+| 平台 | WS 行为差异 | 解决 |
+|------|------------|------|
+| **Android WebView** | 切后台系统可能杀长连 | `visibilitychange` 监听 + 切回时重连 |
+| **iOS Safari / WKWebView** | 切后台立刻杀连 | 同上（但 Capacitor 暂无 iOS 端，先预留）|
+| **沙箱 OpenPreview** | 16000 端口反代不支持 WebSocket Upgrade | `isOpenPreviewBrowser()` 守卫，自动降级 http-poll |
+| **Desktop dev** | 浏览器原生 WS | 无差异 |
+
+### 4.8 WS 管理铁律（写入 AGENTS.md）
+
+```markdown
+# WS 管理铁律
+1. **单一写者**：所有 conn.WriteMessage() 必须在 StartWritePump goroutine 内
+2. **协议级 ping/pong**：用 gorilla SetPingHandler / SetPongHandler，不发应用层 ping frame
+3. **应用层 ping**：走 {"type":"ping"} 文本，通过 client.send 通道回 pong
+4. **read deadline**：60s（pongWait），每次收到 pong 刷新
+5. **write deadline**：5s（writeWait），单次写超时即放弃
+6. **read limit**：8KB，防止恶意大消息
+7. **broadcast 非阻塞**：select+default 丢新消息，绝不阻塞 hub
+8. **close frame**：连接关闭时发 CloseNormalClosure 帧，client 端能识别正常 vs 异常
+9. **Frontend reconnect**：指数退避 + 抖动 + visibility 触发，**Go 端不重连**
+10. **详细日志**：onclose 必须打印 code/reason/wasClean/readyState 四要素
+```
+
+### 4.9 WS 未来扩展（不在本次范围）
+
+| 需求 | 实现方式 | 优先级 |
+|------|---------|--------|
+| WS 鉴权（防止恶意 client 订阅）| 加 `?token=xxx` query param，hub 校验 | 中 |
+| WS 消息压缩（permessage-deflate）| gorilla upgrader 开 `EnableCompression: true` | 低 |
+| WS 多 topic 订阅（pub/sub）| `{"type":"subscribe","topic":"task:*"}` 协议 | 低 |
+| WS 批量推送（合并 N 条 task update）| 100ms 窗口批量化 | 中 |
+
+---
+
+## 五、跨平台 + 沙箱 dev 要求
+
+### 5.1 支持矩阵
 
 | 平台 | child 启动方式 | parent 协调方式 | 状态 |
 |------|---------------|----------------|------|
@@ -300,9 +500,9 @@ private fun checkHeartbeatOk(port: Int): Boolean {
 
 ---
 
-## 五、变更影响面
+## 六、变更影响面
 
-### 5.1 Affected Code
+### 6.1 Affected Code
 
 | 文件 | 改动类型 | 说明 |
 |------|---------|------|
@@ -312,14 +512,18 @@ private fun checkHeartbeatOk(port: Int): Boolean {
 | `internal/utils/ffmpeg/heartbeat_test.go` | 修改 | 改为测试内存字段 |
 | `app/encv-mobile/android/.../EncvGoService.kt` | 大改 | 删除 6 个方法、2 个字段、2 个 env 变量；新增 `checkHeartbeatOk` |
 | `app/encv-mobile/android/.../EncvGoServiceTest.kt` (新) | 新增 | 单元测试 mock `URL.openConnection` |
+| `internal/service/ws_hub.go` | **不修改** | WS 现状（单写者 + 协议级 ping/pong）已正确 |
+| `app/encv-mobile/src/composables/realtime/WsBackend.ts` | **不修改** | 前端重连 / 可见性 / 心跳已正确 |
 
-### 5.2 不需要改
+### 6.2 不需要改
 
 - `app/preview-gateway/src/children.ts` — 已经 HTTP-only，无需改
 - 前端 `useRealtimeTransport.ts` — 只调 HTTP API，行为不变
 - `config.user.json` — `mobile.server.dir` 保留为 `/storage/emulated/0`（默认值），Kotlin 不再修改
+- `internal/service/ws_hub.go` — WS 单写者模式已正确，**不重构**
+- `WsBackend.ts` — 前端重连 / visibility / 心跳已正确，**不重构**
 
-### 5.3 受影响的功能行为
+### 6.3 受影响的功能行为
 
 | 行为 | 之前 | 之后 |
 |------|------|------|
@@ -328,10 +532,11 @@ private fun checkHeartbeatOk(port: Int): Boolean {
 | 桌面 dev `curl /health` | 返回简单 text | 返回 JSON 多了 `heartbeat_ok` 等字段（**向前兼容**，前端用 `code==200` 判断） |
 | 真机 scoped storage 拒权限 | Kotlin 必须 probe + 改 config + 降级 | Go 自己 fallback，Kotlin 不管 |
 | 沙箱 dev 启动 | preview-gateway HTTP poll 正常工作 | preview-gateway HTTP poll 正常工作（**完全不变**）|
+| WebSocket 推送 | task:* / file:* / log:* 推送 | **不变**（WS 是独立一层）|
 
 ---
 
-## 六、风险与回滚
+## 七、风险与回滚
 
 | 风险 | 概率 | 影响 | 回滚方案 |
 |------|------|------|---------|
@@ -343,32 +548,38 @@ private fun checkHeartbeatOk(port: Int): Boolean {
 
 ---
 
-## 七、验收标准
+## 八、验收标准
 
-### 7.1 功能验收
+### 8.1 功能验收
 
 - [ ] Kotlin EncvGoService 启动 Go 后 1s 内能感知 ready
 - [ ] Kotlin 1s HTTP `/health` poll 工作正常，连续 8s 失败才判 hang
 - [ ] 真机 `/storage/emulated/0` 不可写时，Kotlin 不再需要 probe/降级
 - [ ] 沙箱 dev preview-gateway 启动流程不变（HTTP `/health` poll 已经 work）
 - [ ] Desktop dev `curl :2025/health` 返回 JSON 包含 `heartbeat_ok` 字段
+- [ ] **WS 推送仍然正常**：task:* / file:* / log:* 事件无丢失
+- [ ] **WS 协议级 ping/pong 工作**：浏览器 DevTools WS frames tab 看到 Ping/Pong
+- [ ] **WS 重连正常**：kill Go → 1s 探测到关闭 → 1s 退避后重连 → Go 起来后立即恢复
 
-### 7.2 代码验收
+### 8.2 代码验收
 
 - [ ] EncvGoService.kt 净减 ≥ 100 行（删除 6 个方法 + 2 个 env + 2 个字段）
 - [ ] ffmpeg/worker_client.go 净减 ≥ 30 行（删除文件 mtime 逻辑）
 - [ ] 新增 `internal/server/runtime_api.go` ≤ 50 行
 - [ ] Go 单测全过 + Kotlin 编译通过
+- [ ] **`internal/service/ws_hub.go` 不变行数**（现状正确）
 
-### 7.3 回归测试
+### 8.3 回归测试
 
 - [ ] 真机 WebSocket 30 分钟长稳（不出现 7s 必死）
 - [ ] 沙箱 dev：vite + encv-go 同时启动，gateway HTTP poll 全部 ready
 - [ ] 桌面 dev：`go run ./cmd/encv/ serve` + `curl :2025/health` 正常
+- [ ] **真机 WS**：kill Go → 30s 内前端自动重连 → Go 起来后推送恢复
+- [ ] **真机 WS 切后台**：Home 键 → 5s 后回前台 → 前端 1s 内重连
 
 ---
 
-## 八、相关文档
+## 九、相关文档
 
 - [rationale.md](./rationale.md) — 行业对比详细分析（Android Studio / VS Code / Firebase CLI / Docker）
 - [checklist.md](./checklist.md) — 实施检查清单
@@ -376,8 +587,10 @@ private fun checkHeartbeatOk(port: Int): Boolean {
 
 ---
 
-## 九、引用
+## 十、引用
 
 - 现状 bug 分析：[`/workspace/.trae/documents/backend-crash-websocket-1006-fix.md`](../documents/backend-crash-websocket-1006-fix.md)
+- WS hub 实现（已正确）：[`/workspace/internal/service/ws_hub.go`](file:///workspace/internal/service/ws_hub.go)
+- 前端 WS 重连（已正确）：[`/workspace/app/encv-mobile/src/composables/realtime/WsBackend.ts`](file:///workspace/app/encv-mobile/src/composables/realtime/WsBackend.ts)
 - 行业先例：[`/workspace/app/preview-gateway/src/children.ts`](file:///workspace/app/preview-gateway/src/children.ts)
 - 当前耦合代码：[`/workspace/app/encv-mobile/android/app/src/main/java/com/encvgo/app/EncvGoService.kt`](file:///workspace/app/encv-mobile/android/app/src/main/java/com/encvgo/app/EncvGoService.kt#L121-L236)
