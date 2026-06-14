@@ -26,6 +26,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -252,6 +253,117 @@ func writeHeartbeat() {
 		return
 	}
 	_ = os.WriteFile(path, []byte(strconv.FormatInt(time.Now().UnixMilli(), 10)), 0644)
+}
+
+// =============================================================================
+// StartHeartbeatLoop — 独立后台心跳循环（2026-06-14 修复安卓 WS 误杀 bug）
+// =============================================================================
+//
+// 【根因 2026-06-14】
+// Kotlin EncvGoService 1s poll $ENCV_HEARTBEAT_PATH 的 mtime，>HEARTBEAT_STALE_MS
+// (8s) 没更新就判定 Go 进程 hang → destroyForcibly() → restart。restart 期间所有
+// WS / HTTP 连接全断，UI 现象就是 readyState=3 + HttpPoll 失败。
+//
+// 旧实现：writeHeartbeat() 只在 ffmpeg 调用后被调用（worker_client.go:243）。
+//   → 如果 Go 进程空闲（用户只看 task 列表、不触发 ffmpeg），心跳文件
+//     8s 内不被更新 → Kotlin 误判 hang → Go 进程被杀 → WS 莫名其妙断 7s
+//
+// 新实现：服务启动时 StartHeartbeatLoop(ctx) 启一个独立 goroutine，每 2s
+// 写一次心跳。2s < HEARTBEAT_STALE_MS/2 (4s)，留出 4x 安全余量。
+//
+// 优先级：writeHeartbeat()（ffmpeg 调用后）→ 立即写；StartHeartbeatLoop → 兜底
+// 重复写无害（只是 os.Chtimes + os.WriteFile）。
+//
+// 设计权衡：
+//   - 用 os.Chtimes 而不是 os.WriteFile：避免 mtime 精度问题（ext4 mtime 精度 1s
+//     多次 write 在同 1s 内 mtime 不变，Kotlin lastModified 看到的就是旧值）
+//     实际在 Android /sdcard (FAT32/exFAT) 上 mtime 精度是 2s！
+//     os.Chtimes 显式设 mtime 到当前 time.Now()，绕过文件系统精度限制
+//   - 文件不存在时 fallback 到 os.WriteFile（首次 touch）
+//   - 失败仅日志（探活 best-effort，进程不能因心跳写失败而退出）
+//   - ctx 取消时退出（服务关闭时优雅停止）
+//
+// =============================================================================
+
+const heartbeatTickInterval = 2 * time.Second
+
+// heartbeatLoopsMu 保护 heartbeatLoops slice（仅测试用）
+var heartbeatLoopsMu sync.Mutex
+var heartbeatLoops []context.CancelFunc
+
+// StartHeartbeatLoop 启一个 goroutine 定期更新 $ENCV_HEARTBEAT_PATH。
+// 必须由 server 启动时调用一次。重复调用安全（idempotent via sync.Once）。
+func StartHeartbeatLoop(ctx context.Context) {
+	startHeartbeatLoopOnce.Do(func() {
+		// 包装 ctx 以便 ResetHeartbeatLoopForTesting 能取消在跑的 loop
+		loopCtx, cancel := context.WithCancel(ctx)
+		heartbeatLoopsMu.Lock()
+		heartbeatLoops = append(heartbeatLoops, cancel)
+		heartbeatLoopsMu.Unlock()
+		go heartbeatLoop(loopCtx)
+	})
+}
+
+var startHeartbeatLoopOnce sync.Once
+
+// ResetHeartbeatLoopForTesting 重置 sync.Once + 取消所有在跑的 loop
+// 仅供单元测试使用
+func ResetHeartbeatLoopForTesting() {
+	heartbeatLoopsMu.Lock()
+	for _, cancel := range heartbeatLoops {
+		cancel()
+	}
+	heartbeatLoops = nil
+	heartbeatLoopsMu.Unlock()
+
+	// sync.Once 没有 Reset 方法（Go 1.21+ 也不支持）
+	// 单元测试场景下顺序执行，单纯重新赋值 sync.Once 即可
+	startHeartbeatLoopOnce = sync.Once{}
+}
+
+func heartbeatLoop(ctx context.Context) {
+	path := os.Getenv("ENCV_HEARTBEAT_PATH")
+	if path == "" {
+		slog.Warn("heartbeatLoop: ENCV_HEARTBEAT_PATH not set, loop will be no-op")
+		// 不 return — 等 env 后续被设置（startup 顺序保护）
+	}
+
+	ticker := time.NewTicker(heartbeatTickInterval)
+	defer ticker.Stop()
+
+	// 立即 touch 一次，避免启动后第一次 1s poll 看到 mtime=0
+	touchHeartbeatFile(path)
+
+	for {
+		select {
+		case <-ctx.Done():
+			slog.Info("heartbeatLoop: stopping (ctx cancelled)")
+			return
+		case <-ticker.C:
+			touchHeartbeatFile(path)
+		}
+	}
+}
+
+func touchHeartbeatFile(path string) {
+	if path == "" {
+		// env 还没设置时重读（启动 race）
+		path = os.Getenv("ENCV_HEARTBEAT_PATH")
+		if path == "" {
+			return
+		}
+	}
+	now := time.Now()
+	// 优先用 os.Chtimes 显式设 mtime — 避开 ext4/FAT32 mtime 精度问题
+	if err := os.Chtimes(path, now, now); err != nil {
+		// 文件不存在（首次）→ 用 os.WriteFile 创建
+		if os.IsNotExist(err) {
+			_ = os.WriteFile(path, []byte(strconv.FormatInt(now.UnixMilli(), 10)), 0644)
+			return
+		}
+		// 其他错误（权限 / ENOENT race）→ 写一次兜底
+		_ = os.WriteFile(path, []byte(strconv.FormatInt(now.UnixMilli(), 10)), 0644)
+	}
 }
 
 // Probe is a thin convenience wrapper.

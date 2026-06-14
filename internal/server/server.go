@@ -28,6 +28,7 @@ import (
 	mobileservice "github.com/Soltus/encv-go/internal/service"
 	"github.com/Soltus/encv-go/internal/tools"
 	"github.com/Soltus/encv-go/internal/utils"
+	"github.com/Soltus/encv-go/internal/utils/ffmpeg"
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
 	"github.com/Soltus/encv-go/internal/v2/handler"
 	"github.com/Soltus/encv-go/internal/v2/namer"
@@ -231,6 +232,18 @@ func (s *Server) Start(version string) (string, error) {
 	} else {
 		slog.Info("Heartbeat file path set", "path", heartbeatPath)
 	}
+
+	// 🆕 2026-06-14：启动独立心跳 goroutine（每 2s touch 一次）
+	//
+	// 【必读 - 防回归】
+	// Kotlin EncvGoService.startProcessAliveMonitor 1s poll 这个文件 mtime，
+	// 超过 8s (HEARTBEAT_STALE_MS) 没更新就 destroyForcibly() Go 进程。
+	// 旧实现只靠 ffmpeg 调用后 writeHeartbeat()，进程空闲时 mtime 永远不更新
+	// → 8s 后被误判 hang 杀掉 → WS / HTTP 全断。
+	//
+	// StartHeartbeatLoop 启独立 goroutine，每 2s 更新 mtime。2s ≪ 8s/2，
+	// 即使启动 race 也能 cover。goroutine 跟随进程退出（Android destroyForcibly）。
+	ffmpeg.StartHeartbeatLoop(context.Background())
 	chunkNamers := plugins.GetAllRegisteredChunkNamers()
 	s.chunkNamers = chunkNamers
 	s.mobileSvc.SetEncryptedFileDeps(s.readerService, s.contentHandler, chunkNamers)
