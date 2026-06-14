@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/Soltus/encv-go/internal/config"
@@ -67,7 +68,25 @@ func (s *Server) handlePingGin(c *gin.Context) {
 }
 
 func (s *Server) handleHealthGin(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	// 🆕 2026-06-14：跨进程 IPC 重构 — 改为 JSON 响应（含心跳状态）
+	//
+	// 历史：返回 {"status":"ok"}。parent（Kotlin EncvGoService）只能判存活不能判 hang。
+	// 新：返回 {"status","heartbeat_age_ms","heartbeat_ok"}。
+	//     parent 通过 heartbeat_ok 字段判 hang，连续 N 次 false 才销毁进程。
+	//
+	// 向后兼容：保留 "status" 字段，前端 / 沙箱 preview-gateway 用 code==200 判断不受影响。
+	hbMs := atomic.LoadInt64(&s.lastHeartbeatMs)
+	var hbAgeMs int64 = -1
+	var hbOK bool = false
+	if hbMs > 0 {
+		hbAgeMs = time.Now().UnixMilli() - hbMs
+		hbOK = hbAgeMs < HeartbeatStaleThreshold.Milliseconds()
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"status":           "ok",
+		"heartbeat_age_ms": hbAgeMs,
+		"heartbeat_ok":     hbOK,
+	})
 }
 
 func (s *Server) handleServerShutdownGin(c *gin.Context) {
