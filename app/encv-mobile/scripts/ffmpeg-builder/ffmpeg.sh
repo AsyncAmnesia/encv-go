@@ -112,7 +112,7 @@ configure_ffmpeg() {
         --enable-demuxer="$DEMUXERS" \
         --enable-parser="$PARSERS" \
         --enable-protocol="$PROTOCOLS" \
-        $(echo "$FILTERS" | tr ',' '\n' | sed 's/^/--enable-filter=/') \
+        $(echo "$FILTERS" | tr ',' ' ' | xargs -n1 echo --enable-filter=) \
         --enable-small \
         --enable-libx264 \
         --enable-libmp3lame \
@@ -130,6 +130,8 @@ configure_ffmpeg() {
     fi
     log_ok "ffmpeg configured"
 }
+
+
 
 # === 主入口 ===
 build_ffmpeg() {
