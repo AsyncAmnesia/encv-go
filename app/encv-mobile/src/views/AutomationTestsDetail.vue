@@ -356,6 +356,7 @@ import {
   type PluginMeta,
 } from '@/api/encv'
 import { generateMockFilesViaBackend, resetMockFilesViaBackend } from '@/api/mockGenerator'
+import { extToRelativePath } from '@/lib/mockDataGenerator'
 import { DEFAULT_AUTOMATION_SOURCE } from '@/composables/useAutomationTests'
 import { formatContainerVersion } from '@/constants/containerVersion'
 import { useWorkflowEngine } from '@/composables/useWorkflowEngine'
@@ -921,11 +922,15 @@ function buildDynamicWorkflow(): void {
     const opts = plugin.taskOptions
     if (!opts) continue
 
-    // ====== 修 #4：按 plugin.supportedExtensions 选源文件 ======
+    // 🆕 2026-06-15 修 #4：按 plugin.supportedExtensions[0] + mock spec 实际路径派生 sourcePath
+    // （不再硬编码 sample.{ext}，跟 mock 真相对齐：mp3→music.mp3 / mkv→comedy.mkv / jpg→photo.jpg）
     const supportedExts = plugin.supportedExtensions ?? []
     if (supportedExts.length === 0) continue
     const sourceExt = supportedExts[0]
-    const sourcePath = `${mockRoot.value}01-plain-media/${categoryForExt(sourceExt)}/sample.${sourceExt}`
+    const specRelPath = extToRelativePath(sourceExt)
+    const sourcePath = specRelPath
+      ? `${mockRoot.value}${specRelPath}`
+      : `${mockRoot.value}01-plain-media/${categoryForExt(sourceExt)}/sample.${sourceExt}`
 
     const versions: number[] = opts.supportVersionSelect && opts.supportedVersions
       ? opts.supportedVersions
@@ -1079,10 +1084,12 @@ function buildDynamicWorkflow(): void {
             : '')
 
           // 🆕 修 #5：解密读 encrypt 阶段写出的产物
-          // encrypt 步骤把 sample.{ext} 加密成 sample.{ext}.{containerExt}
+          // encrypt 步骤把 spec.relativePath basename 加密成 basename + containerExt
           // 加密后文件名由 plugin 内部决定 → 后端 outputExt = ext + containerExt
+          // 之前硬编码 sample.${sourceExt}.${containerExt} → 对 mp3/mkv/jpg 等 mock 实际名不一致 → "文件不存在"
           const containerExt = plugin.containerExtension || `${sourceExt}.encv`
-          const encryptedFileName = `sample.${sourceExt}.${containerExt}`
+          const sourceBasename = sourcePath.split('/').pop() ?? `sample.${sourceExt}`
+          const encryptedFileName = `${sourceBasename}.${containerExt}`
           const sourcePathForDecrypt = `${mockRoot.value}02-test-output/${baseSafeId}/${encryptedFileName}`
 
           const stepId = `dec_${safeId.replace(/^dec_/, '')}`

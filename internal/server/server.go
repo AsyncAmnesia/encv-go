@@ -28,6 +28,8 @@ import (
 	mobileservice "github.com/Soltus/encv-go/internal/service"
 	"github.com/Soltus/encv-go/internal/tools"
 	"github.com/Soltus/encv-go/internal/utils"
+	// 🆕 2026-06-14 移除 internal/utils/ffmpeg import：心跳改内存版，不再调 ffmpeg.StartHeartbeatLoop
+	// (留注释提醒后人：不要重新加回)
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
 	"github.com/Soltus/encv-go/internal/v2/handler"
 	"github.com/Soltus/encv-go/internal/v2/namer"
@@ -70,6 +72,17 @@ type Server struct {
 	// toolDeps 是 tools 包的依赖注入（v2 工具注册表使用）。
 	// Server 启动时构造一次，executeAgentTool 路径下注入到 tools.GlobalRegistry.Dispatch。
 	toolDeps *tools.ToolDeps
+	// 🆕 2026-06-14：跨进程 IPC 重构 — RuntimeInfo 内存字段
+	//
+	// 单一来源：Go 自己持有，HTTP /api/runtime 对外声明。
+	// parent (Kotlin EncvGoService) 不再写文件、不再 set env、不再改 config。
+	// 见 internal/server/runtime_api.go
+	runtimeInfo   RuntimeInfo
+	runtimeInfoMu sync.RWMutex
+	// lastHeartbeatMs 最后心跳时间（Unix ms），独立 goroutine 每 2s 写一次。
+	// atomic.LoadInt64 无锁读，atomic.StoreInt64 写。
+	// HeartbeatStaleThreshold = 30s，见 runtime_api.go
+	lastHeartbeatMs int64
 }
 
 func NewServer(ctx context.Context, configPath string) *Server {
@@ -222,15 +235,53 @@ func (s *Server) Start(version string) (string, error) {
 		return "", fmt.Errorf("failed to resolve absolute path for directory '%s': %w", dir, err)
 	}
 	s.mobileSvc.SetServingDir(s.servingDir)
-	// 🆕 2026-06-12 Phase 4：设 ENCV_HEARTBEAT_PATH 让 ffmpeg worker 知道写哪个文件
-	// 路径：<servingDir>/.encv_heartbeat
-	// Kotlin EncvGoService 1s poll 这个文件 lastModified()，>8s 没更新判 hang → kill+restart
-	heartbeatPath := filepath.Join(s.servingDir, ".encv_heartbeat")
-	if err := os.Setenv("ENCV_HEARTBEAT_PATH", heartbeatPath); err != nil {
-		slog.Warn("Failed to set ENCV_HEARTBEAT_PATH (heartbeat will be disabled)", "error", err)
-	} else {
-		slog.Info("Heartbeat file path set", "path", heartbeatPath)
+	// 🆕 2026-06-14：跨进程 IPC 重构 — 填充 RuntimeInfo 单一来源
+	//
+	// 历史：原方案让 Kotlin (parent) 写 config.user.json.mobile.server.dir
+	// → Go 读 → 双源。Android scoped storage 拒权限时挂掉。
+	//
+	// 新方案：Go 自己解析路径（s.servingDir 已 Abs），声明在 runtimeInfo。
+	// Kotlin 通过 GET /api/runtime 读取，零文件依赖、零 env 协商。
+	s.runtimeInfoMu.Lock()
+	s.runtimeInfo = RuntimeInfo{
+		PID:         resolvePID(),
+		Version:     s.version,
+		InstanceID:  s.instanceID,
+		ServingDir:  s.servingDir,
+		Port:        0, // 下面 register.StartGinWithRetry 成功后回填
+		StartedAt:   time.Now().UnixMilli(),
+		Mobile:      os.Getenv("ENCV_MOBILE") == "1",
+		ConfigPath:  s.configPath,
+		UptimeMs:    0,
+		HeartbeatOK: false, // 启动时还没开始 tick
 	}
+	s.runtimeInfoMu.Unlock()
+
+	// 🆕 2026-06-14：in-memory 心跳 loop（替代 ffmpeg.StartHeartbeatLoop 的文件版本）
+	//
+	// 历史：ffmpeg.StartHeartbeatLoop 写 .encv_heartbeat 文件，
+	//       Kotlin 1s poll mtime。路径协商 + FAT32 精度 2s 引发 7s 必死 bug。
+	//
+	// 新：atomic.Int64 内存字段，独立 goroutine 每 2s 写。
+	//     HTTP /health JSON 读，HTTP /api/runtime 也读。
+	//     父进程用 HTTP 探活，不需文件。
+	s.startHeartbeatLoopInMemory(context.Background())
+
+	// 🆕 2026-06-14：删除 ENCV_HEARTBEAT_PATH 文件版心跳（ffmpeg.StartHeartbeatLoop）
+	//
+	// 心跳现在完全在内存：startHeartbeatLoopInMemory() 写 atomic.Int64，
+	// HTTP /health JSON 读，HTTP /api/runtime 也读。
+	// 不再需要 ENCV_HEARTBEAT_PATH env var、.encv_heartbeat 文件、ffmpeg writeHeartbeat()。
+	//
+	// 见 spec/cross-process-ipc-refactor/spec.md §3.3, §3.5
+	//
+	// 【防回归 - 旧 bug】
+	// 文件版心跳 + FAT32 精度 2s + Kotlin / Go 路径不同步 → 7s 必死。
+	// 不要重新引入文件版心跳。如果需要跨进程状态，用 HTTP /api/runtime。
+	//
+	// 删：ffmpeg.StartHeartbeatLoop(context.Background())
+	// 删：os.Setenv("ENCV_HEARTBEAT_PATH", ...)
+	// 删：filepath.Join(s.servingDir, ".encv_heartbeat")
 	chunkNamers := plugins.GetAllRegisteredChunkNamers()
 	s.chunkNamers = chunkNamers
 	s.mobileSvc.SetEncryptedFileDeps(s.readerService, s.contentHandler, chunkNamers)
@@ -293,6 +344,9 @@ func (s *Server) Start(version string) (string, error) {
 
 	r.GET("/ping", s.handlePingGin)
 	r.GET("/health", s.handleHealthGin)
+	// 🆕 2026-06-14：Runtime 自描述端点（child 主动声明状态，parent 只读）
+	// 见 internal/server/runtime_api.go
+	r.GET("/api/runtime", s.handleRuntimeAPI)
 	r.GET("/stream", gin.WrapF(s.handleStreamRequest))
 	r.GET("/decrypt", gin.WrapF(s.handleStreamRequest))
 	r.GET("/preview/*filepath", gin.WrapH(http.StripPrefix("/preview", web.PreviewHandler())))
@@ -472,6 +526,10 @@ func (s *Server) Start(version string) (string, error) {
 	if splitErr == nil {
 		if p, parseErr := strconv.Atoi(portStr); parseErr == nil {
 			s.actualPort = p
+			// 🆕 2026-06-14：回填 runtimeInfo.Port，/api/runtime 立即可读
+			s.runtimeInfoMu.Lock()
+			s.runtimeInfo.Port = p
+			s.runtimeInfoMu.Unlock()
 		}
 	}
 	return addr, nil

@@ -622,7 +622,8 @@ func emitSseEvent(w io.Writer, flusher http.Flusher, event, data string) error {
 //   5. 任意一步失败 → 透传 stderr / exitCode 给前端
 func ffmpegGenerate(ext string) (data []byte, stderr string, exitCode int, err error) {
 	// 0. ffmpeg 可用性
-	ffmpegOk, _, errMsg := ffmpeg.Available()
+	// 🆕 2026-06-15：ffmpeg.Available() → ffmpeg.IsAvailable()（重命名；返回签名不变）
+	ffmpegOk, _, errMsg := ffmpeg.IsAvailable()
 	if !ffmpegOk {
 		return nil, fmt.Sprintf("ffmpeg not available: %s", errMsg), -1, fmt.Errorf("ffmpeg not available: %s", errMsg)
 	}
@@ -697,9 +698,16 @@ func ffmpegGenerate(ext string) (data []byte, stderr string, exitCode int, err e
 	args = append(args, "-y", "-loglevel", "error", dstPath)
 
 	// 5. 跑 ffmpeg
+	// 🆕 2026-06-15：ffmpeg.RunWithOutput(ctx, args...) → ffmpeg.Encode(ctx, args...) 返回 *EncodeResult
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_, ffmpegStderr, ffmpegExit, runErr := ffmpeg.RunWithOutput(ctx, args...)
+	res, runErr := ffmpeg.Encode(ctx, args...)
+	var ffmpegStderr string
+	var ffmpegExit int
+	if res != nil {
+		ffmpegStderr = res.Stderr
+		ffmpegExit = res.ExitCode
+	}
 	if runErr != nil {
 		// 典型：ctx canceled / ctx deadline exceeded / spawn 失败
 		return nil, fmt.Sprintf("ffmpeg spawn/run error: %v\nstderr: %s\nargs: %v", runErr, ffmpegStderr, args), ffmpegExit, runErr
@@ -792,7 +800,8 @@ func planMockSpec(ext, relPath, encoderHint string) mockFileSpec {
 //       "最后收到的 spec_diag = mp4，ffmpegArgs=[-i ... -c copy] 阻塞 30s+"
 func executeMockSpec(sp *mockFileSpec) {
 	// 0. ffmpeg 可用性
-	ffmpegOk, _, errMsg := ffmpeg.Available()
+	// 🆕 2026-06-15：ffmpeg.Available() → ffmpeg.IsAvailable()
+	ffmpegOk, _, errMsg := ffmpeg.IsAvailable()
 	if !ffmpegOk {
 		sp.stderr = fmt.Sprintf("ffmpeg not available: %s", errMsg)
 		sp.exitCode = -1
@@ -836,9 +845,21 @@ func executeMockSpec(sp *mockFileSpec) {
 	// 真机 cgo hang 时不再等 30s 才超时；硬上限 5s（worker hard timer + 500ms 兜底）
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_, ffmpegStderr, ffmpegExit, runErr := ffmpeg.RunWithOutput(ctx, sp.ffmpegArgs...)
+	// 🆕 2026-06-15：ffmpeg.RunWithOutput(ctx, args...) → ffmpeg.Encode(ctx, args...) 返回 *EncodeResult
+	res, runErr := ffmpeg.Encode(ctx, sp.ffmpegArgs...)
+	var ffmpegStderr string
+	var ffmpegExit int
+	if res != nil {
+		ffmpegStderr = res.Stderr
+		ffmpegExit = res.ExitCode
+	}
 	if runErr != nil {
-		sp.stderr = fmt.Sprintf("ffmpeg spawn/run: %v\nstderr: %s", runErr, ffmpegStderr)
+		// 🆕 2026-06-15：把 worker 响应的 Error 字段也拼到 stderr（之前只拼 Stderr 会丢 ENGINE_LOAD_FAILED 等关键诊断）
+		var errDetail string
+		if res != nil && res.Error != "" {
+			errDetail = "\nworker error: " + res.Error
+		}
+		sp.stderr = fmt.Sprintf("ffmpeg spawn/run: %v\nstderr: %s%s", runErr, ffmpegStderr, errDetail)
 		sp.exitCode = ffmpegExit
 		return
 	}
