@@ -48,6 +48,10 @@ func Probe(ctx context.Context, args ...string) ([]byte, error) {
 
 // IsAvailable 探活：委托 utils.CheckFFmpegAvailable（内部用 RTLD_NOW | RTLD_LOCAL 试 dlopen，
 // 不会执行 ffmpeg_run → cgo 不会阻塞 OS thread）。
+//
+// CheckFFmpegAvailable 返回 5 个值（ok, ok, err, ffmpegDetail, ffprobeDetail），
+// 这里只取前 3 个（ffmpeg / ffprobe 是否可用 + 合并错误信息），detail 留给调用方按需调 utils 包。
 func IsAvailable() (ffmpegOk, ffprobeOk bool, errMsg string) {
-	return utils.CheckFFmpegAvailable()
+	ok, ok2, msg, _, _ := utils.CheckFFmpegAvailable()
+	return ok, ok2, msg
 }
