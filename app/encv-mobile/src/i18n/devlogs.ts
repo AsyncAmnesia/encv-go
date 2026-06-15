@@ -49,6 +49,7 @@ export default {
     'devlogs.copyFailed': 'Copy failed',
     // 🆕 2026-06-14 v6：纯手动挡（toolbar 显式开关 + 浮动 ↓ 按钮）
     'devlogs.scrollToBottom': 'Jump to latest log',
+    'devlogs.scrollToTop': 'Jump to top',
     'devlogs.autoScrollOn': 'Following',
     'devlogs.autoScrollOff': 'Paused',
   },

@@ -27,7 +27,7 @@
       class="log-entry"
       :class="[getLevel(items[vItem.index])]"
     >
-      <slot :item="items[vItem.index]" :index="vItem.index" />
+      <slot :item="items[vItem.index]" :index="vItem.index" :highlight="highlightRange" />
     </div>
   </div>
 </template>
@@ -48,12 +48,18 @@ interface Props {
   getKey?: (item: T) => number | string
   /** 自定义 level class 字段（默认取 item.level） */
   getLevel?: (item: T) => string
+  /** 搜索关键词（空字符串表示不高亮）；高亮由父级 CSS ::highlight 实现 */
+  searchQuery?: string
+  /** 从 item.message 提取纯文本字段（默认 .message） */
+  getText?: (item: T) => string
 }
 const props = withDefaults(defineProps<Props>(), {
   itemSize: 28,
   overscan: 10,
   getKey: (item: T) => item.id,
   getLevel: (item: T) => item.level,
+  searchQuery: '',
+  getText: (item: any) => item.message,
 })
 
 const virtualizerOptions = computed(() => ({
@@ -67,6 +73,20 @@ const virtualizer = useVirtualizer(virtualizerOptions)
 
 const virtualItems = computed(() => virtualizer.value.getVirtualItems())
 const totalSize = computed(() => virtualizer.value.getTotalSize())
+
+/**
+ * 高亮区间 [start, end)（CSS ::highlight 用 Range API 计算得出）
+ * 当前 stub 实现：返回 null（父级用 plain text 渲染）
+ * 父级可选择接入 CSS Custom Highlight API：
+ *   const range = new Range()
+ *   range.setStart(textNode, start)
+ *   range.setEnd(textNode, end)
+ *   const hl = new Highlight(range)
+ *   CSS.highlights.set('log-search', hl)
+ */
+function highlightRange(_text: string, _query: string): { start: number; end: number }[] | null {
+  return null
+}
 </script>
 
 <style scoped>

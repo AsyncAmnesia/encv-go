@@ -62,7 +62,7 @@
       v6 纯手动挡：toolbar ▶/⏸ 开关 + 浮动 ↓ 按钮
       详见脚本顶部 autoScrollEnabled 注释
     -->
-    <ion-content ref="contentRef" class="log-content">
+    <ion-content ref="contentRef" class="log-content" @scroll="onLogScroll">
       <!--
         🆕 虚拟滚动：ion-content 的 scroll 事件触发 VirtualLogList 重算可见 items
         DOM 节点数恒定 ~30（视口内 + overscan），切 tab 成本 = O(visible) 而非 O(N)
@@ -75,7 +75,7 @@
           <template #default="{ item }">
             <span class="log-time">[{{ item.timestamp }}]</span>
             <ion-badge :color="getBadgeColor(item.level)" class="level-badge">{{ item.level.toUpperCase() }}</ion-badge>
-            <span class="log-msg">{{ item.message }}</span>
+            <span class="log-msg" v-html="highlightMatch(item.message, searchText)"></span>
           </template>
         </VirtualLogList>
       </div>
@@ -93,25 +93,44 @@
           <template #default="{ item }">
             <span class="log-time">[{{ item.timestamp }}]</span>
             <ion-badge :color="getBadgeColor(item.level)" class="level-badge">{{ item.level.toUpperCase() }}</ion-badge>
-            <span class="log-msg">{{ item.message }}</span>
+            <span class="log-msg" v-html="highlightMatch(item.message, searchText)"></span>
           </template>
         </VirtualLogList>
       </div>
     </ion-content>
 
-    <!-- 浮动「↓」按钮：v6 移到 ion-content 外部，用 position: fixed 定位视口右下角 -->
-    <transition name="fade">
-      <button
-        v-if="!autoScrollEnabled"
-        type="button"
-        class="scrollToBottomBtn"
-        :title="t('devlogs.scrollToBottom')"
-        :aria-label="t('devlogs.scrollToBottom')"
-        @click="onJumpToBottom"
-      >
-        <ion-icon :icon="arrowDownOutline" class="scrollToBottomIcon" />
-      </button>
-    </transition>
+    <!--
+      浮动「↑/↓」按钮组：v6.1 加 ↑ 滚顶按钮，对称 ↓ 重启跟随+滚底
+      两者独立条件：
+        - ↑ 滚顶：scrollTop > 阈值（约 200px）时显示，点击 = ion-content.scrollTop = 0
+        - ↓ 滚底：autoScrollEnabled=false 时显示（已在 v6 落地）
+    -->
+    <div class="scroll-buttons">
+      <transition name="fade">
+        <button
+          v-if="showScrollToTop"
+          type="button"
+          class="scrollToTopBtn"
+          :title="t('devlogs.scrollToTop')"
+          :aria-label="t('devlogs.scrollToTop')"
+          @click="onJumpToTop"
+        >
+          <ion-icon :icon="arrowUpOutline" class="scrollToTopIcon" />
+        </button>
+      </transition>
+      <transition name="fade">
+        <button
+          v-if="!autoScrollEnabled"
+          type="button"
+          class="scrollToBottomBtn"
+          :title="t('devlogs.scrollToBottom')"
+          :aria-label="t('devlogs.scrollToBottom')"
+          @click="onJumpToBottom"
+        >
+          <ion-icon :icon="arrowDownOutline" class="scrollToBottomIcon" />
+        </button>
+      </transition>
+    </div>
 
     <ion-footer class="status-bar">
       <ion-toolbar>
@@ -134,7 +153,7 @@ import {
   IonSegment, IonSegmentButton, IonSearchbar, IonButton,
   IonIcon, IonBadge, IonFooter, alertController,
 } from '@ionic/vue'
-import { trashOutline, copyOutline, arrowDownOutline, playOutline, pauseOutline } from 'ionicons/icons'
+import { trashOutline, copyOutline, arrowDownOutline, arrowUpOutline, playOutline, pauseOutline } from 'ionicons/icons'
 import VirtualLogList from '@/components/VirtualLogList.vue'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
@@ -291,6 +310,21 @@ function toggleAutoScroll() {
 async function onJumpToBottom() {
   autoScrollEnabled.value = true
   await scrollToBottom(true)
+}
+
+/** 浮动「↑」按钮：滚到顶部（不影响 autoScrollEnabled 状态） */
+function onJumpToTop() {
+  const el = ensureScrollEl()
+  if (el) el.scrollTop = 0
+}
+
+/** 浮动「↑」按钮显示条件：滚离顶部 200px 以上时显示，避免无意义闪烁 */
+const showScrollToTop = ref(false)
+/** 跟踪 ion-content 滚动以控制 ↑ 按钮显示 */
+function onLogScroll() {
+  const el = ensureScrollEl()
+  if (!el) { showScrollToTop.value = false; return }
+  showScrollToTop.value = el.scrollTop > 200
 }
 
 /** 新日志到达的统一处理（被 frontend/backend 两个 watcher 调用） */
@@ -583,13 +617,41 @@ defineExpose({
 }
 .status-text { font-size: 11px; color: var(--ion-text-color-step-400, #666); }
 
-/* 浮动「↓」按钮：position: fixed 定位视口右下角，z-index 9999 确保永远可见
-   bottom: 64px 避开 status-bar（44px + 20px 间距） */
-.scrollToBottomBtn {
+/* 浮动按钮容器：position: fixed 列布局，bottom 偏移让出 status-bar（44px + 20px） */
+.scroll-buttons {
   position: fixed;
   right: 16px;
   bottom: 64px;
   z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.scroll-buttons > * { pointer-events: auto; }
+
+/* 浮动「↑」按钮：滚顶，scrollTop > 200 时显示 */
+.scrollToTopBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--ion-toolbar-background, var(--ion-background-color));
+  color: var(--ion-color-primary);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18), 0 1px 3px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+.scrollToTopBtn:hover { transform: scale(1.06); }
+.scrollToTopBtn:active { transform: scale(0.94); }
+.scrollToTopIcon { font-size: 20px; }
+
+/* 浮动「↓」按钮：滚底，position: fixed 视口右下角永远可见 */
+.scrollToBottomBtn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -609,6 +671,14 @@ defineExpose({
 .scrollToBottomIcon { font-size: 20px; }
 .fade-enter-active, .fade-leave-active { transition: opacity 0.2s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
+
+/* 搜索关键词高亮（v-html 注入 <mark>，在 log-msg 内部） */
+.log-msg :deep(mark) {
+  background: rgba(241, 196, 15, 0.35);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
 
 /* status-bar 自动滚动状态文字：暂停时 warning 色 */
 .auto-scroll-status { font-weight: 500; }
