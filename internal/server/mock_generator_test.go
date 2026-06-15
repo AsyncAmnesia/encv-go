@@ -27,9 +27,10 @@ import (
 // 2026-06-11 改造：minimalMP4/MKV/MP3/FLAC 现在**只**走 ffmpeg（无 base64 fallback）
 // → 没有 ffmpeg 时这些函数返回 nil，断言 magic byte 会 panic
 // → 改 SKIP 而非 FAIL（CI 容器没装 ffmpeg 不算 fail，但本地 dev / 真机必须有）
+// 🆕 2026-06-15：ffmpeg.Available() → ffmpeg.IsAvailable()
 func requireFFmpeg(t *testing.T) {
 	t.Helper()
-	ffmpegOk, ffprobeOk, errMsg := ffmpeg.Available()
+	ffmpegOk, ffprobeOk, errMsg := ffmpeg.IsAvailable()
 	if !ffmpegOk && !ffprobeOk {
 		t.Skipf("ffmpeg runner not available, skipping (errMsg=%q)", errMsg)
 	}

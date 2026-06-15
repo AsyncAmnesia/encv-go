@@ -198,6 +198,25 @@ const levelOptions = [
   { value: 'error', label: 'ERROR' },
 ]
 
+/**
+ * 🆕 2026-06-15 搜索高亮：转义 HTML 特殊字符 + 把 query 用 <mark> 包起来
+ * 性能：30 item 虚拟列表下完全可承受
+ */
+function highlightMatch(text: string, query: string): string {
+  const escapeHtml = (s: string) => s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+  if (!query.trim()) return escapeHtml(text)
+  try {
+    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const re = new RegExp(`(${escaped})`, 'gi')
+    return escapeHtml(text).replace(re, '<mark>$1</mark>')
+  } catch {
+    return escapeHtml(text)
+  }
+}
+
 function toggleLevel(level: string) {
   const s = new Set(selectedLevels.value)
   if (level === 'all') {
