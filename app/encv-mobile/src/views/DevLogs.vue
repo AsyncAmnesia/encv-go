@@ -63,20 +63,21 @@
       详见脚本顶部 autoScrollEnabled 注释
     -->
     <ion-content ref="contentRef" class="log-content">
+      <!--
+        🆕 虚拟滚动：ion-content 的 scroll 事件触发 VirtualLogList 重算可见 items
+        DOM 节点数恒定 ~30（视口内 + overscan），切 tab 成本 = O(visible) 而非 O(N)
+      -->
       <div v-if="activeTab === 'frontend'" class="log-list">
         <div v-if="filteredFrontend.length === 0" class="empty-logs">
           <p>{{ t('devlogs.noLogs') }}</p>
         </div>
-        <div
-          v-for="log in filteredFrontend"
-          :key="log.id"
-          class="log-entry"
-          :class="[log.level]"
-        >
-          <span class="log-time">[{{ log.timestamp }}]</span>
-          <ion-badge :color="getBadgeColor(log.level)" class="level-badge">{{ log.level.toUpperCase() }}</ion-badge>
-          <span class="log-msg" v-html="highlightMatch(log.message, searchText)"></span>
-        </div>
+        <VirtualLogList v-else :items="filteredFrontend" :scroll-el="scrollEl">
+          <template #default="{ item }">
+            <span class="log-time">[{{ item.timestamp }}]</span>
+            <ion-badge :color="getBadgeColor(item.level)" class="level-badge">{{ item.level.toUpperCase() }}</ion-badge>
+            <span class="log-msg">{{ item.message }}</span>
+          </template>
+        </VirtualLogList>
       </div>
 
       <div v-else class="log-list">
@@ -88,16 +89,13 @@
         <div v-if="filteredBackend.length === 0" class="empty-logs">
           <p>{{ t('devlogs.noLogs') }}</p>
         </div>
-        <div
-          v-for="log in filteredBackend"
-          :key="log.id"
-          class="log-entry"
-          :class="[log.level]"
-        >
-          <span class="log-time">[{{ log.timestamp }}]</span>
-          <ion-badge :color="getBadgeColor(log.level)" class="level-badge">{{ log.level.toUpperCase() }}</ion-badge>
-          <span class="log-msg" v-html="highlightMatch(log.message, searchText)"></span>
-        </div>
+        <VirtualLogList v-else :items="filteredBackend" :scroll-el="scrollEl">
+          <template #default="{ item }">
+            <span class="log-time">[{{ item.timestamp }}]</span>
+            <ion-badge :color="getBadgeColor(item.level)" class="level-badge">{{ item.level.toUpperCase() }}</ion-badge>
+            <span class="log-msg">{{ item.message }}</span>
+          </template>
+        </VirtualLogList>
       </div>
     </ion-content>
 
@@ -130,13 +128,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, shallowRef, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonContent,
   IonSegment, IonSegmentButton, IonSearchbar, IonButton,
   IonIcon, IonBadge, IonFooter, alertController,
 } from '@ionic/vue'
 import { trashOutline, copyOutline, arrowDownOutline, playOutline, pauseOutline } from 'ionicons/icons'
+import VirtualLogList from '@/components/VirtualLogList.vue'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
 import { useRealtimeTransport } from '@/composables/useRealtimeTransport'
@@ -150,6 +149,11 @@ const transport = useRealtimeTransport()
 
 const activeTab = ref<'frontend' | 'backend'>('frontend')
 const searchText = ref('')
+// 🆕 2026-06-14 性能优化：shallowRef + buffer cap 5000 + rAF coalesce
+// 解决"后端持续刷新大量日志时切 tab 卡 1-2 秒"问题
+//   - shallowRef：避免对每条 log 的深响应（5000 items × Vue proxy 性能差）
+//   - buffer cap：超过 5000 自动丢弃最早的，防止 OOM
+//   - rAF coalesce：同一帧内多条 WS 消息合并为 1 次赋值 → 1 次 virtualizer 重算
 // 自动滚动：true 跟随 / false 暂停
 // 唯一交互入口：toolbar 开关按钮（toggleAutoScroll）和浮动 ↓ 按钮（onJumpToBottom）
 // 纯手动挡：不监听 scroll 事件、不在 tab 切换 / 前后台切换时 auto-disable
@@ -157,6 +161,14 @@ const searchText = ref('')
 // @ionScroll/@ionScrollStart 在移动端 + 高刷下完全不可靠
 const autoScrollEnabled = ref(true)
 const contentRef = ref<InstanceType<typeof IonContent> | null>(null)
+/** ion-content 的 .inner-scroll 元素（虚拟列表的 scroll 容器） */
+const scrollEl = ref<HTMLElement | null>(null)
+/** 队列未 flush 的后端日志（rAF 内合并） */
+let pendingBackendLogs: LogEntry[] = []
+/** rAF flush 调度标志 */
+let flushScheduled = false
+/** 后端日志 buffer 上限（超出后丢弃最早的） */
+const MAX_BACKEND_LOGS = 5000
 
 const selectedLevels = ref<Set<string>>(new Set(['debug', 'info', 'warn', 'error']))
 const levelOptions = [
@@ -182,7 +194,9 @@ function toggleLevel(level: string) {
 
 let nextId = 0
 const { logs: frontendLogs, clearLogs: clearFrontendLogs } = useFrontendLogs()
-const backendLogs = ref<LogEntry[]>([])
+// 🆕 性能优化：shallowRef 避免对 5000 条 log 内部字段做深响应代理
+// 配合下文的 buffer cap + rAF coalesce，单帧多条 WS 消息只触发 1 次 virtualizer 重算
+const backendLogs = shallowRef<LogEntry[]>([])
 const serverOnline = ref(false)
 
 function getBadgeColor(level: string): string {
@@ -193,15 +207,6 @@ function getBadgeColor(level: string): string {
     case 'error': return 'danger'
     default: return 'medium'
   }
-}
-
-function highlightMatch(text: string, query: string): string {
-  if (!query.trim()) return text.replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  try {
-    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const re = new RegExp(`(${escaped})`, 'gi')
-    return text.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(re, '<mark>$1</mark>')
-  } catch { return text }
 }
 
 const filteredFrontend = computed(() => {
@@ -240,14 +245,16 @@ function onTabChange(event: CustomEvent) {
 
 /**
  * 找 ion-content 实际滚动的元素（每次重查，不缓存）
- * 返回 shadow DOM 内的 .inner-scroll 元素——这是真正可滚动的容器
+ * 同步更新 scrollEl ref——虚拟列表的 useVirtualizer 通过 getScrollElement 观察它
  * 失败由 scrollToBottom / onJumpToBottom 的 rAF retry 处理
  */
 function ensureScrollEl(): HTMLElement | null {
   if (!contentRef.value) return null
   const hostEl = ((contentRef.value as any).$el || (contentRef.value as any)) as HTMLElement | undefined
   if (!hostEl || !hostEl.shadowRoot) return null
-  return hostEl.shadowRoot.querySelector('.inner-scroll') as HTMLElement | null
+  const el = hostEl.shadowRoot.querySelector('.inner-scroll') as HTMLElement | null
+  if (el && el !== scrollEl.value) scrollEl.value = el
+  return el
 }
 
 function scrollToTop() {
@@ -342,13 +349,41 @@ async function handleClear() {
   await alert.present()
 }
 
+/**
+ * 🆕 性能优化：rAF coalesce 后端日志
+ * 把单帧内多条 WS 消息合并为 1 次 shallowRef 赋值，避免触发 N 次 virtualizer 重算
+ * 100 条/秒 WS 持续刷新：旧实现 = 100 次重算/秒；新实现 = 60 次重算/秒（每帧一次）
+ */
+function queueBackendLog(entry: LogEntry) {
+  pendingBackendLogs.push(entry)
+  if (flushScheduled) return
+  flushScheduled = true
+  requestAnimationFrame(flushPendingBackendLogs)
+}
+
+function flushPendingBackendLogs() {
+  flushScheduled = false
+  if (pendingBackendLogs.length === 0) return
+  const toAdd = pendingBackendLogs
+  pendingBackendLogs = []
+
+  const arr = backendLogs.value
+  // 超出 cap：丢弃最早（slice 末尾 keep 条 + 本帧新增）
+  if (arr.length + toAdd.length > MAX_BACKEND_LOGS) {
+    const keep = Math.max(0, MAX_BACKEND_LOGS - toAdd.length)
+    backendLogs.value = arr.length > keep ? [...arr.slice(-keep), ...toAdd] : [...toAdd]
+  } else {
+    backendLogs.value = [...arr, ...toAdd]
+  }
+}
+
 function onWsMessage(data: any) {
   if (data && data.type === 'log' && data.data) {
     const logData = data.data
     const level = ['debug', 'info', 'warn', 'error'].includes(logData.level) ? logData.level : 'info'
     const message = String(logData.message || logData.msg || '')
     if (!message && !logData.message) return
-    backendLogs.value.push({
+    queueBackendLog({
       id: ++nextId,
       timestamp: logData.timestamp || new Date().toLocaleTimeString('zh-CN', { hour12: false }),
       level,
@@ -358,7 +393,7 @@ function onWsMessage(data: any) {
   }
   if (data && data.type && data.type !== 'log' && data.type !== 'pong' && data.type !== 'server:status') {
     const msg = typeof data === 'string' ? data : JSON.stringify(data)
-    backendLogs.value.push({ id: ++nextId, timestamp: new Date().toLocaleTimeString('zh-CN', { hour12: false }), level: 'debug', message: msg })
+    queueBackendLog({ id: ++nextId, timestamp: new Date().toLocaleTimeString('zh-CN', { hour12: false }), level: 'debug', message: msg })
   }
 }
 
@@ -379,13 +414,13 @@ onMounted(async () => {
     serverOnline.value = result.online
   }
 
-  // 写入一条启动日志（INFO/WARN 取决于 server 状态）
-  backendLogs.value.push({
+  // 写入一条启动日志（INFO/WARN 取决于 server 状态）——首条直接 push 即可
+  backendLogs.value = [{
     id: ++nextId,
     timestamp: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
     level: serverOnline.value ? 'info' : 'warn',
     message: `DevLogs ready, server ${serverOnline.value ? 'online' : 'offline'} (transport=${transport.connectionState.value})`,
-  })
+  }, ...backendLogs.value]
 })
 
 onUnmounted(() => {
@@ -402,6 +437,12 @@ defineExpose({
   onJumpToBottom,
   scrollToBottom,
   setActiveTab(tab: 'frontend' | 'backend') { activeTab.value = tab },
+  /**
+   * 测试专用：替换后端日志数组
+   * 走 setBackendLogs 显式赋值（Vue 自动 unwrap ref 导致 vm.backendLogs.value 无法访问）
+   */
+  setBackendLogs(arr: LogEntry[]) { backendLogs.value = arr },
+  getBackendLogs(): LogEntry[] { return backendLogs.value },
 })
 </script>
 
@@ -489,19 +530,8 @@ defineExpose({
   padding: 4px 0 8px;
 }
 
-.log-entry {
-  display: flex;
-  align-items: baseline;
-  gap: 5px;
-  padding: 1px 2px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-  word-break: break-all;
-}
-
-.log-entry.debug .log-msg { color: var(--ion-text-color-step-300, #777); }
-.log-entry.info .log-msg { color: var(--ion-text-color, #ddd); }
-.log-entry.warn .log-msg { color: #f39c12; }
-.log-entry.error .log-msg { color: #e74c3c; }
+/* .log-entry 及其 .error/.warn/.info/.debug 变体样式已在 VirtualLogList.vue 中定义
+   .log-time / .log-msg / .level-badge 仍属本组件作用域（slot 渲染本组件） */
 
 .log-time {
   color: var(--ion-text-color-step-400, #555);
@@ -526,12 +556,9 @@ defineExpose({
 .log-msg {
   flex: 1;
   min-width: 0;
-}
-.log-msg :deep(mark) {
-  background: rgba(241, 196, 15, 0.35);
-  color: inherit;
-  border-radius: 2px;
-  padding: 0 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .empty-logs {

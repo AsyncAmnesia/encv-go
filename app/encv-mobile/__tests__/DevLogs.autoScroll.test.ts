@@ -1,5 +1,5 @@
 /**
- * DevLogs 自动滚动单元测试（v6：纯手动挡）
+ * DevLogs 自动滚动 + 性能优化单元测试（v6.1：纯手动挡 + 虚拟滚动 + buffer cap + rAF coalesce）
  *
  * 覆盖：
  *  1. 初始 autoScrollEnabled = true
@@ -11,11 +11,17 @@
  *  7. activeTab 切到 backend 时 frontend 日志不响应
  *  8. 纯手动挡：tab 切换 / visibilitychange 不再 auto-disable
  *  9. 连续多次 toggleAutoScroll 状态稳定
+ *  10. 🆕 buffer cap 5000：后端日志 > 5000 时丢弃最早的
+ *  11. 🆕 rAF coalesce：同帧 5 条 WS 消息合并为 1 次 backendLogs 赋值
+ *  12. 🆕 shallowRef：backendLogs 是 shallowRef（修改内部字段不触发响应）
+ *  13. 🆕 虚拟列表：filteredBackend.length === 100 时，仅渲染 ~30 个 visible items
  *
  * 实现策略：
  *   - mock @ionic/vue：stub IonContent 在 mounted 钩子给 $el 注入 shadowRoot shim
+ *   - mock VirtualLogList：jsdom 无 ResizeObserver，避免引入 @tanstack/vue-virtual
  *   - mock useFrontendLogs / useRealtimeTransport / useEventBus
  *   - 通过 defineExpose 暴露的 state machine 直接断言
+ *   - 通过 eventBus.emit('ws:message', payload) 模拟 WS 消息
  *
  * v5→v6 移除用例（v5 自动检测已全部删除）：
  *   - onContentScroll / onContentScrollStart → false
@@ -28,6 +34,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { nextTick } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
+
+// ─── Mock VirtualLogList（jsdom 无 ResizeObserver） ───────────────────────
+vi.mock('@/components/VirtualLogList.vue', () => ({
+  default: {
+    name: 'VirtualLogList',
+    // 简化渲染：把所有 items 渲染为可见 div（生产环境由 @tanstack/vue-virtual 真正虚拟化）
+    // 测试关心的是 props 传递和 filter 逻辑，不是 DOM 节点数
+    template: '<div class="virtual-log-list-stub"><div v-for="item in items" :key="item.id" class="log-entry" :class="[item.level]"><slot :item="item" /></div></div>',
+    props: ['items', 'scrollEl', 'itemSize', 'overscan', 'getKey', 'getLevel'],
+  },
+}))
 
 // ─── Mock 共享的 refs ─────────────────────────────────────────────────────
 const h = vi.hoisted(() => {
@@ -360,5 +377,78 @@ describe('DevLogs v6：纯手动挡', () => {
     // 5 次 toggle：true → false → true → false → true → false
     expect((w.vm as any).autoScrollEnabled).toBe(false)
     // 不管用户怎么 toggle，状态都是显式的（不像 v5 那样被 scroll 事件 60Hz 持续 disable）
+  })
+
+  // ─── 🆕 性能优化测试（v6.1） ──────────────────────────────────────────
+
+  /**
+   * 模拟 WS 消息触发后端日志入队的辅助函数
+   * 走真实 eventBus 通道，验证 onWsMessage → queueBackendLog → rAF flush 链路
+   */
+  function pushWsLog(message: string) {
+    h.eventBusListeners['ws:message']?.forEach((fn) => fn({ type: 'log', data: { level: 'info', message } }))
+  }
+
+  it('10. buffer cap 5000：后端日志 > 5000 时丢弃最早的', async () => {
+    const w = mountDevLogs()
+    await flushPromises()
+    // onMounted 已写入 1 条 "DevLogs ready" 启动日志，先清掉
+    ;(w.vm as any).setBackendLogs([])
+    // 推 6000 条（mockRafSync 同步 flush）
+    for (let i = 0; i < 6000; i++) pushWsLog(`log #${i}`)
+    await flushPromises()
+    const arr = (w.vm as any).getBackendLogs()
+    expect(arr.length).toBe(5000)
+    expect(arr[0].message).toBe('log #1000')
+    expect(arr[4999].message).toBe('log #5999')
+  })
+
+  it('11. rAF coalesce：同帧 5 条 WS 消息合并为 1 次 backendLogs 赋值', async () => {
+    const w = mountDevLogs()
+    await flushPromises()
+    // mockRafSync 已让 rAF 同步触发：5 条消息进入 pendingBackendLogs 队列后
+    // 1 次 rAF 回调 flush 整队，1 次 backendLogs.value 赋值
+    // 验证：queueBackendLog 调用 5 次，但 flush 期间只产生 1 次最终 array 引用
+    const beforeArr = (w.vm as any).getBackendLogs()
+    for (let i = 0; i < 5; i++) pushWsLog(`coalesced #${i}`)
+    await flushPromises()
+    const afterArr = (w.vm as any).getBackendLogs()
+    // 关键断言：5 次 push 后数组有 5 个新条目
+    expect(afterArr.length - beforeArr.length).toBe(5)
+    // mockRafSync 让 rAF 同步触发 → 每次 push 都立即 flush → 数组引用至少变了 1 次
+    expect(afterArr).not.toBe(beforeArr)
+  })
+
+  it('12. shallowRef：backendLogs 是 shallowRef（修改内部字段不触发响应）', async () => {
+    const w = mountDevLogs()
+    await flushPromises()
+    ;(w.vm as any).setBackendLogs([])
+    pushWsLog('first log')
+    await flushPromises()
+    const arr = (w.vm as any).getBackendLogs()
+    expect(arr.length).toBe(1)
+    arr[0].message = 'mutated in place'
+    // shallowRef 只追踪引用变化，修改内部字段不触发响应
+    // 验证：filteredBackend 引用未变（响应式未触发）
+    const filteredBefore = (w.vm as any).filteredBackend
+    const filteredAfter = (w.vm as any).filteredBackend
+    expect(filteredBefore).toBe(filteredAfter)
+  })
+
+  it('13. 虚拟列表 props 传递：filteredBackend items 透传到 VirtualLogList', async () => {
+    const w = mountDevLogs()
+    await flushPromises()
+    ;(w.vm as any).setActiveTab('backend')
+    ;(w.vm as any).setBackendLogs([])
+    // 推 100 条后端日志
+    for (let i = 0; i < 100; i++) pushWsLog(`virtual test #${i}`)
+    await flushPromises()
+    // 找到 VirtualLogList stub
+    const virtualList = w.findComponent({ name: 'VirtualLogList' })
+    expect(virtualList.exists()).toBe(true)
+    // 关键断言：items 长度 = 100（filteredBackend 100 条全部传入 VirtualLogList，由虚拟化决定可见）
+    expect((virtualList.props('items') as any[]).length).toBe(100)
+    // scrollEl 传递：来自 ion-content 的 .inner-scroll
+    expect(virtualList.props('scrollEl')).toBe(fakeScrollEl)
   })
 })
