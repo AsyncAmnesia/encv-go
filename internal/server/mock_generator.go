@@ -854,7 +854,12 @@ func executeMockSpec(sp *mockFileSpec) {
 		ffmpegExit = res.ExitCode
 	}
 	if runErr != nil {
-		sp.stderr = fmt.Sprintf("ffmpeg spawn/run: %v\nstderr: %s", runErr, ffmpegStderr)
+		// 🆕 2026-06-15：把 worker 响应的 Error 字段也拼到 stderr（之前只拼 Stderr 会丢 ENGINE_LOAD_FAILED 等关键诊断）
+		var errDetail string
+		if res != nil && res.Error != "" {
+			errDetail = "\nworker error: " + res.Error
+		}
+		sp.stderr = fmt.Sprintf("ffmpeg spawn/run: %v\nstderr: %s%s", runErr, ffmpegStderr, errDetail)
 		sp.exitCode = ffmpegExit
 		return
 	}

@@ -34,6 +34,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/Soltus/encv-go/internal/utils"
 )
 // EncodeResult 是 ffmpeg/ffprobe 调用的标准结果。
 type EncodeResult struct {
@@ -41,6 +43,10 @@ type EncodeResult struct {
 	Stderr     string
 	ExitCode   int
 	DurationMs int64
+	// Error 是 worker 响应 JSON 里的 "error" 字段（仅失败时填）。
+	// 调用方（如 mock_generator.go）拿不到 worker 进程内部错误时，可从这里取。
+	// 之前漏掉这个字段 → mock_generator 拼装 stderr 时 res.Error 编译不过。
+	Error string
 }
 
 // workerRequest/Response 与 cmd/ffmpeg-worker/ffmpeg_worker.c 的 JSON 协议对齐。
@@ -124,10 +130,21 @@ func runWorkerJSON(ctx context.Context, workerBin string, mode string, args []st
 			timeoutMs = 0
 		}
 	}
+
+	// 🆕 2026-06-15 修 #3：libDir 在 JSON 请求和 cmd.Env 注入都要用——
+	// C worker 从 JSON 读 lib_dir（不是从 env），所以这里必须给到非空值，
+	// 不能直接用 os.Getenv（真机 Android Java 端不保证注入 env 到 Go 进程）。
+	// 修法：libDir 优先 os.Getenv("ENCV_LIB_DIR")，空时兜底 utils.GetLibDir()（包级缓存）。
+	libDir := os.Getenv("ENCV_LIB_DIR")
+	if libDir == "" {
+		libDir = utils.GetLibDir() // utils 包公开 getLibDir 兜底
+	}
+
 	req := workerRequest{
 		Args:      args,
 		FFmpegBin: locateFFmpegSystem(),
-		LibDir:    os.Getenv("ENCV_LIB_DIR"),
+		// 🆕 2026-06-15 修 #3：JSON lib_dir 用上面算好的 libDir（兜底后非空）
+		LibDir:    libDir,
 		TimeoutMs: timeoutMs,
 		Mode:      mode,
 	}
@@ -138,6 +155,12 @@ func runWorkerJSON(ctx context.Context, workerBin string, mode string, args []st
 	var stdoutBuf, stderrBuf strings.Builder
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
+
+	// 🆕 2026-06-15 修 #3：显式注入 ENCV_LIB_DIR 给 worker subprocess（双保险）
+	// 理由：之前旧 worker_client.go 是显式 cmd.Env = append(os.Environ(), "ENCV_LIB_DIR="+getLibDir()) 注入。
+	// 重构成 Encode(ctx, args) 后丢了这一行 → 父进程 env 空时 worker dlopen 系统路径 /libffmpeg.so 失败 → exit_code -1。
+	// 修法：同上，libDir 用上面兜底后的非空值，强制注入到 cmd.Env。
+	cmd.Env = append(os.Environ(), "ENCV_LIB_DIR="+libDir)
 
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start worker: %w", err)
@@ -203,6 +226,7 @@ func runWorkerJSON(ctx context.Context, workerBin string, mode string, args []st
 		Stderr:     resp.Stderr + stderrBuf.String(),
 		ExitCode:   resp.ExitCode,
 		DurationMs: resp.DurationMs,
+		Error:      resp.Error,
 	}, finalErr
 }
 

@@ -26,6 +26,12 @@
       }"
       class="log-entry"
       :class="[getLevel(items[vItem.index])]"
+      role="button"
+      tabindex="0"
+      :title="t('virtualLogList.clickToExpand')"
+      @click="handleClick(items[vItem.index])"
+      @keydown.enter="handleClick(items[vItem.index])"
+      @keydown.space.prevent="handleClick(items[vItem.index])"
     >
       <slot :item="items[vItem.index]" :index="vItem.index" :highlight="highlightRange" />
     </div>
@@ -35,6 +41,7 @@
 <script setup lang="ts" generic="T extends { id: number; level: string }">
 import { computed } from 'vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
+import { useI18n } from '@/composables/useI18n'
 
 interface Props {
   items: T[]
@@ -61,6 +68,19 @@ const props = withDefaults(defineProps<Props>(), {
   searchQuery: '',
   getText: (item: any) => item.message,
 })
+
+// 🆕 2026-06-15 修 #2：点击单行日志展开详情
+// 之前 fixed 28px 行高 + ellipsis + nowrap 会把长 log 截断，用户没法看全。
+// 修法：行点击/键盘 enter/space 触发 select 事件，父级弹模态显示完整内容 + 复制。
+const emit = defineEmits<{
+  (e: 'select', item: T): void
+}>()
+
+function handleClick(item: T) {
+  emit('select', item)
+}
+
+const { t } = useI18n()
 
 const virtualizerOptions = computed(() => ({
   count: props.items.length,
@@ -107,6 +127,15 @@ function highlightRange(_text: string, _query: string): { start: number; end: nu
   text-overflow: ellipsis;
   white-space: nowrap;
   box-sizing: border-box;
+  cursor: pointer;             /* 🆕 2026-06-15 修 #2：可点击视觉提示 */
+  user-select: none;           /* 🆕 避免长按选中文字干扰点击 */
+}
+.log-entry:hover {
+  background: rgba(79, 140, 255, 0.06);  /* 🆕 hover 反馈 */
+}
+.log-entry:focus-visible {
+  outline: 2px solid var(--ion-color-primary, #4f8cff);  /* 🆕 键盘焦点 */
+  outline-offset: -2px;
 }
 .log-entry.error { background: rgba(239, 68, 68, 0.08); color: #b91c1c; }
 .log-entry.warn  { background: rgba(245, 158, 11, 0.08); color: #92400e; }

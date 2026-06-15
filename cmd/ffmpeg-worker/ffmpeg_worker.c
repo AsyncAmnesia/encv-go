@@ -287,6 +287,7 @@ int main(void) {
     }
     if (total <= 0) {
         printf("{\"error\":\"empty stdin\",\"exit_code\":-1}\n");
+        fflush(stdout);  // 🆕 2026-06-15：stdio 缓冲可能在 return 前丢失，加 fflush 防御
         return 1;
     }
     json_buf[total] = 0;
@@ -300,6 +301,9 @@ int main(void) {
     int argc = 0;
     if (json_parse_args(json_buf, &args, &argc, mode) != 0) {
         printf("{\"error\":\"parse args failed\",\"exit_code\":-1}\n");
+        fflush(stdout);
+        for (int i = 0; i < argc; i++) free(args[i]);
+        free(args);
         return 1;
     }
 
@@ -319,6 +323,7 @@ int main(void) {
     const char* lib_name = (strcmp(mode, "ffprobe") == 0) ? "libffprobe.so" : "libffmpeg.so";
     if (g_lib_dir[0] == 0) {
         printf("{\"error\":\"lib_dir not set in request\",\"exit_code\":-1}\n");
+        fflush(stdout);
         for (int i = 0; i < argc; i++) free(args[i]);
         free(args);
         return 1;
@@ -330,6 +335,7 @@ int main(void) {
     if (!handle) {
         const char* err = dlerror();
         printf("{\"error\":\"[ENGINE_LOAD_FAILED] dlopen %s: %s\",\"exit_code\":-1}\n", lib_path, err ? err : "unknown");
+        fflush(stdout);
         for (int i = 0; i < argc; i++) free(args[i]);
         free(args);
         return 1;
@@ -346,6 +352,7 @@ int main(void) {
     if (!run_fn) {
         const char* err = dlerror();
         printf("{\"error\":\"[ENGINE_SYMBOL_MISSING] %s: %s\",\"exit_code\":-2}\n", run_sym, err ? err : "unknown");
+        fflush(stdout);
         dlclose(handle);
         for (int i = 0; i < argc; i++) free(args[i]);
         free(args);
@@ -356,6 +363,7 @@ int main(void) {
     output_redirect_t redir;
     if (redirect_output_start(&redir) != 0) {
         printf("{\"error\":\"failed to create output temp files: %s\",\"exit_code\":-1}\n", strerror(errno));
+        fflush(stdout);
         dlclose(handle);
         for (int i = 0; i < argc; i++) free(args[i]);
         free(args);

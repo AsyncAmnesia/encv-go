@@ -62,7 +62,7 @@
       v6 纯手动挡：toolbar ▶/⏸ 开关 + 浮动 ↓ 按钮
       详见脚本顶部 autoScrollEnabled 注释
     -->
-    <ion-content ref="contentRef" class="log-content" @scroll="onLogScroll">
+    <ion-content ref="contentRef" class="log-content">
       <!--
         🆕 虚拟滚动：ion-content 的 scroll 事件触发 VirtualLogList 重算可见 items
         DOM 节点数恒定 ~30（视口内 + overscan），切 tab 成本 = O(visible) 而非 O(N)
@@ -71,7 +71,7 @@
         <div v-if="filteredFrontend.length === 0" class="empty-logs">
           <p>{{ t('devlogs.noLogs') }}</p>
         </div>
-        <VirtualLogList v-else :items="filteredFrontend" :scroll-el="scrollEl">
+        <VirtualLogList v-else :items="filteredFrontend" :scroll-el="scrollEl" @select="onLogSelect">
           <template #default="{ item }">
             <span class="log-time">[{{ item.timestamp }}]</span>
             <ion-badge :color="getBadgeColor(item.level)" class="level-badge">{{ item.level.toUpperCase() }}</ion-badge>
@@ -89,7 +89,7 @@
         <div v-if="filteredBackend.length === 0" class="empty-logs">
           <p>{{ t('devlogs.noLogs') }}</p>
         </div>
-        <VirtualLogList v-else :items="filteredBackend" :scroll-el="scrollEl">
+        <VirtualLogList v-else :items="filteredBackend" :scroll-el="scrollEl" @select="onLogSelect">
           <template #default="{ item }">
             <span class="log-time">[{{ item.timestamp }}]</span>
             <ion-badge :color="getBadgeColor(item.level)" class="level-badge">{{ item.level.toUpperCase() }}</ion-badge>
@@ -143,17 +143,59 @@
         </div>
       </ion-toolbar>
     </ion-footer>
+
+    <!--
+      🆕 2026-06-15 修 #2：日志详情模态
+      用户点击单行日志 → VirtualLogList emit('select') → onLogSelect 设置 selectedLog
+      → 此模态显示完整 timestamp/level/message + 复制按钮
+      原因：之前 28px 固定行高 + ellipsis + nowrap 会截断长 log
+    -->
+    <div v-if="selectedLog" class="log-detail-overlay" @click.self="closeLogDetail">
+      <div class="log-detail-modal" role="dialog" aria-modal="true">
+        <div class="log-detail-header">
+          <h3 class="log-detail-title">{{ t('devlogs.logDetail') }}</h3>
+          <button type="button" class="log-detail-close" :aria-label="t('devlogs.logDetailClose')" @click="closeLogDetail">
+            <ion-icon :icon="closeOutline" />
+          </button>
+        </div>
+        <div class="log-detail-body">
+          <div class="log-detail-row">
+            <span class="log-detail-label">{{ t('devlogs.logDetailTimestamp') }}</span>
+            <span class="log-detail-value log-time-detail">{{ selectedLog.timestamp }}</span>
+          </div>
+          <div class="log-detail-row">
+            <span class="log-detail-label">{{ t('devlogs.logDetailLevel') }}</span>
+            <ion-badge :color="getBadgeColor(selectedLog.level)" class="level-badge">
+              {{ selectedLog.level.toUpperCase() }}
+            </ion-badge>
+          </div>
+          <div class="log-detail-row log-detail-message-row">
+            <span class="log-detail-label">{{ t('devlogs.logDetailMessage') }}</span>
+            <pre class="log-detail-message">{{ selectedLog.message }}</pre>
+          </div>
+        </div>
+        <div class="log-detail-footer">
+          <ion-button fill="outline" size="small" @click="copyLogDetail">
+            <ion-icon :icon="copyOutline" slot="start" />
+            {{ t('devlogs.logDetailCopy') }}
+          </ion-button>
+          <ion-button fill="clear" size="small" @click="closeLogDetail">
+            {{ t('devlogs.logDetailClose') }}
+          </ion-button>
+        </div>
+      </div>
+    </div>
   </ion-page>
 </template>
 
 <script setup lang="ts">
-import { ref, shallowRef, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, shallowRef, computed, watch, onMounted, onUnmounted, onBeforeUnmount, nextTick } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonContent,
   IonSegment, IonSegmentButton, IonSearchbar, IonButton,
   IonIcon, IonBadge, IonFooter, alertController,
 } from '@ionic/vue'
-import { trashOutline, copyOutline, arrowDownOutline, arrowUpOutline, playOutline, pauseOutline } from 'ionicons/icons'
+import { trashOutline, copyOutline, arrowDownOutline, arrowUpOutline, playOutline, pauseOutline, closeOutline } from 'ionicons/icons'
 import VirtualLogList from '@/components/VirtualLogList.vue'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
@@ -285,15 +327,37 @@ function onTabChange(event: CustomEvent) {
  * 找 ion-content 实际滚动的元素（每次重查，不缓存）
  * 同步更新 scrollEl ref——虚拟列表的 useVirtualizer 通过 getScrollElement 观察它
  * 失败由 scrollToBottom / onJumpToBottom 的 rAF retry 处理
+ *
+ * 🆕 2026-06-15 修 #1：ion-content 是 Web Component，scroll 事件发生在 shadow DOM
+ * 内部 .inner-scroll 上，**不**冒泡到 host → 模板 @scroll="onLogScroll" 收不到。
+ * 修法：找到 .inner-scroll 后手动 addEventListener('scroll', onLogScroll, { passive: true })。
+ * 用 boundScrollEl 跟踪已绑定的元素，避免重复绑定。
  */
+let boundScrollEl: HTMLElement | null = null
 function ensureScrollEl(): HTMLElement | null {
   if (!contentRef.value) return null
   const hostEl = ((contentRef.value as any).$el || (contentRef.value as any)) as HTMLElement | undefined
   if (!hostEl || !hostEl.shadowRoot) return null
   const el = hostEl.shadowRoot.querySelector('.inner-scroll') as HTMLElement | null
   if (el && el !== scrollEl.value) scrollEl.value = el
+  // 🆕 手动绑定 scroll listener（Web Component shadow DOM 不冒泡）
+  if (el && el !== boundScrollEl) {
+    if (boundScrollEl) boundScrollEl.removeEventListener('scroll', onLogScroll)
+    el.addEventListener('scroll', onLogScroll, { passive: true })
+    boundScrollEl = el
+  }
   return el
 }
+
+/**
+ * 组件卸载时清理 scroll listener（避免热更新后泄漏）
+ */
+onBeforeUnmount(() => {
+  if (boundScrollEl) {
+    boundScrollEl.removeEventListener('scroll', onLogScroll)
+    boundScrollEl = null
+  }
+})
 
 function scrollToTop() {
   const el = ensureScrollEl()
@@ -345,6 +409,42 @@ function onLogScroll() {
   if (!el) { showScrollToTop.value = false; return }
   showScrollToTop.value = el.scrollTop > 200
 }
+
+// 🆕 2026-06-15 修 #2：点击日志行展开详情
+const selectedLog = ref<LogEntry | null>(null)
+function onLogSelect(item: LogEntry) {
+  selectedLog.value = item
+}
+function closeLogDetail() {
+  selectedLog.value = null
+}
+async function copyLogDetail() {
+  if (!selectedLog.value) return
+  const text = `[${selectedLog.value.timestamp}] ${selectedLog.value.level.toUpperCase()} ${selectedLog.value.message}`
+  const ok = await copyToClipboard(text)
+  if (ok) await showToast({ message: t('devlogs.logDetailCopied') })
+  else await showToast({ message: t('devlogs.copyFailed') })
+}
+
+/** ESC 关闭详情模态 + body 滚动锁 */
+function onKeyDown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && selectedLog.value) {
+    closeLogDetail()
+    e.preventDefault()
+  }
+}
+watch(selectedLog, (open) => {
+  if (typeof document === 'undefined') return
+  // 🆕 详情模态打开时锁 body 滚动，避免背景跟着滚
+  document.body.style.overflow = open ? 'hidden' : ''
+})
+onMounted(() => {
+  if (typeof window !== 'undefined') window.addEventListener('keydown', onKeyDown)
+})
+onUnmounted(() => {
+  if (typeof window !== 'undefined') window.removeEventListener('keydown', onKeyDown)
+  if (typeof document !== 'undefined') document.body.style.overflow = ''
+})
 
 /** 新日志到达的统一处理（被 frontend/backend 两个 watcher 调用） */
 function handleNewLog() {
@@ -702,4 +802,113 @@ defineExpose({
 /* status-bar 自动滚动状态文字：暂停时 warning 色 */
 .auto-scroll-status { font-weight: 500; }
 .auto-scroll-status.paused { color: var(--ion-color-warning); }
+
+/*
+  🆕 2026-06-15 修 #2：日志详情模态样式
+  背景全屏半透明遮罩 + 中央卡片（max-width 640px，响应式）
+  message 区 pre 块等宽字体 + 自动换行 + 横向滚动条
+*/
+.log-detail-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: logDetailFade 0.16s ease-out;
+}
+@keyframes logDetailFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.log-detail-modal {
+  width: 100%;
+  max-width: 640px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--ion-background-color, #fff);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+.log-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--ion-border-color, rgba(0, 0, 0, 0.08));
+}
+.log-detail-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.log-detail-close {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: var(--ion-color-medium);
+  font-size: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  padding: 0;
+}
+.log-detail-close:hover {
+  background: var(--ion-color-light);
+}
+.log-detail-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.log-detail-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.log-detail-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--ion-color-medium);
+}
+.log-detail-value {
+  font-family: var(--ion-font-family-monospace, 'Courier New', monospace);
+  font-size: 12px;
+  word-break: break-all;
+}
+.log-time-detail { color: var(--ion-color-medium); }
+.log-detail-message-row { flex: 1; min-height: 0; }
+.log-detail-message {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--ion-color-light);
+  border-radius: 6px;
+  font-family: var(--ion-font-family-monospace, 'Courier New', monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;       /* 保留换行 + 自动换行 */
+  word-break: break-all;       /* 长 URL/路径强制断行 */
+  max-height: 50vh;
+  overflow-y: auto;
+  color: var(--ion-text-color);
+}
+.log-detail-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--ion-border-color, rgba(0, 0, 0, 0.08));
+}
 </style>
