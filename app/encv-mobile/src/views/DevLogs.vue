@@ -59,17 +59,8 @@
     </ion-header>
 
     <!--
-      🆕 2026-06-14 v6：纯手动挡（彻底删除所有自动检测）
-      核心策略（用户实测反馈）：
-        - 浏览器预览 = 手机浏览器（无 mouse wheel，只有 touch）
-        - 项目启用 Capacitor 高刷 WebView 90/120Hz
-        - @ionScroll/@ionScrollStart 在移动端 + 高刷下完全不可靠
-        - 程序化 flag 屏蔽 + 切 tab 禁用 + 切后台禁用等自动检测全部作废
-      交互（v6）：
-        - toolbar ▶ 跟随 / ⏸ 暂停 开关：用户主动切换 autoScrollEnabled
-        - 浮动 ↓ 按钮：autoScroll=false 时显示，点击 = 重新开启 + 平滑滚到底
-        - 唯一守卫：handleNewLog 内部 if (!autoScrollEnabled.value) return
-      唯一状态：autoScrollEnabled（bool）。0 自动检测 / 0 programmatic flag / 0 生命周期禁用。
+      v6 纯手动挡：toolbar ▶/⏸ 开关 + 浮动 ↓ 按钮
+      详见脚本顶部 autoScrollEnabled 注释
     -->
     <ion-content ref="contentRef" class="log-content">
       <div v-if="activeTab === 'frontend'" class="log-list">
@@ -110,11 +101,7 @@
       </div>
     </ion-content>
 
-    <!--
-      浮动「↓」按钮：v6 移到 ion-content 外部（ion-page 直接子节点），
-      用 position: fixed 定位视口右下角——彻底规避 ion-content shadow DOM
-      内部的 position: absolute 被遮挡 / 不可见问题（v5 按钮死活不显示的真因）
-    -->
+    <!-- 浮动「↓」按钮：v6 移到 ion-content 外部，用 position: fixed 定位视口右下角 -->
     <transition name="fade">
       <button
         v-if="!autoScrollEnabled"
@@ -163,13 +150,11 @@ const transport = useRealtimeTransport()
 
 const activeTab = ref<'frontend' | 'backend'>('frontend')
 const searchText = ref('')
-// 🆕 2026-06-14 v6 纯手动挡模型：
-//  - autoScrollEnabled = true  → 新日志到达自动滚到底
-//  - autoScrollEnabled = false → 不滚（用户已手动暂停跟随）
-// 唯一交互入口：toolbar 开关按钮（点击 toggle）或浮动 ↓ 按钮（开启+滚到底）
-// 0 自动检测：浏览器预览 = 手机浏览器（无 wheel）+ 90/120Hz 高刷
-// @ionScroll/@ionScrollStart 完全不可靠 → 不用；programmatic flag / visibilitychange /
-// onIonViewWillEnter 等禁用逻辑也全部作废（用户实测反馈）
+// 自动滚动：true 跟随 / false 暂停
+// 唯一交互入口：toolbar 开关按钮（toggleAutoScroll）和浮动 ↓ 按钮（onJumpToBottom）
+// 纯手动挡：不监听 scroll 事件、不在 tab 切换 / 前后台切换时 auto-disable
+// 理由：浏览器预览=手机浏览器无 wheel；项目用 Capacitor 高刷 WebView 90/120Hz，
+// @ionScroll/@ionScrollStart 在移动端 + 高刷下完全不可靠
 const autoScrollEnabled = ref(true)
 const contentRef = ref<InstanceType<typeof IonContent> | null>(null)
 
@@ -242,19 +227,7 @@ const filteredBackend = computed(() => {
 const totalCurrent = computed(() => activeTab.value === 'frontend' ? frontendLogs.value.length : backendLogs.value.length)
 const filteredCurrent = computed(() => activeTab.value === 'frontend' ? filteredFrontend.value.length : filteredBackend.value.length)
 
-// ── v6 纯手动挡：唯一交互入口 ─────────────────────────────────────────────
-// 核心策略：删除 v5 的所有自动检测（@ionScroll / programmatic flag / 生命周期禁用），
-// 改为 toolbar 显式开关 + 浮动 ↓ 按钮。
-//
-// v5→v6 移除清单：
-//   - @ionScroll/@ionScrollStart 事件绑定
-//   - programmaticScrollInProgress 标志 + 双 rAF 清理
-//   - onContentScroll() 处理器
-//   - onIonViewWillEnter/onIonViewWillLeave 强制 disable
-//   - visibilitychange hidden 强制 disable
-//   - document.addEventListener('visibilitychange', ...)
-// ───────────────────────────────────────────────────────────────────────────
-
+/** 重复点击当前 tab 按钮时滚到顶部（VS Code / Chrome DevTools 行为） */
 function onTabClick(tab: 'frontend' | 'backend') {
   if (activeTab.value === tab) {
     scrollToTop()
@@ -266,16 +239,9 @@ function onTabChange(event: CustomEvent) {
 }
 
 /**
- * 找 ion-content 实际滚动的元素（同步、无缓存、零强制 layout）
- * 关键变更：v4 删 v3 第 266 行的 `cachedScrollEl = hostEl` 兜底——这是 v3 在浏览器/真机都不滚的真因
- * （Ionic shadow DOM 异步挂载，v3 把 hostEl 缓存住，el.scrollTop 写到 ion-content 元素上
- *  而非真正的 .inner-scroll，永久不滚）。
- *
- * 优先级（每次重查，不缓存）：
- *   1. hostEl.shadowRoot 存在 → 查 .inner-scroll
- *   2. 任何失败直接返回 null（不兜底！）
- *
- * 失败由 scrollToBottom / onJumpToBottom 的 rAF retry 处理。
+ * 找 ion-content 实际滚动的元素（每次重查，不缓存）
+ * 返回 shadow DOM 内的 .inner-scroll 元素——这是真正可滚动的容器
+ * 失败由 scrollToBottom / onJumpToBottom 的 rAF retry 处理
  */
 function ensureScrollEl(): HTMLElement | null {
   if (!contentRef.value) return null
@@ -291,11 +257,9 @@ function scrollToTop() {
 
 /**
  * 滚动到底部（程序化）
- * v6 简化：单一守卫 `if (!autoScrollEnabled.value) return`，无 programmatic flag
- * v4 保留：nextTick + rAF + retry rAF（Ionic shadow DOM 异步挂载）
- *
- * v6 关键：不再需要 programmatic flag 屏蔽 @ionScroll——v6 完全不监听 scroll 事件，
- * 程序化 scrollTop 不会触发任何回调，纯 DOM 操作 0 干扰。
+ * 单一守卫：autoScrollEnabled=false 时直接 return
+ * nextTick + rAF + retry rAF 是为了等 Ionic shadow DOM 异步挂载完成
+ * smooth=true 时用 scrollTo 触发平滑滚动；smooth=false 时直接赋值即生效
  */
 async function scrollToBottom(smooth = false) {
   if (!autoScrollEnabled.value) return
@@ -311,34 +275,28 @@ async function scrollToBottom(smooth = false) {
   else el.scrollTop = el.scrollHeight
 }
 
-/**
- * v6 toolbar 开关按钮：切换 autoScrollEnabled
- * 用户主动控制：完全手动挡，无任何自动检测
- */
+/** 切换自动滚动状态（toolbar ▶/⏸ 开关） */
 function toggleAutoScroll() {
   autoScrollEnabled.value = !autoScrollEnabled.value
 }
 
-/** 浮动「↓」按钮点击：开启跟随 + 平滑滚到底（强制，不受当前状态限制） */
+/** 浮动「↓」按钮：开启跟随 + 平滑滚到底 */
 async function onJumpToBottom() {
   autoScrollEnabled.value = true
   await scrollToBottom(true)
 }
 
-/**
- * 新日志到达的统一处理（被 frontend/backend 两个 watcher 调用）
- * v6 唯一守卫：autoScrollEnabled=false 时直接 return（不滚、不累积——v5/v4 同样）
- */
+/** 新日志到达的统一处理（被 frontend/backend 两个 watcher 调用） */
 function handleNewLog() {
   if (!autoScrollEnabled.value) return
   void scrollToBottom(false)
 }
 
 /**
- * 新日志监听
- * v4 关键修复：flush:'post'（v3 注释说"默认 pre 等价 nextTick"是错的——pre 是 DOM 未 patch
- * 就触发，scrollHeight 还没增大；post 等 DOM patch + ion-content 内部 shadow DOM 更新）
- * 看的是数组 length（不是深监听），性能好且不会因搜索/筛选误触发。
+ * 监听前端/后端日志数组长度变化
+ * flush:'post' 确保 DOM patch 完成、ion-content shadow DOM 更新后再滚到底
+ * （'pre' 触发时 scrollHeight 还没增大，滚不到底）
+ * activeTab 切换时仅响应当前 tab 的日志
  */
 watch(
   () => frontendLogs.value.length,
@@ -411,12 +369,7 @@ function onServerStatus(data: any) {
 onMounted(async () => {
   await nextTick()
 
-  // 🆕 2026-06-10：transport 已在 App.vue 启动，无需重复 connect()
-  // 之前重复 connect 会导致：
-  //   - App.vue connect → useWebSocket 单例
-  //   - DevLogs onMounted 又调一次 ws.connect()（idempotent 但冗余）
-  // 现在 transport 单例管理生命周期，DevLogs 只读 connectionState
-
+  // transport 已在 App.vue 启动为 useWebSocket 单例，DevLogs 只读 connectionState 不再 connect
   eventBus.on('ws:message', onWsMessage)
   eventBus.on('server:status', onServerStatus)
 
@@ -426,15 +379,13 @@ onMounted(async () => {
     serverOnline.value = result.online
   }
 
+  // 写入一条启动日志（INFO/WARN 取决于 server 状态）
   backendLogs.value.push({
     id: ++nextId,
     timestamp: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
     level: serverOnline.value ? 'info' : 'warn',
     message: `DevLogs ready, server ${serverOnline.value ? 'online' : 'offline'} (transport=${transport.connectionState.value})`,
   })
-
-  // v6 纯手动挡：tab 切换、App 前后台切换都不再 auto-disable
-  // 用户的 autoScrollEnabled 状态由 toolbar 开关按钮显式控制
 })
 
 onUnmounted(() => {
@@ -442,20 +393,14 @@ onUnmounted(() => {
   eventBus.off('server:status', onServerStatus)
 })
 
-/**
- * 暴露给单元测试的滚动状态机（生产环境无用，仅用于单测验证 pinned 模式）
- * v6 简化暴露：autoScrollEnabled ref + 4 个核心方法
- */
+/** 暴露给单元测试（生产环境无副作用） */
 defineExpose({
-  // refs
   autoScrollEnabled,
   activeTab,
-  // 方法
   handleNewLog,
   toggleAutoScroll,
   onJumpToBottom,
   scrollToBottom,
-  // 测试工具
   setActiveTab(tab: 'frontend' | 'backend') { activeTab.value = tab },
 })
 </script>
@@ -611,11 +556,8 @@ defineExpose({
 }
 .status-text { font-size: 11px; color: var(--ion-text-color-step-400, #666); }
 
-/* ── 浮动「↓」按钮（2026-06-14 v6 重做） ──
-   v5 改动史：position: absolute + 在 ion-content 内部 → 被 shadow DOM 遮挡不显示
-   v6 修复：position: fixed + 移到 ion-content 外部（ion-page 直接子节点）+
-   z-index 9999 绝对安全——视口右下角永远可见。
-   位置避开 status-bar：bottom: 64px（status-bar 高度约 44px + 20px 间距） */
+/* 浮动「↓」按钮：position: fixed 定位视口右下角，z-index 9999 确保永远可见
+   bottom: 64px 避开 status-bar（44px + 20px 间距） */
 .scrollToBottomBtn {
   position: fixed;
   right: 16px;
@@ -641,7 +583,7 @@ defineExpose({
 .fade-enter-active, .fade-leave-active { transition: opacity 0.2s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 
-/* v6: status-bar 显示自动滚动状态 */
+/* status-bar 自动滚动状态文字：暂停时 warning 色 */
 .auto-scroll-status { font-weight: 500; }
 .auto-scroll-status.paused { color: var(--ion-color-warning); }
 </style>
