@@ -21,10 +21,10 @@ export default {
     'devlogs.noLogsDesc': '日志输出将显示在这里。',
     'devlogs.copied': '已复制 {count} 条日志',
     'devlogs.copyFailed': '复制失败',
-    // 🆕 2026-06-14：pinned-to-bottom 模式新增
+    // 🆕 2026-06-14 v6：纯手动挡（toolbar 显式开关 + 浮动 ↓ 按钮）
     'devlogs.scrollToBottom': '跳到最新日志',
-    'devlogs.newLogsBadge': '{count} 条新日志',
-    'devlogs.autoScrollHint': '关闭后新日志不会自动滚动到底部（仍可点 ↓ 按钮跳回）',
+    'devlogs.autoScrollOn': '跟随中',
+    'devlogs.autoScrollOff': '已暂停',
   },
   en: {
     'devlogs.title': 'Developer Logs',
@@ -47,9 +47,9 @@ export default {
     'devlogs.noLogsDesc': 'Log output will appear here.',
     'devlogs.copied': 'Copied {count} logs',
     'devlogs.copyFailed': 'Copy failed',
-    // 🆕 2026-06-14：pinned-to-bottom 模式新增
+    // 🆕 2026-06-14 v6：纯手动挡（toolbar 显式开关 + 浮动 ↓ 按钮）
     'devlogs.scrollToBottom': 'Jump to latest log',
-    'devlogs.newLogsBadge': '{count} new logs',
-    'devlogs.autoScrollHint': 'When off, new logs will not auto-scroll to bottom (click ↓ to jump back)',
+    'devlogs.autoScrollOn': 'Following',
+    'devlogs.autoScrollOff': 'Paused',
   },
 }
